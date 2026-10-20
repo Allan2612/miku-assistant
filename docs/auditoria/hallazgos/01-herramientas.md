@@ -65,7 +65,7 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 
 ### H-006 · `open_app` ejecuta cualquier línea de comandos que le pase el LLM
 
-- **Severidad:** Alta (sube a Crítica si la fase 2 confirma que un tercero puede enviar texto al backend)
+- **Severidad:** Crítica (subida desde Alta: la fase 2 confirmó en H-019 que cualquier web puede enviar texto al backend)
 - **Estado:** confirmado
 - **Ubicación:** `core/tools/apps.py:260-261`, `core/tools/apps.py:141-143`, `core/tools/apps.py:171`
 - **Categoría:** seguridad

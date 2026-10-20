@@ -60,10 +60,12 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 
 | ID | Severidad | Estado | Ubicación | Título |
 |---|---|---|---|---|
+| H-019 | Crítica | confirmado | `core/server.py:203` | Cualquier página web puede controlar a Miku y el PC |
+| H-006 | Crítica | confirmado | `core/tools/apps.py:260` | `open_app` ejecuta cualquier línea de comandos del LLM |
 | H-001 | Alta | confirmado | `core/tools/__init__.py:21` | La confirmación de acciones destructivas no está implementada en código |
-| H-006 | Alta | confirmado | `core/tools/apps.py:260` | `open_app` ejecuta cualquier línea de comandos del LLM |
 | H-007 | Alta | por-verificar | `core/tools/apps.py:367` | `type_text` + alias de consola permiten ejecutar comandos |
 | H-008 | Alta | confirmado | `core/tools/apps.py:290` | `close_app` mata procesos por subcadena y con `kill()` |
+| H-020 | Media | confirmado | `core/server.py:50` | `broadcast` falla si cambian los clientes mientras envía |
 | H-002 | Media | confirmado | `core/tools/apps.py:271` | `close_app` cierra apps sin confirmación |
 | H-003 | Media | confirmado | `core/tools/__init__.py:33` | El timeout de 5 s por herramienta no existe |
 | H-011 | Media | confirmado | `core/tools/files.py:97` | `open_file` ejecuta programas y scripts de Descargas |
@@ -78,3 +80,4 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-014 | Baja | confirmado | `core/tools/media.py:112` | Volumen dice "ok" aunque no cambie nada |
 | H-017 | Baja | confirmado | `core/tools/timers.py:92` | Carrera, mensajes y persistencia de temporizadores |
 | H-018 | Baja | confirmado | `core/tools/web.py:15` | Código duplicado y descripciones que no cuadran |
+| H-021 | Baja | confirmado | `core/server.py:13` | Detalles de `server.py` |
