@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** fases 1-3 completas, fase 4 en curso (fase 0 pendiente: mediciones y análisis automáticos)
+- **Estado:** fases 1-4 completas, fase 5 en curso (fase 0 pendiente: mediciones y análisis automáticos)
 
 ## Archivos
 
@@ -91,4 +91,5 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-029 | Baja | confirmado | `core/__main__.py:30` | Detalles de `__main__.py` |
 | H-031 | Baja | confirmado | `core/pipeline.py:118` | Avisos de temporizador se pisan con la conversación |
 | H-032 | Baja | confirmado | `core/pipeline.py:231` | Detalles de `pipeline.py` |
+| H-033 | Baja | confirmado | `core/config.py:129` | `config.py` no valida y repite valores por defecto |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |

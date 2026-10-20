@@ -105,11 +105,11 @@ Preguntas que deben quedar respondidas:
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `core/__main__.py` (`async_main`) | 160 | [ ] |
-| `core/pipeline.py` (`MikuPipeline`) | 388 | [ ] |
-| `core/resources.py` (`ResourceManager`) | 104 | [ ] |
-| `core/config.py` | 206 | [ ] |
-| `config.yaml` | 27 | [ ] |
+| `core/__main__.py` (`async_main`) | 160 | [x] |
+| `core/pipeline.py` (`MikuPipeline`) | 388 | [x] |
+| `core/resources.py` (`ResourceManager`) | 104 | [x] |
+| `core/config.py` | 206 | [x] |
+| `config.yaml` | 27 | [x] |
 
 - Recorrer el flujo completo de una petición (pasos 1–12 de [architecture.md](../architecture.md)) y marcar en qué línea ocurre cada paso.
 - ¿Hay llamadas bloqueantes (CPU, disco, red) dentro del bucle `asyncio` sin `to_thread`/executor?

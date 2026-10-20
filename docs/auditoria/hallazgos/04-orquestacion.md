@@ -1,6 +1,6 @@
 # Fase 4 · Orquestación y arranque
 
-Avance: `__main__.py` revisado 160/160 · `pipeline.py` revisado 388/388 · `resources.py` 0/104 · `config.py` 0/206 · `config.yaml` revisado 27/27
+Avance: `__main__.py` revisado 160/160 · `pipeline.py` revisado 388/388 · `resources.py` revisado 104/104 (sin hallazgos) · `config.py` revisado 206/206 · `config.yaml` revisado 27/27 · **fase completa**
 
 ### H-028 · Whisper y el worker de RVC se cargan al arrancar el PC, no al activar a Miku
 
@@ -69,6 +69,26 @@ Avance: `__main__.py` revisado 160/160 · `pipeline.py` revisado 388/388 · `res
 - `initial_timeout=5.5` está fijo en el código.
 
 **Propuesta:** extraer un método `_speak(text, emotion)`, guardar la fecha del último saludo en `cache/`, y usar `logger.exception`.
+
+### H-033 · `config.py` no valida la configuración y repite los valores por defecto
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/config.py:129-138`, `:140-206`, `:159-165`
+- **Categoría:** error / mantenibilidad
+
+**Qué pasa:**
+
+- Una sección vacía en el YAML (`llm:` sin contenido) se carga como `None`, y `None.get(...)` hace que el backend no arranque, con un `AttributeError` poco claro.
+- No se validan tipos ni rangos: `cpu_threads: 0`, `threshold: 5` o `bool("false")` (que vale `True`) pasan sin aviso.
+- La lista de modelos de Gemini por defecto está repetida en tres sitios (`config.py:33`, `config.py:160-165` y `llm.py:79-84`), y los valores por defecto de cada sección se repiten entre las *dataclasses* y `load_config`.
+- Hay campos que se cargan y nadie usa en el backend: `apps`, `tools.confirm_destructive`, `tools.file_search_roots` (H-001, H-009). Queda por ver en la fase 8 si el frontend usa `hotkey`, `window`, `live2d` y `hide_after_seconds`.
+
+**Propuesta:** `section = raw_data.get("llm") or {}`, comprobar rangos básicos al cargar, y dejar los valores por defecto solo en las *dataclasses*.
+
+### Resumen de la fase 4
+
+6 hallazgos (2 medios, 4 bajos); H-009 queda confirmado y H-016 descartado. `resources.py` está bien. Lo más relevante es la carga de modelos al arrancar (H-028), que contradice el objetivo de consumo casi nulo, y la ruta de texto sin manejo de errores (H-030).
 
 ### Notas para siguientes pasos
 
