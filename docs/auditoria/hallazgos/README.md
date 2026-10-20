@@ -2,9 +2,9 @@
 
 Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../plan.md).
 
-- **Commit auditado:** _(anotar el hash al empezar la fase 0)_
-- **Inicio:** _(fecha)_
-- **Estado:** sin empezar
+- **Commit auditado:** `01f50c8`
+- **Inicio:** 2026-10-20
+- **Estado:** fase 1 en curso (fase 0 pendiente: mediciones y análisis automáticos)
 
 ## Archivos
 
@@ -60,4 +60,8 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 
 | ID | Severidad | Estado | Ubicación | Título |
 |---|---|---|---|---|
-| | | | | |
+| H-001 | Alta | confirmado | `core/tools/__init__.py:21` | La confirmación de acciones destructivas no está implementada en código |
+| H-002 | Media | confirmado | `core/tools/apps.py:271` | `close_app` cierra apps sin confirmación |
+| H-003 | Media | confirmado | `core/tools/__init__.py:33` | El timeout de 5 s por herramienta no existe |
+| H-004 | Baja | confirmado | `core/tools/__init__.py:29` | `print` sueltos y argumentos completos en logs |
+| H-005 | Baja | confirmado | `core/tools/__init__.py:49` | Nombre de herramienta repetido se sobrescribe |
