@@ -79,6 +79,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-030 | Media | confirmado | `core/pipeline.py:280` | Un error al procesar texto deja la wake word en pausa |
 | H-034 | Media | por-verificar | `core/audio_in.py:100` | VAD por energía: con ruido graba hasta el máximo |
 | H-035 | Media | por-verificar | `core/stt.py:92` | El prompt de Whisper puede hacer oír comandos en el ruido |
+| H-038 | Media | confirmado | `core/rvc.py:99` | Tras un timeout de RVC, Miku dice la frase anterior |
 | H-004 | Baja | confirmado | `core/tools/__init__.py:29` | `print` sueltos y argumentos completos en logs |
 | H-005 | Baja | confirmado | `core/tools/__init__.py:49` | Nombre de herramienta repetido se sobrescribe |
 | H-009 | Baja | confirmado | `core/tools/apps.py:38` | Alias de apps fijos; `config.yaml → apps` se ignora |
@@ -96,4 +97,6 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-033 | Baja | confirmado | `core/config.py:129` | `config.py` no valida y repite valores por defecto |
 | H-036 | Baja | confirmado | `core/stt.py:88` | Detalles de `stt.py` |
 | H-037 | Baja | confirmado | `core/wakeword.py:80` | Detalles de `wakeword.py` |
+| H-039 | Baja | confirmado | `core/rvc.py:74` | Detalles de `rvc.py` |
+| H-040 | Baja | confirmado | `core/tts.py:35` | Caché de voz sin límite; frases fijas sin precargar |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |
