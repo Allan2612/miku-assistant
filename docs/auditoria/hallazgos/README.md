@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** fases 1-4 completas, fase 5 en curso (fase 0 pendiente: mediciones y análisis automáticos)
+- **Estado:** fases 1-5 completas, fase 6 en curso (fase 0 pendiente: mediciones y análisis automáticos)
 
 ## Archivos
 
@@ -77,6 +77,8 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-026 | Media | confirmado | `core/llm.py:384` | Las llamadas a Gemini no tienen tiempo máximo |
 | H-028 | Media | confirmado | `core/__main__.py:125` | Whisper y RVC se cargan al arrancar el PC |
 | H-030 | Media | confirmado | `core/pipeline.py:280` | Un error al procesar texto deja la wake word en pausa |
+| H-034 | Media | por-verificar | `core/audio_in.py:100` | VAD por energía: con ruido graba hasta el máximo |
+| H-035 | Media | por-verificar | `core/stt.py:92` | El prompt de Whisper puede hacer oír comandos en el ruido |
 | H-004 | Baja | confirmado | `core/tools/__init__.py:29` | `print` sueltos y argumentos completos en logs |
 | H-005 | Baja | confirmado | `core/tools/__init__.py:49` | Nombre de herramienta repetido se sobrescribe |
 | H-009 | Baja | confirmado | `core/tools/apps.py:38` | Alias de apps fijos; `config.yaml → apps` se ignora |
@@ -92,4 +94,6 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-031 | Baja | confirmado | `core/pipeline.py:118` | Avisos de temporizador se pisan con la conversación |
 | H-032 | Baja | confirmado | `core/pipeline.py:231` | Detalles de `pipeline.py` |
 | H-033 | Baja | confirmado | `core/config.py:129` | `config.py` no valida y repite valores por defecto |
+| H-036 | Baja | confirmado | `core/stt.py:88` | Detalles de `stt.py` |
+| H-037 | Baja | confirmado | `core/wakeword.py:80` | Detalles de `wakeword.py` |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |

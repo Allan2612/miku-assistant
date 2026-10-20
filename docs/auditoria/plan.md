@@ -123,9 +123,9 @@ Preguntas que deben quedar respondidas:
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `core/audio_in.py` | 185 | [ ] |
-| `core/stt.py` | 145 | [ ] |
-| `core/wakeword.py` | 240 | [ ] |
+| `core/audio_in.py` | 185 | [x] |
+| `core/stt.py` | 145 | [x] |
+| `core/wakeword.py` | 240 | [x] |
 
 - ¿El micrófono se cierra siempre al terminar de grabar, también si hay excepción?
 - Límite de 15 s de grabación y 0,8 s de silencio: ¿están en la config y se respetan?
