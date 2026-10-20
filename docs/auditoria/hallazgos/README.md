@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** fases 1-8 completas, fase 9 en curso (fase 0 pendiente: mediciones y análisis automáticos)
+- **Estado:** fases 1-9 completas, fase 10 en curso (fase 0 pendiente: mediciones y análisis automáticos)
 
 ## Archivos
 
@@ -82,6 +82,8 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-038 | Media | confirmado | `core/rvc.py:99` | Tras un timeout de RVC, Miku dice la frase anterior |
 | H-045 | Media | confirmado | `app/src/live2d.ts:551` | Interrumpir a Miku deja un intervalo de 60 ms para siempre |
 | H-047 | Media | por-verificar | `app/src/clickthrough.ts:22` | El click-through deja de detectar el ratón al activarse |
+| H-049 | Media | confirmado | `app/src-tauri/capabilities/default.json:17` | El atajo global no tiene permiso para registrarse |
+| H-050 | Media | confirmado | `app/src-tauri/src/lib.rs:54` | "Salir" deja el backend escuchando el micrófono |
 | H-004 | Baja | confirmado | `core/tools/__init__.py:29` | `print` sueltos y argumentos completos en logs |
 | H-005 | Baja | confirmado | `core/tools/__init__.py:49` | Nombre de herramienta repetido se sobrescribe |
 | H-009 | Baja | confirmado | `core/tools/apps.py:38` | Alias de apps fijos; `config.yaml → apps` se ignora |
@@ -107,4 +109,5 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-044 | Baja | por-verificar | `app/src/main.ts:184` | Mostrar a Miku quita el foco y pierde órdenes en animaciones |
 | H-046 | Baja | confirmado | `app/src/live2d.ts:170` | Detalles de `live2d.ts` |
 | H-048 | Baja | confirmado | `app/index.html:15` | Detalles de `index.html`, CSS, click-through y muestras |
+| H-051 | Baja | confirmado | `app/src-tauri/tauri.conf.json:25` | Configuración de seguridad de Tauri más abierta de lo necesario |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |

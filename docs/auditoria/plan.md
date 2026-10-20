@@ -190,12 +190,12 @@ Es código de terceros (RVC/VITS). Se revisa para detectar modificaciones locale
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `app/src-tauri/src/lib.rs` | 85 | [ ] |
-| `app/src-tauri/src/main.rs` | 6 | [ ] |
-| `app/src-tauri/build.rs` | 3 | [ ] |
-| `app/src-tauri/Cargo.toml` | 27 | [ ] |
-| `app/src-tauri/tauri.conf.json` | 41 | [ ] |
-| `app/src-tauri/capabilities/default.json` | 19 | [ ] |
+| `app/src-tauri/src/lib.rs` | 85 | [x] |
+| `app/src-tauri/src/main.rs` | 6 | [x] |
+| `app/src-tauri/build.rs` | 3 | [x] |
+| `app/src-tauri/Cargo.toml` | 27 | [x] |
+| `app/src-tauri/tauri.conf.json` | 41 | [x] |
+| `app/src-tauri/capabilities/default.json` | 19 | [x] |
 
 - ¿Hay una CSP definida en `tauri.conf.json`? ¿Es `null`?
 - ¿`withGlobalTauri` es necesario? Si no, desactivarlo reduce el impacto de un XSS.
