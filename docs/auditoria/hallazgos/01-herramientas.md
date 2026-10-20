@@ -1,6 +1,6 @@
 # Fase 1 · Herramientas de control del PC
 
-Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` 0/138 · `media.py` 0/173 · `notes.py` 0/79 · `system.py` 0/97 · `timers.py` 0/174 · `web.py` 0/97
+Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` 0/173 · `notes.py` 0/79 · `system.py` 0/97 · `timers.py` 0/174 · `web.py` 0/97
 
 ### H-001 · La confirmación de acciones destructivas no está implementada en código
 
@@ -121,6 +121,33 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 **Qué pasa:** `_attach_user_desktop()` abre una estación y un escritorio con `GENERIC_ALL` en **cada** llamada y nunca cierra los handles (`CloseWindowStation`/`CloseDesktop`). Además `time.sleep(0.3)` tras cada apertura y `time.sleep(0.01)` por carácter en `type_text` (hasta 5 s) bloquean el hilo que ejecuta la herramienta (relacionado con H-003).
 
 **Propuesta:** abrir los handles una vez por proceso y cerrarlos, o solo llamar `SetThreadDesktop` cuando haga falta.
+
+### H-011 · `open_file` ejecuta programas y scripts encontrados en Descargas
+
+- **Severidad:** Media
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/files.py:58-61`, `core/tools/files.py:97`
+- **Categoría:** seguridad
+
+**Qué pasa:** la protección de "solo abrir lo encontrado en la sesión" no filtra el tipo de archivo. `find_file` busca por subcadena en Escritorio, Documentos y Descargas, y `open_file` abre el resultado con `os.startfile`, que **ejecuta** `.exe`, `.bat`, `.cmd`, `.ps1`, `.vbs`, `.lnk`, `.msi`, etc. Descargas suele contener instaladores y scripts sin revisar.
+
+**Cómo se reproduce:** con un `setup.exe` en Descargas: `find_file("setup")` → `open_file("setup.exe")` → se ejecuta el instalador.
+
+**Propuesta:** lista de extensiones ejecutables bloqueadas en `open_file` (o lista permitida de documentos, imágenes, audio y vídeo).
+
+### H-012 · Errores menores en `files.py`
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/files.py:136`, `:138`, `:89-93`, `:16`
+- **Categoría:** error
+
+**Qué pasa:**
+- `open_folder` construye el mensaje con `name`, pero el valor puede venir en `folder` o `folder_name`: Miku responde "He abierto la carpeta ." con el nombre vacío.
+- `open_file` por nombre elige el primer archivo del `set` con ese nombre; si hay dos `notas.txt` en carpetas distintas, abre uno al azar.
+- `_SESSION_FOUND_FILES` crece sin límite durante toda la sesión.
+
+**Propuesta:** usar `target_name` en los mensajes, devolver las opciones cuando hay nombres repetidos y limpiar el set al terminar cada conversación.
 
 ### Notas para siguientes pasos
 
