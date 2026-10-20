@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Miku Assistant</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <!-- Official Live2D Cubism Core runtime -->
+    <script src="/lib/live2dcubismcore.min.js"></script>
+    <script>
+      // Explicitly bind Live2DCubismCore to window
+      if (typeof Live2DCubismCore !== "undefined") {
+        window.Live2DCubismCore = Live2DCubismCore;
+
+        // Cubism 5 compatibility bridge for pixi-live2d-display:
+        // In Cubism 5, renderOrders was moved from drawables to model.renderOrders.
+        // We bridge model.drawables.renderOrders -> model.renderOrders for seamless rendering.
+        if (Live2DCubismCore.Model && Live2DCubismCore.Model.fromMoc) {
+          const originalFromMoc = Live2DCubismCore.Model.fromMoc;
+          Live2DCubismCore.Model.fromMoc = function (moc) {
+            const model = originalFromMoc.call(this, moc);
+            if (model && model.drawables && !model.drawables.renderOrders) {
+              model.drawables.renderOrders =
+                model.renderOrders ||
+                (model.getRenderOrders && model.getRenderOrders()) ||
+                model.drawables.drawOrders;
+            }
+            return model;
+          };
+        }
+      }
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div id="status-indicator" class="status-indicator">Cargando Miku Live2D...</div>
+      <canvas id="live2d-canvas"></canvas>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,38 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Models & binaries
+models/
+cache/
+app/public/models/
+app/public/lib/live2dcubismcore*.js
+*.pth
+*.index
+*.onnx
+dowloads/
+downloads/
+
+# Python
+core/.venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Tauri / Rust
+app/src-tauri/target/
+graphify-out/
+
+# Logs y salidas locales
+*_out.txt
+*_err.txt
+*_error.txt
+scratch/*.wav

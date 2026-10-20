@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Pruebas de Audio - Miku Mellow</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 32px;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #39c5bb;
+      font-size: 1.6rem;
+      margin-bottom: 8px;
+    }
+    p {
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 20px;
+      margin: 16px 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .badge-fixed { background: #059669; color: #ecfdf5; }
+    .badge-old { background: #dc2626; color: #fef2f2; }
+    audio {
+      width: 100%;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎤 Comparativa de Audio — Miku Mellow</h1>
+  <p>Diagnóstico del "petardeo" y resultado con el nuevo pipeline DSP anti-artefactos.</p>
+
+  <div class="card">
+    <span class="badge badge-fixed">✨ RECOMENDADA — Nueva (Voz Latina + Anti-Petardeo)</span>
+    <h3>Miku Mellow (Latina Limpia)</h3>
+    <p>Acento neutro latinoamericano (es-MX-DaliaNeural), filtro de mediana en F0, protección de consonantes sordas/respiraciones (protect: 0.33) y normalización a 0.90 sin recorte digital.</p>
+    <audio controls src="/samples/miku_mellow_latina_perfect.wav"></audio>
+  </div>
+
+  <div class="card">
+    <span class="badge badge-fixed">🛠️ Corregida (Misma frase original en español)</span>
+    <h3>Miku Mellow (España sin Petardeo)</h3>
+    <p>La misma frase que escuchaste antes, pero con el filtro de tono y recorte de bordes aplicado para eliminar el chasquido.</p>
+    <audio controls src="/samples/miku_mellow_spain_fixed.wav"></audio>
+  </div>
+
+  <div class="card">
+    <span class="badge badge-old">⚠️ Audio anterior con Petardeo</span>
+    <h3>Miku Mellow (Original sin filtros)</h3>
+    <p>Muestra original donde se producía el pico repentino a 3.07s y roces en consonantes sordas.</p>
+    <audio controls src="/samples/sample_miku_mellow.wav"></audio>
+  </div>
+</body>
+</html>

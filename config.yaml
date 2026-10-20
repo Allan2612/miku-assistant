@@ -1,0 +1,27 @@
+hotkey: "Ctrl+Alt+M"
+language: "es"
+window: { width: 420, height: 620, anchor: "bottom-right", margin: 12, fps_visible: 30 }
+behavior: { hide_after_seconds: 20, max_record_seconds: 10, silence_ms: 700, unload_after_minutes: 10 }
+llm: {
+  model: "gemini-3.5-flash-lite",
+  models_fallback: ["gemini-flash-lite-latest", "gemini-3.5-flash"],
+  max_history_turns: 10,
+  temperature: 0.8
+}
+stt: { model: "base", device: "cpu", compute_type: "int8", cpu_threads: 6 }
+tts: { voice: "es-MX-DaliaNeural", rate: "+5%", pitch: "+10Hz" }
+rvc: { enabled: true, model: "models/rvc/miku_mellow.pth", index: "models/rvc/miku_mellow.index", f0_up_key: 0, index_rate: 0.25 }
+wakeword: { enabled: true, model: "models/wakeword/hey_miku.onnx", threshold: 0.50, patience: 1 }
+live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0.25, expressions: { happy: null, sad: null, surprised: null, angry: null, neutral: null } }
+tools: { confirm_destructive: true, file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }
+apps: {
+  opera: "opera.exe",
+  "opera gx": "opera.exe",
+  operagx: "opera.exe",
+  navegador: "opera.exe",
+  internet: "opera.exe",
+  chrome: "chrome.exe",
+  spotify: "spotify.exe",
+  discord: "Discord"
+}
+log_level: "INFO"
