@@ -1,6 +1,6 @@
 # Fase 1 · Herramientas de control del PC
 
-Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` revisado 173/173 · `notes.py` revisado 79/79 (sin hallazgos) · `system.py` revisado 97/97 · `timers.py` revisado 174/174 · `web.py` 0/97
+Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` revisado 173/173 · `notes.py` revisado 79/79 (sin hallazgos) · `system.py` revisado 97/97 · `timers.py` revisado 174/174 · `web.py` revisado 97/97 · **fase completa**
 
 ### H-001 · La confirmación de acciones destructivas no está implementada en código
 
@@ -212,6 +212,21 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 - No hay límite de cantidad ni de duración, y todo vive en memoria: un recordatorio para mañana se pierde si se reinicia el backend, sin avisar.
 
 **Propuesta:** registrar en `_TIMERS` antes de programar; mensaje distinto para recordatorios; tope de temporizadores activos (p. ej. 20).
+
+### H-018 · Código duplicado en `web.py` y descripciones que no cuadran
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/web.py:15-31`, `:51`
+- **Categoría:** mantenibilidad
+
+**Qué pasa:** `_find_opera_gx` es una copia de `_find_opera_gx_path` de `apps.py`, y hay imports a mitad del archivo. La descripción de `open_url` dice "navegador predeterminado", pero siempre abre Opera GX si está instalado. La validación de URL es correcta: solo `http`/`https` y la URL se pasa como un único argumento a `Popen`.
+
+**Propuesta:** mover la búsqueda de Opera a un módulo común y ajustar la descripción.
+
+### Resumen de la fase 1
+
+18 hallazgos: 4 altos (H-001, H-006, H-007, H-008), 7 medios y 7 bajos. El problema de fondo es que el diseño confía en que el LLM se comporte: no hay confirmación aplicada en código (H-001) y varias herramientas aceptan texto libre que acaba en procesos o teclas (H-006, H-007, H-008). La fase 2 debe aclarar si alguien ajeno al usuario puede hacer llegar texto al LLM, lo que subiría H-006 a crítico.
 
 ### Notas para siguientes pasos
 

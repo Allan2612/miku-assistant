@@ -52,14 +52,14 @@ Es el límite de confianza más importante: aquí el texto que genera el LLM se 
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `core/tools/__init__.py` (registro `@tool`) | 77 | [ ] |
-| `core/tools/apps.py` | 387 | [ ] |
-| `core/tools/files.py` | 138 | [ ] |
-| `core/tools/media.py` | 173 | [ ] |
-| `core/tools/notes.py` | 79 | [ ] |
-| `core/tools/system.py` | 97 | [ ] |
-| `core/tools/timers.py` | 174 | [ ] |
-| `core/tools/web.py` | 97 | [ ] |
+| `core/tools/__init__.py` (registro `@tool`) | 77 | [x] |
+| `core/tools/apps.py` | 387 | [x] |
+| `core/tools/files.py` | 138 | [x] |
+| `core/tools/media.py` | 173 | [x] |
+| `core/tools/notes.py` | 79 | [x] |
+| `core/tools/system.py` | 97 | [x] |
+| `core/tools/timers.py` | 174 | [x] |
+| `core/tools/web.py` | 97 | [x] |
 
 Preguntas que deben quedar respondidas:
 
