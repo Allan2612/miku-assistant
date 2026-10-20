@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** fases 1-11 completas, fase 12 en curso (fase 0 pendiente: mediciones y análisis automáticos)
+- **Estado:** fases 1-12 completas; pendientes la fase 0 (mediciones) y el cierre (fase 0 pendiente: mediciones y análisis automáticos)
 
 ## Archivos
 
@@ -115,4 +115,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-051 | Baja | confirmado | `app/src-tauri/tauri.conf.json:25` | Configuración de seguridad de Tauri más abierta de lo necesario |
 | H-054 | Baja | confirmado | `start.bat:15` | Detalles de `start.bat`, Vite y arranque automático |
 | H-056 | Baja | confirmado | `scratch/test_all_26_tools.py:49` | Detalles de `scratch/` y modelos de wake word |
+| H-057 | Baja | confirmado | `docs/tools.md` | `tools.md` no coincide con las herramientas registradas |
+| H-058 | Baja | confirmado | `docs/persona.md` | `persona.md` y `architecture.md` describen otro comportamiento |
+| H-059 | Baja | confirmado | `docs/setup.md` | `setup.md` y `README.md` no bastan para instalar desde cero |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |

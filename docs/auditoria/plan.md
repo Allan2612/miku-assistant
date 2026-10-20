@@ -233,12 +233,12 @@ No son código de producción, pero se leen enteros porque pueden contener secre
 
 ## Fase 12: documentación frente a código
 
-- [ ] [architecture.md](../architecture.md): cada componente, mensaje del protocolo WebSocket y cifra del presupuesto existe en el código.
-- [ ] [tools.md](../tools.md): lista, parámetros y confirmaciones coinciden con `core/tools/`.
-- [ ] [persona.md](../persona.md): las emociones y frases fijas coinciden con `llm.py` y `tts.py`.
-- [ ] [roadmap.md](../roadmap.md): las casillas marcadas corresponden a funciones que existen.
-- [ ] [setup.md](../setup.md) y el `README.md` raíz: los pasos de instalación funcionan en limpio.
-- [ ] `CHANGELOG.md`: completo y sin entradas que contradigan el código.
+- [x] [architecture.md](../architecture.md): cada componente, mensaje del protocolo WebSocket y cifra del presupuesto existe en el código.
+- [x] [tools.md](../tools.md): lista, parámetros y confirmaciones coinciden con `core/tools/`.
+- [x] [persona.md](../persona.md): las emociones y frases fijas coinciden con `llm.py` y `tts.py`.
+- [x] [roadmap.md](../roadmap.md): las casillas marcadas corresponden a funciones que existen.
+- [x] [setup.md](../setup.md) y el `README.md` raíz: los pasos de instalación funcionan en limpio.
+- [x] `CHANGELOG.md`: completo y sin entradas que contradigan el código.
 
 ## Fase 13: cierre
 
