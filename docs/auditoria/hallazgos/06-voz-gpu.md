@@ -1,6 +1,6 @@
 # Fase 6 · Voz de salida y GPU
 
-Avance: `tts.py` revisado 103/103 · `rvc.py` revisado 209/209 · `rvc_worker.py` revisado 392/392 · `rmvpe.py` 0/432
+Avance: `tts.py` revisado 103/103 · `rvc.py` revisado 209/209 · `rvc_worker.py` revisado 392/392 · `rmvpe.py` revisado como código de terceros (cabecera, carga, inferencia y decodificación, líneas 1-40 y 300-432; las capas de red 41-299 se comparan con el original en la fase 7) · **fase completa**
 
 **Regla principal verificada:** ningún módulo del proceso principal (`core/*.py` salvo `rvc_worker.py` y `rmvpe.py`, y `core/tools/`) importa `torch` (`grep -rn "import torch"`). Falta confirmarlo en ejecución (fase 0: el proceso `pythonw -m core` no debe aparecer en `nvidia-smi`).
 
@@ -60,5 +60,20 @@ Avance: `tts.py` revisado 103/103 · `rvc.py` revisado 209/209 · `rvc_worker.py
 - El venv usa una versión *nightly* de PyTorch (`2.15.0.dev20260907+cu126`): se revisa en la fase 10.
 
 **Propuesta:** descargar ContentVec durante la instalación (`setup.md`) o con un timeout mayor solo para la primera carga; `strict=True` (o registrar las claves que falten); vectorizar la consulta FAISS como en RVC.
+
+### H-042 · `rmvpe.py` es una copia del original de RVC con restos de depuración
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/rmvpe.py:1`, `:334`, `:365-432`
+- **Categoría:** mantenibilidad
+
+**Qué pasa:** el archivo es el `rmvpe.py` del proyecto RVC (comentarios en chino, ruta del autor original en `:421`). Importa `pdb` y `traceback` sin usarlos, y tiene bloques de depuración comentados. `torch.load` (`:334`) depende del valor por defecto de la versión de torch para ser seguro (ver H-041). No hay cabecera de licencia ni referencia al origen.
+
+**Propuesta:** añadir una cabecera con el origen y la licencia (RVC es MIT), quitar `pdb`/`traceback` y el código comentado, y pasar `weights_only=True` explícito. Incluirlo en la comparación con el original de la fase 7.
+
+### Resumen de la fase 6
+
+5 hallazgos (1 medio, 4 bajos). El aislamiento de la GPU está bien planteado: `torch` no entra en el proceso principal, el worker sale solo al cerrarse su stdin y los `.pth` se cargan con `weights_only`. El fallo importante es el desfase del protocolo tras un timeout (H-038), que la primera descarga de ContentVec (H-041) hace bastante probable.
 
 ### Notas para siguientes pasos

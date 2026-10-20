@@ -136,10 +136,10 @@ Preguntas que deben quedar respondidas:
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `core/tts.py` | 103 | [ ] |
-| `core/rvc.py` (`RVCManager`) | 209 | [ ] |
-| `core/rvc_worker.py` | 392 | [ ] |
-| `core/rmvpe.py` | 432 | [ ] |
+| `core/tts.py` | 103 | [x] |
+| `core/rvc.py` (`RVCManager`) | 209 | [x] |
+| `core/rvc_worker.py` | 392 | [x] |
+| `core/rmvpe.py` | 432 | [x] |
 
 - **Regla principal**: confirmar con `grep` y en ejecución que el proceso principal nunca importa `torch`.
 - Protocolo JSON-RPC por stdio: ¿qué pasa si el worker escribe basura en stdout, se cuelga o muere a mitad de una conversión?
