@@ -102,4 +102,5 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-041 | Baja | confirmado | `core/rvc_worker.py:90` | Detalles de `rvc_worker.py` |
 | H-042 | Baja | confirmado | `core/rmvpe.py:1` | `rmvpe.py` es una copia de RVC con restos de depuración |
 | H-043 | Baja | confirmado | `core/infer_pack/` | Falta la licencia MIT de RVC; media `models.py` sin uso |
+| H-044 | Baja | por-verificar | `app/src/main.ts:184` | Mostrar a Miku quita el foco y pierde órdenes en animaciones |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |

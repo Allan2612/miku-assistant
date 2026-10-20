@@ -22,7 +22,9 @@ El texto llega a `pipeline.handle_text_input` (`server.py:156`) → Gemini → `
 
 **Prueba en vivo pendiente:** con el backend arrancado, abrir un HTML local con el código de arriba y enviar un texto inocuo ("¿qué hora es?"). Si Miku responde, queda confirmado en ejecución.
 
-**Propuesta:** las dos cosas a la vez:
+**Dato de la fase 8:** el frontend actual es "solo voz" y **no envía nunca `text_input`** (`sendTextInput` no se llama en ningún sitio de `app/src`). Esa rama del servidor solo la usaría un atacante.
+
+**Propuesta:** quitar o desactivar la rama `text_input` de `server.py` mientras no haya caja de texto, y además:
 1. `websockets.serve(..., origins=[<origen de la app Tauri>])`. En Tauri v2 en Windows el origen es `http://tauri.localhost` (comprobarlo en la fase 9); en desarrollo, `http://localhost:1420`.
 2. Un token aleatorio generado al arrancar, que `start.bat`/Tauri pasen al frontend y que el servidor exija en el primer mensaje.
 
