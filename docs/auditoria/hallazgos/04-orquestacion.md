@@ -1,6 +1,6 @@
 # Fase 4 · Orquestación y arranque
 
-Avance: `__main__.py` revisado 160/160 · `pipeline.py` 0/388 · `resources.py` 0/104 · `config.py` 0/206 · `config.yaml` revisado 27/27
+Avance: `__main__.py` revisado 160/160 · `pipeline.py` revisado 388/388 · `resources.py` 0/104 · `config.py` 0/206 · `config.yaml` revisado 27/27
 
 ### H-028 · Whisper y el worker de RVC se cargan al arrancar el PC, no al activar a Miku
 
@@ -30,6 +30,45 @@ Avance: `__main__.py` revisado 160/160 · `pipeline.py` 0/388 · `resources.py` 
 - En Windows no se instalan manejadores de señales, así que el bloque `finally` (que termina el worker de RVC) solo se ejecuta con Ctrl+C. `stop.bat` mata el proceso con `Stop-Process -Force`, sin limpieza (se revisa en las fases 6 y 10).
 
 **Propuesta:** `RotatingFileHandler` con ruta absoluta, host y puerto en la config, y guardar las tareas en un set.
+
+### H-030 · Un error al procesar texto deja la wake word en pausa para siempre
+
+- **Severidad:** Media
+- **Estado:** confirmado
+- **Ubicación:** `core/pipeline.py:280-334` (comparar con el `try/except/finally` de `:169-262`)
+- **Categoría:** error
+
+**Qué pasa:** `handle_text_input` pausa la wake word (`:285`) y solo la reanuda en el camino sin voz (`:331`) o cuando llega `speak_done`. No tiene `try/except`: si `brain.chat`, `tts.synthesize` o un `broadcast` lanzan una excepción (por ejemplo el `RuntimeError` de H-020), la corrutina termina sin reanudar la wake word ni volver a `idle`. Miku deja de responder a "hey Miku" hasta reiniciar, y la interfaz se queda en "pensando". La ruta de voz sí está protegida.
+
+**Propuesta:** envolver el cuerpo en el mismo `try/except` que la ruta de voz, con la reanudación de la wake word en el `except`.
+
+### H-031 · Los avisos de temporizador se pisan con la conversación y pueden despertar a la wake word
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/pipeline.py:118-141`, `:77`
+- **Categoría:** error
+
+**Qué pasa:** `announce_timer` no toma el `_pipeline_lock`, no pausa la wake word, no marca `_is_speaking` ni programa el watchdog. Si un temporizador vence mientras el usuario habla o Miku responde, se envían dos `speak` a la vez, y la voz de Miku por los altavoces puede activar la propia wake word. Además, el watchdog estima la duración por caracteres (`0,15 s × caracteres + 6 s`); si el audio de RVC dura más, la wake word se reanuda con Miku aún hablando.
+
+**Propuesta:** que `announce_timer` espere al `_pipeline_lock` y use el mismo bloque de "hablar" que el resto (pausar la wake word, `_is_speaking`, watchdog).
+
+### H-032 · Detalles de `pipeline.py`
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/pipeline.py:231-254`, `:312-334`, `:347-388`, `:257`, `:276-278`, `:187`
+- **Categoría:** mantenibilidad
+
+**Qué pasa:**
+
+- El bloque de "hablar" (expresión, subtítulo, `speak`, watchdog, o degradación) está copiado cuatro veces: voz, texto, temporizador y saludo.
+- `__main__.py:129` dice que el saludo es "once-per-day", pero `check_startup_greeting` saluda en **cada** arranque del backend (el import `date` no se usa). Además precarga RVC en la GPU para hablar (refuerza H-028).
+- Los errores se registran sin traza (`logger.error("...%s", e)`, `:257`; `logger.debug` en `:388`), lo que hace muy difícil depurar.
+- Si el pipeline está ocupado, el texto que escribe el usuario se descarta en silencio (`:276-278`).
+- `initial_timeout=5.5` está fijo en el código.
+
+**Propuesta:** extraer un método `_speak(text, emotion)`, guardar la fecha del último saludo en `cache/`, y usar `logger.exception`.
 
 ### Notas para siguientes pasos
 

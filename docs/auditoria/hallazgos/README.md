@@ -76,6 +76,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-025 | Media | confirmado | `core/llm.py:337` | El atajo local bloquea el bucle de eventos |
 | H-026 | Media | confirmado | `core/llm.py:384` | Las llamadas a Gemini no tienen tiempo máximo |
 | H-028 | Media | confirmado | `core/__main__.py:125` | Whisper y RVC se cargan al arrancar el PC |
+| H-030 | Media | confirmado | `core/pipeline.py:280` | Un error al procesar texto deja la wake word en pausa |
 | H-004 | Baja | confirmado | `core/tools/__init__.py:29` | `print` sueltos y argumentos completos en logs |
 | H-005 | Baja | confirmado | `core/tools/__init__.py:49` | Nombre de herramienta repetido se sobrescribe |
 | H-009 | Baja | confirmado | `core/tools/apps.py:38` | Alias de apps fijos; `config.yaml → apps` se ignora |
@@ -88,4 +89,6 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-022 | Baja | confirmado | `app/src/ws.ts:58` | El cliente reenvía mensajes viejos al reconectar |
 | H-027 | Baja | confirmado | `core/llm.py:408` | Detalles de `llm.py` |
 | H-029 | Baja | confirmado | `core/__main__.py:30` | Detalles de `__main__.py` |
+| H-031 | Baja | confirmado | `core/pipeline.py:118` | Avisos de temporizador se pisan con la conversación |
+| H-032 | Baja | confirmado | `core/pipeline.py:231` | Detalles de `pipeline.py` |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |
