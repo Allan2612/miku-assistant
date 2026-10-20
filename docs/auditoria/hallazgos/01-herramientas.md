@@ -37,7 +37,7 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 
 **Qué pasa:** el docstring del módulo promete "Timeout of 5s per tool execution", pero el wrapper llama `func(*args, **kwargs)` de forma síncrona sin límite. Una herramienta colgada (p. ej. `find_file` en un disco lento o de red) bloquea el turno. Si Gemini ejecuta las herramientas en el hilo del bucle `asyncio`, se congela todo el backend.
 
-**Por verificar:** cómo invoca `llm.py` las herramientas (hilo propio o bucle de eventos). Se revisa en la fase 3.
+**Verificado en la fase 3:** cuando las llama Gemini, google-genai 2.31.0 ejecuta las herramientas síncronas con `asyncio.to_thread` (`_extra_utils.py:434`), así que una herramienta colgada bloquea ese turno pero no el backend entero. El atajo local de `llm.py` sí las llama dentro del bucle de eventos (ver H-025).
 
 **Propuesta:** quitar la promesa del docstring o aplicar el límite donde se invocan las herramientas (`asyncio.wait_for` + `to_thread`).
 

@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** fases 1-2 completas, fase 3 en curso (fase 0 pendiente: mediciones y análisis automáticos)
+- **Estado:** fases 1-3 completas, fase 4 en curso (fase 0 pendiente: mediciones y análisis automáticos)
 
 ## Archivos
 
@@ -65,6 +65,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-001 | Alta | confirmado | `core/tools/__init__.py:21` | La confirmación de acciones destructivas no está implementada en código |
 | H-007 | Alta | por-verificar | `core/tools/apps.py:367` | `type_text` + alias de consola permiten ejecutar comandos |
 | H-008 | Alta | confirmado | `core/tools/apps.py:290` | `close_app` mata procesos por subcadena y con `kill()` |
+| H-023 | Alta | confirmado | `core/llm.py:249` | El atajo local cierra procesos con "apaga la luz" o "apaga el PC" |
 | H-020 | Media | confirmado | `core/server.py:50` | `broadcast` falla si cambian los clientes mientras envía |
 | H-002 | Media | confirmado | `core/tools/apps.py:271` | `close_app` cierra apps sin confirmación |
 | H-003 | Media | confirmado | `core/tools/__init__.py:33` | El timeout de 5 s por herramienta no existe |
@@ -72,6 +73,9 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-013 | Media | confirmado | `core/tools/media.py:86` | `media_control` y `mute` hacen lo contrario de lo pedido |
 | H-015 | Media | confirmado | `core/tools/system.py:80` | `shutdown_pc` pregunta por una acción y ejecuta otra |
 | H-016 | Media | por-verificar | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca y aun así confirmarse |
+| H-024 | Media | confirmado | `core/llm.py:227` | El atajo local secuestra peticiones y siempre dice que funcionó |
+| H-025 | Media | confirmado | `core/llm.py:337` | El atajo local bloquea el bucle de eventos |
+| H-026 | Media | confirmado | `core/llm.py:384` | Las llamadas a Gemini no tienen tiempo máximo |
 | H-004 | Baja | confirmado | `core/tools/__init__.py:29` | `print` sueltos y argumentos completos en logs |
 | H-005 | Baja | confirmado | `core/tools/__init__.py:49` | Nombre de herramienta repetido se sobrescribe |
 | H-009 | Baja | por-verificar | `core/tools/apps.py:38` | Alias de apps fijos; `config.yaml → apps` se ignora |
@@ -82,3 +86,4 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-018 | Baja | confirmado | `core/tools/web.py:15` | Código duplicado y descripciones que no cuadran |
 | H-021 | Baja | confirmado | `core/server.py:13` | Detalles de `server.py` |
 | H-022 | Baja | confirmado | `app/src/ws.ts:58` | El cliente reenvía mensajes viejos al reconectar |
+| H-027 | Baja | confirmado | `core/llm.py:408` | Detalles de `llm.py` |

@@ -91,7 +91,7 @@ Preguntas que deben quedar respondidas:
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `core/llm.py` | 441 | [ ] |
+| `core/llm.py` | 441 | [x] |
 
 - ¿La API key se lee solo de `.env` y nunca aparece en logs ni en errores?
 - **Inyección de prompts**: ¿qué texto externo llega al modelo (resultados de herramientas, títulos de ventanas, contenido web, notas)? ¿Puede ese texto pedir una herramienta destructiva sin confirmación?
