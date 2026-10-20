@@ -80,6 +80,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-034 | Media | por-verificar | `core/audio_in.py:100` | VAD por energía: con ruido graba hasta el máximo |
 | H-035 | Media | por-verificar | `core/stt.py:92` | El prompt de Whisper puede hacer oír comandos en el ruido |
 | H-038 | Media | confirmado | `core/rvc.py:99` | Tras un timeout de RVC, Miku dice la frase anterior |
+| H-045 | Media | confirmado | `app/src/live2d.ts:551` | Interrumpir a Miku deja un intervalo de 60 ms para siempre |
 | H-004 | Baja | confirmado | `core/tools/__init__.py:29` | `print` sueltos y argumentos completos en logs |
 | H-005 | Baja | confirmado | `core/tools/__init__.py:49` | Nombre de herramienta repetido se sobrescribe |
 | H-009 | Baja | confirmado | `core/tools/apps.py:38` | Alias de apps fijos; `config.yaml → apps` se ignora |
@@ -103,4 +104,5 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-042 | Baja | confirmado | `core/rmvpe.py:1` | `rmvpe.py` es una copia de RVC con restos de depuración |
 | H-043 | Baja | confirmado | `core/infer_pack/` | Falta la licencia MIT de RVC; media `models.py` sin uso |
 | H-044 | Baja | por-verificar | `app/src/main.ts:184` | Mostrar a Miku quita el foco y pierde órdenes en animaciones |
+| H-046 | Baja | confirmado | `app/src/live2d.ts:170` | Detalles de `live2d.ts` |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |
