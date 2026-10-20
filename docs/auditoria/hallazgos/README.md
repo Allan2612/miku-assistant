@@ -99,4 +99,5 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-037 | Baja | confirmado | `core/wakeword.py:80` | Detalles de `wakeword.py` |
 | H-039 | Baja | confirmado | `core/rvc.py:74` | Detalles de `rvc.py` |
 | H-040 | Baja | confirmado | `core/tts.py:35` | Caché de voz sin límite; frases fijas sin precargar |
+| H-041 | Baja | confirmado | `core/rvc_worker.py:90` | Detalles de `rvc_worker.py` |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |
