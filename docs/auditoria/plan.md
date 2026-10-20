@@ -226,10 +226,10 @@ Es código de terceros (RVC/VITS). Se revisa para detectar modificaciones locale
 
 No son código de producción, pero se leen enteros porque pueden contener secretos, rutas personales o lógica que debería estar en tests reales.
 
-- [ ] Leer cada archivo y clasificarlo en una tabla dentro de `hallazgos/11-scratch.md`: **convertir en test**, **conservar como herramienta de diagnóstico** o **borrar**.
-- [ ] Prestar atención a `test_token.py`, `test_launch_with_token.py`, `test_createprocess_desktop.py` y `test_switch_desktop.py`: manipulan tokens y escritorios de Windows.
-- [ ] `test_suite.py` es lo más parecido a una batería de tests: anotar qué cubre y qué no.
-- [ ] `train_hey_miku*.py` (tres versiones): decidir cuál es la buena.
+- [x] Leer cada archivo y clasificarlo en una tabla dentro de `hallazgos/11-scratch.md`: **convertir en test**, **conservar como herramienta de diagnóstico** o **borrar**.
+- [x] Prestar atención a `test_token.py`, `test_launch_with_token.py`, `test_createprocess_desktop.py` y `test_switch_desktop.py`: manipulan tokens y escritorios de Windows.
+- [x] `test_suite.py` es lo más parecido a una batería de tests: anotar qué cubre y qué no.
+- [x] `train_hey_miku*.py` (tres versiones): decidir cuál es la buena.
 
 ## Fase 12: documentación frente a código
 
