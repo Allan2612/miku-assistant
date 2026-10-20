@@ -103,7 +103,7 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 ### H-009 · Los alias de apps están fijos en el código; `config.yaml → apps` se ignora
 
 - **Severidad:** Baja
-- **Estado:** por-verificar (confirmar en la fase 4 que `config.py` no los carga)
+- **Estado:** confirmado (fase 4: `config.py:138` y `:205` cargan `apps` en la config, pero ningún módulo lee `config.apps`; tampoco se usa `tools.file_search_roots`, y `files.py:18-22` tiene sus carpetas fijas)
 - **Ubicación:** `core/tools/apps.py:38-69`
 - **Categoría:** mantenibilidad / docs
 
@@ -191,7 +191,7 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 ### H-016 · Un temporizador puede no sonar nunca y aun así confirmarse
 
 - **Severidad:** Media
-- **Estado:** por-verificar (depende de si `set_timer_notifier` se llama siempre con `loop`; se revisa en la fase 4)
+- **Estado:** descartado (fase 4: `pipeline.py:67` llama `set_timer_notifier(..., loop=asyncio.get_running_loop())` dentro del bucle principal, así que `_MAIN_LOOP` siempre está configurado y el temporizador suena. Queda solo la mejora menor de avisar si vence sin notificador)
 - **Ubicación:** `core/tools/timers.py:30-52`, `:92-102`, `:170-171`
 - **Categoría:** error
 
