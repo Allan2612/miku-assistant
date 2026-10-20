@@ -92,4 +92,4 @@ Avance: `__main__.py` revisado 160/160 · `pipeline.py` revisado 388/388 · `res
 
 ### Notas para siguientes pasos
 
-- Fase 10: el filtro de `stop.bat` (`CommandLine -like '*miku-assistant*'`) coincide también con el propio PowerShell que lo ejecuta y con el `cmd.exe` que corre `stop.bat` (su línea de comandos contiene la ruta del proyecto), y con VS Code si tiene abierta la carpeta. Verificar si el script se mata a sí mismo antes de llegar al paso del worker de RVC.
+- **Revisado en la fase 10 (H-053).** El filtro de `stop.bat` (`CommandLine -like '*miku-assistant*'`) coincide también con el propio PowerShell que lo ejecuta y con el `cmd.exe` que corre `stop.bat` (su línea de comandos contiene la ruta del proyecto), y con VS Code si tiene abierta la carpeta. Verificar si el script se mata a sí mismo antes de llegar al paso del worker de RVC.

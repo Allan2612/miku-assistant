@@ -206,15 +206,15 @@ Es código de terceros (RVC/VITS). Se revisa para detectar modificaciones locale
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `core/requirements.txt` | 18 | [ ] |
-| `app/package.json` | 25 | [ ] |
-| `app/vite.config.ts` | 38 | [ ] |
-| `app/tsconfig.json` | 23 | [ ] |
-| `start.bat` | 37 | [ ] |
-| `stop.bat` | 20 | [ ] |
-| `install_autostart.bat` | 23 | [ ] |
-| `uninstall_autostart.bat` | 19 | [ ] |
-| `.gitignore`, `.env.example` | 39 | [ ] |
+| `core/requirements.txt` | 18 | [x] |
+| `app/package.json` | 25 | [x] |
+| `app/vite.config.ts` | 38 | [x] |
+| `app/tsconfig.json` | 23 | [x] |
+| `start.bat` | 37 | [x] |
+| `stop.bat` | 20 | [x] |
+| `install_autostart.bat` | 23 | [x] |
+| `uninstall_autostart.bat` | 19 | [x] |
+| `.gitignore`, `.env.example` | 39 | [x] |
 
 - ¿Las versiones de las dependencias están fijadas? ¿Alguna sin uso?
 - `app/package-lock.json` (2010 líneas) no se lee a mano: se revisa con `npm audit` (fase 0) y se comprueba que coincide con `package.json`.
