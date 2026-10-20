@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** fases 1-6 completas, fase 7 en curso (fase 0 pendiente: mediciones y análisis automáticos)
+- **Estado:** fases 1-7 completas, fase 8 en curso (fase 0 pendiente: mediciones y análisis automáticos)
 
 ## Archivos
 
@@ -101,4 +101,5 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-040 | Baja | confirmado | `core/tts.py:35` | Caché de voz sin límite; frases fijas sin precargar |
 | H-041 | Baja | confirmado | `core/rvc_worker.py:90` | Detalles de `rvc_worker.py` |
 | H-042 | Baja | confirmado | `core/rmvpe.py:1` | `rmvpe.py` es una copia de RVC con restos de depuración |
+| H-043 | Baja | confirmado | `core/infer_pack/` | Falta la licencia MIT de RVC; media `models.py` sin uso |
 | H-016 | — | descartado | `core/tools/timers.py:30` | Un temporizador puede no sonar nunca (el bucle sí se configura) |

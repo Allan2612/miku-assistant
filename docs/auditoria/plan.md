@@ -155,12 +155,12 @@ Es código de terceros (RVC/VITS). Se revisa para detectar modificaciones locale
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `core/infer_pack/models.py` | 1142 | [ ] |
-| `core/infer_pack/modules.py` | 522 | [ ] |
-| `core/infer_pack/attentions.py` | 417 | [ ] |
-| `core/infer_pack/transforms.py` | 193 | [ ] |
-| `core/infer_pack/commons.py` | 164 | [ ] |
-| `core/infer_pack/__init__.py` | 0 | [ ] |
+| `core/infer_pack/models.py` | 1142 | [x] |
+| `core/infer_pack/modules.py` | 522 | [x] |
+| `core/infer_pack/attentions.py` | 417 | [x] |
+| `core/infer_pack/transforms.py` | 193 | [x] |
+| `core/infer_pack/commons.py` | 164 | [x] |
+| `core/infer_pack/__init__.py` | 0 | [x] |
 
 - Identificar de qué versión del repo original de RVC viene y compararlo con `diff` contra ella. Cada diferencia se lee línea por línea.
 - Anotar la licencia del original y si se cumple.

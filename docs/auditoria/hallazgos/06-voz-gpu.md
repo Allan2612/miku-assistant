@@ -1,6 +1,6 @@
 # Fase 6 · Voz de salida y GPU
 
-Avance: `tts.py` revisado 103/103 · `rvc.py` revisado 209/209 · `rvc_worker.py` revisado 392/392 · `rmvpe.py` revisado como código de terceros (cabecera, carga, inferencia y decodificación, líneas 1-40 y 300-432; las capas de red 41-299 se comparan con el original en la fase 7) · **fase completa**
+Avance: `tts.py` revisado 103/103 · `rvc.py` revisado 209/209 · `rvc_worker.py` revisado 392/392 · `rmvpe.py` revisado 432/432 (las capas de red 1-219 se verificaron en la fase 7 comparando su AST con el original; `E2E`, `MelSpectrogram` y `RMVPE` se leyeron a mano) · **fase completa**
 
 **Regla principal verificada:** ningún módulo del proceso principal (`core/*.py` salvo `rvc_worker.py` y `rmvpe.py`, y `core/tools/`) importa `torch` (`grep -rn "import torch"`). Falta confirmarlo en ejecución (fase 0: el proceso `pythonw -m core` no debe aparecer en `nvidia-smi`).
 
@@ -70,7 +70,9 @@ Avance: `tts.py` revisado 103/103 · `rvc.py` revisado 209/209 · `rvc_worker.py
 
 **Qué pasa:** el archivo es el `rmvpe.py` del proyecto RVC (comentarios en chino, ruta del autor original en `:421`). Importa `pdb` y `traceback` sin usarlos, y tiene bloques de depuración comentados. `torch.load` (`:334`) depende del valor por defecto de la versión de torch para ser seguro (ver H-041). No hay cabecera de licencia ni referencia al origen.
 
-**Propuesta:** añadir una cabecera con el origen y la licencia (RVC es MIT), quitar `pdb`/`traceback` y el código comentado, y pasar `weights_only=True` explícito. Incluirlo en la comparación con el original de la fase 7.
+Además, la rama `else` de `E2E` (`:250`) usa `N_MELS` y `N_CLASS`, que no están definidas: solo no falla porque siempre se construye con `n_gru=1` (`:333`).
+
+**Propuesta:** añadir una cabecera con el origen y la licencia (RVC es MIT), quitar `pdb`/`traceback`, el código comentado y la rama `else` muerta, y pasar `weights_only=True` explícito.
 
 ### Resumen de la fase 6
 
