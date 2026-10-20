@@ -1,6 +1,6 @@
 /**
  * Hand-crafted appear/disappear animations and particle sparkles.
- * Complies with ARCHITECTURE.md: no tween libraries, <= 20 temporary particles, auto-cleanup.
+ * Complies with docs/architecture.md: no tween libraries, <= 20 temporary particles, auto-cleanup.
  */
 
 // Easing functions

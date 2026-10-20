@@ -3,7 +3,7 @@
 Trabaja fase por fase. Cada fase termina con una prueba que hace el usuario. No avances sin su confirmación.
 
 ## Fase 0 — Esqueleto
-- [x] Estructura de carpetas según `ARCHITECTURE.md`, `.gitignore`, `CHANGELOG.md`, `config.yaml`, `.env.example`
+- [x] Estructura de carpetas según `architecture.md`, `.gitignore`, `CHANGELOG.md`, `config.yaml`, `.env.example`
 - [x] `core/` con venv, `requirements.txt` mínimo y `python -m core` que arranca y loguea la config
 - [x] `app/` Tauri v2 + Vite + TS vanilla que abre una ventana con las flags de optimización de WebView2
 - **Prueba:** ambos arrancan sin errores.
@@ -12,7 +12,7 @@ Trabaja fase por fase. Cada fase termina con una prueba que hace el usuario. No 
 - [x] Ventana transparente, sin bordes, siempre encima, fuera de la barra de tareas, anclada abajo a la derecha
 - [x] Carga del modelo Live2D desde `config.yaml` con idle, parpadeo y mirada al cursor
 - [x] Click-through con hit-test sobre el modelo (activo solo cuando es visible)
-- [x] Animaciones de **aparecer** y **desaparecer** según `ARCHITECTURE.md`
+- [x] Animaciones de **aparecer** y **desaparecer** según `architecture.md`
 - [x] Atajo global que alterna mostrar/ocultar; render y timers detenidos al ocultar
 - [x] Icono en bandeja (Mostrar / Ocultar / Salir)
 - **Prueba:** el atajo la hace aparecer y desaparecer con fluidez; oculta, el Administrador de tareas muestra 0 % GPU y < 250 MB de RAM en `app`.
@@ -20,14 +20,14 @@ Trabaja fase por fase. Cada fase termina con una prueba que hace el usuario. No 
 ## Fase 2 — Cerebro por texto
 - [x] Servidor WS en `core/` y cliente con reconexión en `app/`
 - [x] Caja de texto (aparece al hacer clic en Miku) → `text_input`
-- [x] `llm.py` con Gemini, persona de `PERSONA.md`, historial corto y parseo de `[emocion]`
+- [x] `llm.py` con Gemini, persona de `persona.md`, historial corto y parseo de `[emocion]`
 - [x] Subtítulos tipo burbuja + cambio de expresión
 - [x] Auto-ocultar tras `hide_after_seconds`
 - **Prueba:** escribes "hola, ¿quién eres?" y Miku responde en burbuja con expresión.
 
 ## Fase 3 — Miku habla (voz base)
 - [x] `tts.py` con edge-tts → wav → mensaje `speak`
-- [x] Caché en disco (`cache/voice/`) para las frases fijas de `PERSONA.md`
+- [x] Caché en disco (`cache/voice/`) para las frases fijas de `persona.md`
 - [x] Reproducción con lip sync (`model.speak()`) y `speak_done`
 - [x] Degradación: si falla TTS, solo subtítulo
 - **Prueba:** responde con voz y la boca se mueve sincronizada.
@@ -40,7 +40,7 @@ Trabaja fase por fase. Cada fase termina con una prueba que hace el usuario. No 
 - **Prueba:** atajo → hablas → transcribe bien en < 0.8 s sin usar VRAM y responde con voz. Medir latencia total (objetivo < 3 s).
 
 ## Fase 5 — Control del PC
-- [x] Registro de herramientas y declaraciones para Gemini según `TOOLS.md`
+- [x] Registro de herramientas y declaraciones para Gemini según `tools.md`
 - [x] Implementación de herramientas (apps, multimedia, volumen, web, sistema, archivos, notas y temporizadores)
 - [x] Flujo de confirmación para acciones destructivas (protección obligatoria para apagar/reiniciar la PC)
 - **Prueba:** "abre el bloc de notas", "cierra el bloc de notas", "pon el volumen al 50", "pausa la música", "apaga la PC" (pide confirmación).

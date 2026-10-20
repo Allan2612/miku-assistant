@@ -1,6 +1,6 @@
 /**
  * Click-through management with hit-testing against Live2D model bounds.
- * Complies with ARCHITECTURE.md: ~150ms check only while visible, completely stopped when hidden.
+ * Complies with docs/architecture.md: ~150ms check only while visible, completely stopped when hidden.
  */
 
 import { getCurrentWindow } from "@tauri-apps/api/window";

@@ -32,7 +32,7 @@ Si TTS o RVC fallan, Miku responde con la voz base o solo con subtítulo; nunca 
 ### Decisiones clave
 
 - **Nada de `torch` en el proceso principal.** En Windows, inicializar CUDA deja 300–500 MB residentes que no se liberan. Por eso RVC corre en un subproceso aislado que se puede matar, y Whisper corre en CPU.
-- **Herramientas en lista cerrada** ([docs/TOOLS.md](docs/TOOLS.md)), registradas con el decorador `@tool`. El LLM nunca ejecuta comandos de shell arbitrarios.
+- **Herramientas en lista cerrada** ([docs/tools.md](docs/tools.md)), registradas con el decorador `@tool`. El LLM nunca ejecuta comandos de shell arbitrarios.
 - **Sin frameworks de UI**: TypeScript + Vite en vanilla, para mantener baja la RAM de WebView2.
 - **Atajo local** para comandos frecuentes (volumen, media, etc.): se ejecutan sin pasar por Gemini.
 
@@ -92,6 +92,7 @@ stop.bat
 
 - [docs/architecture.md](docs/architecture.md): arquitectura, protocolo WebSocket y presupuesto de recursos
 - [docs/roadmap.md](docs/roadmap.md): fases del proyecto
-- [docs/TOOLS.md](docs/TOOLS.md): herramientas disponibles
-- [docs/PERSONA.md](docs/PERSONA.md): personalidad, emociones y frases fijas
+- [docs/tools.md](docs/tools.md): herramientas disponibles
+- [docs/persona.md](docs/persona.md): personalidad, emociones y frases fijas
 - [CHANGELOG.md](CHANGELOG.md): historial de cambios
+- [docs/auditoria/plan.md](docs/auditoria/plan.md): plan de auditoría total y sus [hallazgos](docs/auditoria/hallazgos/)

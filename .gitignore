@@ -11,7 +11,7 @@ app/public/lib/live2dcubismcore*.js
 *.pth
 *.index
 *.onnx
-dowloads/
+
 downloads/
 
 # Python
