@@ -1,6 +1,6 @@
 # Fase 1 · Herramientas de control del PC
 
-Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` revisado 173/173 · `notes.py` revisado 79/79 (sin hallazgos) · `system.py` revisado 97/97 · `timers.py` 0/174 · `web.py` 0/97
+Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` revisado 173/173 · `notes.py` revisado 79/79 (sin hallazgos) · `system.py` revisado 97/97 · `timers.py` revisado 174/174 · `web.py` 0/97
 
 ### H-001 · La confirmación de acciones destructivas no está implementada en código
 
@@ -187,6 +187,31 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 **Cómo se reproduce:** `shutdown_pc(mode="apagar")` → "¿Estás seguro de que deseas suspender la computadora?" → `shutdown_pc(mode="apagar", confirmed=True)` → `shutdown /s /t 30`.
 
 **Propuesta:** normalizar `mode` a `shutdown|restart|sleep` al principio (mapeando los nombres en español) y usar ese valor tanto para el mensaje como para la ejecución.
+
+### H-016 · Un temporizador puede no sonar nunca y aun así confirmarse
+
+- **Severidad:** Media
+- **Estado:** por-verificar (depende de si `set_timer_notifier` se llama siempre con `loop`; se revisa en la fase 4)
+- **Ubicación:** `core/tools/timers.py:30-52`, `:92-102`, `:170-171`
+- **Categoría:** error
+
+**Qué pasa:** si las herramientas se ejecutan en un hilo sin bucle de eventos y `_MAIN_LOOP` no está configurado, `_schedule_worker` devuelve `None`. `set_timer` igualmente responde "Temporizador configurado", pero nunca suena. Después, `cancel_timer` falla con `AttributeError` al llamar `None.cancel()`. Tampoco hay aviso si `_TIMER_NOTIFIER` es `None`: el temporizador vence en silencio.
+
+**Propuesta:** si `_schedule_worker` devuelve `None`, responder `ok: False`; registrar un `warning` si vence sin notificador.
+
+### H-017 · Detalles de `timers.py`: carrera, mensajes y persistencia
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/timers.py:92-100`, `:61`, `:89`, `:130`, `:16`
+- **Categoría:** error / mantenibilidad
+
+**Qué pasa:**
+- La tarea se programa (`:92`) **antes** de registrar el temporizador en `_TIMERS` (`:94`). Con `run_coroutine_threadsafe` y una duración muy corta, el `finally` del worker hace `pop` antes de que exista la entrada, y queda un temporizador fantasma en `list_timers` para siempre.
+- El aviso dice "¡Tu temporizador de {label} ha terminado!": con la etiqueta por defecto queda "temporizador de Temporizador", y con recordatorios "temporizador de Recordatorio: tomar agua".
+- No hay límite de cantidad ni de duración, y todo vive en memoria: un recordatorio para mañana se pierde si se reinicia el backend, sin avisar.
+
+**Propuesta:** registrar en `_TIMERS` antes de programar; mensaje distinto para recordatorios; tope de temporizadores activos (p. ej. 20).
 
 ### Notas para siguientes pasos
 
