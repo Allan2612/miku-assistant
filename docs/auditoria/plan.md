@@ -170,14 +170,14 @@ Es código de terceros (RVC/VITS). Se revisa para detectar modificaciones locale
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `app/src/main.ts` | 384 | [ ] |
-| `app/src/live2d.ts` | 580 | [ ] |
-| `app/src/animations.ts` | 219 | [ ] |
-| `app/src/clickthrough.ts` | 99 | [ ] |
-| `app/src/ui.ts` | 126 | [ ] |
-| `app/src/styles.css` | 225 | [ ] |
-| `app/index.html` (incluye el parche de Cubism 5) | 41 | [ ] |
-| `app/public/samples/index.html` | 72 | [ ] |
+| `app/src/main.ts` | 384 | [x] |
+| `app/src/live2d.ts` | 580 | [x] |
+| `app/src/animations.ts` | 219 | [x] |
+| `app/src/clickthrough.ts` | 99 | [x] |
+| `app/src/ui.ts` | 126 | [x] |
+| `app/src/styles.css` | 225 | [x] |
+| `app/index.html` (incluye el parche de Cubism 5) | 41 | [x] |
+| `app/public/samples/index.html` | 72 | [x] |
 
 - **XSS**: ¿el texto del LLM o del usuario se inserta con `innerHTML`? Con `withGlobalTauri` activo, un XSS da acceso a la API de Tauri.
 - Con Miku oculta: ¿`app.ticker.stop()` y el intervalo de click-through se detienen de verdad? Comprobarlo con la pestaña de rendimiento de las DevTools.

@@ -1,6 +1,6 @@
 # Fase 8 · Frontend (`app/src/`)
 
-Avance: `main.ts` revisado 384/384 · `ui.ts` revisado 126/126 · `live2d.ts` revisado 580/580 · `animations.ts` 0/219 · `clickthrough.ts` 0/99 · `styles.css` 0/225 · `index.html` 0/41 · `samples/index.html` 0/72
+Avance: `main.ts` revisado 384/384 · `ui.ts` revisado 126/126 · `live2d.ts` revisado 580/580 · `animations.ts` revisado 219/219 (sin hallazgos) · `clickthrough.ts` revisado 99/99 · `styles.css` revisado 225/225 · `index.html` revisado 41/41 · `samples/index.html` revisado 72/72 · **fase completa**
 
 **XSS verificado:** el texto que viene del backend (subtítulos de Miku y del usuario) se inserta con `textContent` (`ui.ts:47`, `:52`). Los tres `innerHTML` (`ui.ts:24`, `:81`, `:104`) solo contienen cadenas fijas. No hay inyección de HTML por esta vía.
 
@@ -56,6 +56,37 @@ Pasa en cada interrupción (barge-in con el atajo, `toggleMiku`), cada vez que s
 - El *hit-test* usa el rectángulo que envuelve al modelo (`getBounds()`), no la silueta: las zonas transparentes alrededor de Miku bloquean los clics al escritorio.
 
 **Propuesta:** documentar o quitar el valor mágico de `scale`, acotar el zoom (p. ej. entre 0,5× y 1,35× del autoajuste) y revisar la licencia del modelo.
+
+### H-047 · El click-through deja de detectar el ratón en cuanto se activa
+
+- **Severidad:** Media
+- **Estado:** por-verificar (prueba en vivo: con Miku visible, sacar el ratón de ella y volver a ponerlo encima; ¿responde al clic?)
+- **Ubicación:** `app/src/clickthrough.ts:22-29`, `:39`, `:58-85`
+- **Categoría:** error
+
+**Qué pasa:** la posición del ratón se obtiene del evento `mousemove` de la página. Pero cuando la ventana tiene `setIgnoreCursorEvents(true)`, Windows deja de enviarle eventos del ratón: la página ya no recibe `mousemove`. `start()` activa el modo "ignorar" de inmediato (`:39`), así que a partir de ahí `lastX`/`lastY` se quedan congelados en la última posición conocida, y `checkHit` decide con datos viejos cada 150 ms. Si el ratón estaba fuera de Miku, nunca se vuelve a detectar que pasa por encima: no se puede hacer clic, arrastrar ni hacer zoom. Si estaba encima, la ventana se queda capturando clics aunque el ratón se vaya. Tauri no tiene en Windows una opción para "reenviar" el movimiento mientras ignora (como el `forward: true` de Electron).
+
+**Propuesta:** obtener la posición global del cursor en cada comprobación con `cursorPosition()` de `@tauri-apps/api/window` (Tauri v2) y convertirla a coordenadas de la ventana con `outerPosition()` y el factor de escala.
+
+### H-048 · Detalles de `index.html`, `styles.css`, `clickthrough.ts` y la página de muestras
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `app/index.html:15-30`, `app/src/live2d.ts:86-101`, `app/src/styles.css:173`, `:205`, `app/src/clickthrough.ts:68`, `:91`, `app/public/samples/`
+- **Categoría:** mantenibilidad / recursos
+
+**Qué pasa:**
+
+- El parche de compatibilidad con Cubism 5 está duplicado: en `index.html` y en `live2d.ts`. El de `index.html` no marca `_cubism5Patched`, así que `fromMoc` queda envuelto dos veces (inofensivo, pero confuso).
+- `styles.css` tiene animaciones CSS infinitas (`pulseGlow`, `soundWave`, `blinkDots`). `clearSubtitle` oculta la burbuja con una clase, pero el HTML de las ondas del micrófono sigue dentro; hay que confirmar en la fase 0 que, con la ventana oculta, WebView2 no las sigue calculando.
+- `clickthrough.ts` busca selectores de una interfaz que ya no existe (`.miku-input-bar`, `.miku-chat-toggle-btn`, `input`). Además `setIgnoreCursorEvents` devuelve una promesa que no se espera: el `try/catch` no captura sus errores.
+- `app/public/samples/` (página de comparación de voces y 7 `.wav`, ~3,7 MB) se copia dentro del ejecutable de producción, porque todo `public/` se empaqueta.
+
+**Propuesta:** dejar un solo parche de Cubism 5, limpiar los selectores, `await` (o `.catch`) en `setIgnoreCursorEvents`, y mover `samples/` fuera de `public/` (o excluirlo del build).
+
+### Resumen de la fase 8
+
+5 hallazgos (2 medios, 3 bajos). No hay XSS: el texto externo siempre entra con `textContent`. Lo importante son los recursos y la interacción: el intervalo de *lip sync* que se acumula al interrumpir (H-045) y el click-through con coordenadas congeladas (H-047), que conviene probar en vivo.
 
 ### Notas para siguientes pasos
 
