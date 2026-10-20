@@ -77,8 +77,8 @@ Preguntas que deben quedar respondidas:
 
 | Archivo | Líneas | Hecho |
 |---|---|---|
-| `core/server.py` | 218 | [ ] |
-| `app/src/ws.ts` | 142 | [ ] |
+| `core/server.py` | 218 | [x] |
+| `app/src/ws.ts` | 142 | [x] |
 
 - ¿El servidor escucha solo en `127.0.0.1`?
 - ¿Se comprueba la cabecera `Origin`? Cualquier página abierta en el navegador puede conectarse a `ws://127.0.0.1:8765`. Hay que **probarlo**: abrir una página local que se conecte y envíe `text_input`.

@@ -1,6 +1,6 @@
 # Fase 2 · Superficie de red
 
-Avance: `server.py` revisado 218/218 · `ws.ts` 0/142
+Avance: `server.py` revisado 218/218 · `ws.ts` revisado 142/142 · **fase completa**
 
 ### H-019 · Cualquier página web puede controlar a Miku y, a través de ella, el PC
 
@@ -51,3 +51,23 @@ El texto llega a `pipeline.handle_text_input` (`server.py:156`) → Gemini → `
 - No hay límite de longitud del texto: hasta 1 MiB (`max_size` por defecto) se envía tal cual a Gemini y se registra entero en el log (`:60`).
 
 **Propuesta:** importar el tipo desde `websockets.asyncio.server`, procesar `text_input` en una tarea guardada, y limitar el texto (p. ej. 1000 caracteres).
+
+### H-022 · El cliente reenvía mensajes viejos al reconectar y no valida lo que recibe
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `app/src/ws.ts:58-61`, `:103-112`, `:47`, `:66`
+- **Categoría:** error
+
+**Qué pasa:**
+- Mientras el backend está caído, los mensajes se encolan (hasta 20) y se envían todos al reconectar. Un `activate` o un `text_input` de hace minutos se ejecuta de golpe cuando el backend vuelve.
+- `connect()` crea un `WebSocket` nuevo sin cerrar el anterior; si se llama dos veces, quedan dos conexiones y el `onclose` de la vieja programa otra reconexión.
+- Los mensajes entrantes se convierten con `as ServerMessage` sin validar `type` ni campos.
+- El tipo `confirm_request` está declarado (`:14`), pero el servidor nunca lo envía: el flujo de confirmación de `tools.md` no existe (ver H-001).
+- El backoff (×1,5 hasta 10 s, sin límite de intentos) es correcto y barato.
+
+**Propuesta:** encolar solo mensajes que sigan teniendo sentido más tarde (o ninguno, salvo `ready`), cerrar el socket anterior en `connect()` y descartar mensajes con `type` desconocido.
+
+### Resumen de la fase 2
+
+3 hallazgos nuevos más el crítico H-019. **H-019 es el hallazgo más importante hasta ahora**: junto con H-006 convierte cualquier página web visitada en un posible control remoto del PC. Debería arreglarse antes que todo lo demás.

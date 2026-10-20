@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** fase 1 completa, fase 2 en curso (fase 0 pendiente: mediciones y análisis automáticos)
+- **Estado:** fases 1-2 completas, fase 3 en curso (fase 0 pendiente: mediciones y análisis automáticos)
 
 ## Archivos
 
@@ -81,3 +81,4 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-017 | Baja | confirmado | `core/tools/timers.py:92` | Carrera, mensajes y persistencia de temporizadores |
 | H-018 | Baja | confirmado | `core/tools/web.py:15` | Código duplicado y descripciones que no cuadran |
 | H-021 | Baja | confirmado | `core/server.py:13` | Detalles de `server.py` |
+| H-022 | Baja | confirmado | `app/src/ws.ts:58` | El cliente reenvía mensajes viejos al reconectar |
