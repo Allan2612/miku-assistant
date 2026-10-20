@@ -1,6 +1,6 @@
 # Fase 1 · Herramientas de control del PC
 
-Avance: `__init__.py` revisado 77/77 · `apps.py` 0/387 · `files.py` 0/138 · `media.py` 0/173 · `notes.py` 0/79 · `system.py` 0/97 · `timers.py` 0/174 · `web.py` 0/97
+Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` 0/138 · `media.py` 0/173 · `notes.py` 0/79 · `system.py` 0/97 · `timers.py` 0/174 · `web.py` 0/97
 
 ### H-001 · La confirmación de acciones destructivas no está implementada en código
 
@@ -63,6 +63,65 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` 0/387 · `files.py` 0/138 · `
 
 **Propuesta:** `assert tool_name not in _TOOL_REGISTRY`.
 
+### H-006 · `open_app` ejecuta cualquier línea de comandos que le pase el LLM
+
+- **Severidad:** Alta (sube a Crítica si la fase 2 confirma que un tercero puede enviar texto al backend)
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/apps.py:260-261`, `core/tools/apps.py:141-143`, `core/tools/apps.py:171`
+- **Categoría:** seguridad
+
+**Qué pasa:** si el nombre no coincide con un alias ni con un acceso directo, el paso 3 pasa el texto tal cual a `_launch_target`, que lo usa como **línea de comandos** de `CreateProcessW` (`lpApplicationName=None`). Windows toma el primer token como ejecutable y el resto como argumentos. Si eso falla, el último recurso hace `subprocess.Popen(f'cmd.exe /c start "" "{target}"', shell=True)`, donde unas comillas en el texto permiten encadenar comandos con `&`. Esto rompe la regla de `GEMINI.md`: "Nunca implementes ejecución arbitraria de comandos de shell generados por el LLM".
+
+**Cómo se reproduce:** `open_app(name="powershell -c start-process calc")` → no hay alias ni acceso directo → `CreateProcessW` ejecuta `powershell` con esos argumentos y se abre la calculadora. Pasarlo a minúsculas (`_clean_query`) no lo impide.
+
+**Propuesta:** en el paso 3, aceptar solo un nombre de ejecutable simple (`^[\w .-]+$`, sin espacios ni rutas) y lanzarlo con `lpApplicationName` explícito, o eliminar el paso 3. Quitar el recurso `shell=True`.
+
+### H-007 · `type_text` + los alias `cmd`/`powershell`/`terminal` permiten ejecutar comandos
+
+- **Severidad:** Alta
+- **Estado:** por-verificar (falta comprobar en vivo que `
+` pulsa Enter)
+- **Ubicación:** `core/tools/apps.py:63-65`, `core/tools/apps.py:367-385`
+- **Categoría:** seguridad
+
+**Qué pasa:** el LLM puede abrir una consola con `open_app("cmd")` y después escribir en ella con `type_text`. `VkKeyScanW("
+")` devuelve la tecla Enter con el bit de Ctrl, y el código ignora ese bit y pulsa Enter, así que el comando se ejecuta. Sin ninguna inyección de comandos, dos herramientas legítimas encadenadas equivalen a ejecución arbitraria. Además, `type_text` escribe en **cualquier** ventana activa, aunque el usuario haya cambiado de ventana mientras Miku respondía.
+
+**Propuesta:** quitar `cmd`, `powershell` y `terminal` de los alias, y que `type_text` descarte saltos de línea y se niegue a escribir si la ventana activa es una consola (`ConsoleWindowClass`, `CASCADIA_HOSTING_WINDOW_CLASS`).
+
+### H-008 · `close_app` mata procesos por subcadena y con `kill()`
+
+- **Severidad:** Alta
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/apps.py:290-291`
+- **Categoría:** error / seguridad
+
+**Qué pasa:** la condición `query in clean_p` cierra **todo** proceso cuyo nombre contenga el texto. Un nombre corto o mal transcrito por Whisper ("e", "code", "python") mata muchos procesos: `"python"` mata el propio backend de Miku, y una sola letra puede tumbar `explorer.exe` y apps con trabajo sin guardar. Usa `kill()`, que no deja guardar, cuando `tools.md` especifica `terminate()` y confirmación 🔒 (ver H-002).
+
+**Propuesta:** comparar el nombre exacto (o alias exacto), excluir el PID propio y procesos críticos, usar `terminate()` con `kill()` solo tras un tiempo, y exigir confirmación (H-001).
+
+### H-009 · Los alias de apps están fijos en el código; `config.yaml → apps` se ignora
+
+- **Severidad:** Baja
+- **Estado:** por-verificar (confirmar en la fase 4 que `config.py` no los carga)
+- **Ubicación:** `core/tools/apps.py:38-69`
+- **Categoría:** mantenibilidad / docs
+
+**Qué pasa:** `tools.md` dice que `open_app` usa los alias de `config.yaml → apps`, pero `apps.py` usa el diccionario fijo `DEFAULT_APP_ALIASES`. Además, `"google"` abre Opera y la caché del menú Inicio no se refresca nunca: una app instalada después del arranque no se encuentra hasta reiniciar.
+
+**Propuesta:** cargar los alias desde la config, con estos como valor por defecto.
+
+### H-010 · Fugas de handles y llamadas bloqueantes en cada herramienta de ventanas
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/apps.py:104-116`, `:221`, `:230`, `:385`
+- **Categoría:** recursos
+
+**Qué pasa:** `_attach_user_desktop()` abre una estación y un escritorio con `GENERIC_ALL` en **cada** llamada y nunca cierra los handles (`CloseWindowStation`/`CloseDesktop`). Además `time.sleep(0.3)` tras cada apertura y `time.sleep(0.01)` por carácter en `type_text` (hasta 5 s) bloquean el hilo que ejecuta la herramienta (relacionado con H-003).
+
+**Propuesta:** abrir los handles una vez por proceso y cerrarlos, o solo llamar `SetThreadDesktop` cuando haga falta.
+
 ### Notas para siguientes pasos
 
-- `apps.py` registra `type_text` (`apps.py:364`), que escribe texto en la ventana activa. Hay que verificar si está en `tools.md` y qué pasa si la ventana activa es una terminal.
+- `tools.md` lista `list_open_apps`, que no existe en `apps.py`. Revisar en la fase 12.
