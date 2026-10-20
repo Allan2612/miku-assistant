@@ -1,6 +1,6 @@
 # Fase 1 · Herramientas de control del PC
 
-Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` revisado 173/173 · `notes.py` 0/79 · `system.py` 0/97 · `timers.py` 0/174 · `web.py` 0/97
+Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` revisado 173/173 · `notes.py` revisado 79/79 (sin hallazgos) · `system.py` revisado 97/97 · `timers.py` 0/174 · `web.py` 0/97
 
 ### H-001 · La confirmación de acciones destructivas no está implementada en código
 
@@ -174,6 +174,19 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 **Qué pasa:** `set_volume` y `mute` devuelven `ok: True` aunque no haya dispositivos de salida o fallen todos (las excepciones se tragan con `except: pass`), así que Miku confirma algo que no hizo. Además `_attach_user_desktop` está copiado de `apps.py`, con la misma fuga de handles (H-010).
 
 **Propuesta:** devolver `ok: False` si no se aplicó a ningún dispositivo, y mover `_attach_user_desktop` a un módulo común.
+
+### H-015 · `shutdown_pc` pregunta por una acción y ejecuta otra
+
+- **Severidad:** Media
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/system.py:80` frente a `core/tools/system.py:87-96`
+- **Categoría:** error / seguridad
+
+**Qué pasa:** el texto de confirmación solo reconoce `"shutdown"` y `"restart"`; cualquier otro valor se presenta como "suspender". Pero la ejecución acepta también `"apagar"` y `"reiniciar"`. Si el LLM pasa `mode="apagar"`, Miku pregunta "¿deseas **suspender** la computadora?", el usuario dice "sí" y el equipo **se apaga**. Además, la suspensión (`SetSuspendState`) es inmediata, sin los 30 s de margen del apagado.
+
+**Cómo se reproduce:** `shutdown_pc(mode="apagar")` → "¿Estás seguro de que deseas suspender la computadora?" → `shutdown_pc(mode="apagar", confirmed=True)` → `shutdown /s /t 30`.
+
+**Propuesta:** normalizar `mode` a `shutdown|restart|sleep` al principio (mapeando los nombres en español) y usar ese valor tanto para el mensaje como para la ejecución.
 
 ### Notas para siguientes pasos
 

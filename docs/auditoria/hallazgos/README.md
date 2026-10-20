@@ -68,6 +68,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-003 | Media | confirmado | `core/tools/__init__.py:33` | El timeout de 5 s por herramienta no existe |
 | H-011 | Media | confirmado | `core/tools/files.py:97` | `open_file` ejecuta programas y scripts de Descargas |
 | H-013 | Media | confirmado | `core/tools/media.py:86` | `media_control` y `mute` hacen lo contrario de lo pedido |
+| H-015 | Media | confirmado | `core/tools/system.py:80` | `shutdown_pc` pregunta por una acción y ejecuta otra |
 | H-004 | Baja | confirmado | `core/tools/__init__.py:29` | `print` sueltos y argumentos completos en logs |
 | H-005 | Baja | confirmado | `core/tools/__init__.py:49` | Nombre de herramienta repetido se sobrescribe |
 | H-009 | Baja | por-verificar | `core/tools/apps.py:38` | Alias de apps fijos; `config.yaml → apps` se ignora |
