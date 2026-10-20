@@ -1,6 +1,6 @@
 # Fase 1 · Herramientas de control del PC
 
-Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` 0/173 · `notes.py` 0/79 · `system.py` 0/97 · `timers.py` 0/174 · `web.py` 0/97
+Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py` revisado 138/138 · `media.py` revisado 173/173 · `notes.py` 0/79 · `system.py` 0/97 · `timers.py` 0/174 · `web.py` 0/97
 
 ### H-001 · La confirmación de acciones destructivas no está implementada en código
 
@@ -148,6 +148,32 @@ Avance: `__init__.py` revisado 77/77 · `apps.py` revisado 387/387 · `files.py`
 - `_SESSION_FOUND_FILES` crece sin límite durante toda la sesión.
 
 **Propuesta:** usar `target_name` en los mensajes, devolver las opciones cuando hay nombres repetidos y limpiar el set al terminar cada conversación.
+
+### H-013 · La detección por subcadenas en `media_control` y `mute` hace lo contrario de lo pedido
+
+- **Severidad:** Media
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/media.py:86-100`, `core/tools/media.py:158`
+- **Categoría:** error
+
+**Qué pasa:**
+- `media_control` comprueba primero las palabras de play/pause, que incluyen `"cancion"`, `"canción"`, `"musica"` y `"música"`. Entonces `action="siguiente canción"` o `"canción anterior"` entra en la primera rama y **pausa** en lugar de cambiar de pista. Una acción desconocida también hace play/pause.
+- En `mute`, si `on` no viene, se buscan subcadenas como `"activar"` o `"no"` para decidir si se **quita** el silencio. `action="activar el silencio"` contiene "activar" y quita el silencio en vez de ponerlo; `action="silencia el teléfono"` contiene "no" (telé**fono**) y hace lo mismo.
+
+**Cómo se reproduce:** `media_control("siguiente canción")` → "Reproducción alternada (play/pause)". `mute(action="activar el silencio")` → "Sonido reactivado".
+
+**Propuesta:** comprobar primero next/prev/stop y dejar play/pause al final; en `mute`, comparar palabras completas (`act.split()`), no subcadenas, y devolver error ante una acción desconocida.
+
+### H-014 · Las herramientas de volumen dicen "ok" aunque no hayan cambiado nada
+
+- **Severidad:** Baja
+- **Estado:** confirmado
+- **Ubicación:** `core/tools/media.py:112-121`, `:165-172`, `:22-34`
+- **Categoría:** error / mantenibilidad
+
+**Qué pasa:** `set_volume` y `mute` devuelven `ok: True` aunque no haya dispositivos de salida o fallen todos (las excepciones se tragan con `except: pass`), así que Miku confirma algo que no hizo. Además `_attach_user_desktop` está copiado de `apps.py`, con la misma fuga de handles (H-010).
+
+**Propuesta:** devolver `ok: False` si no se aplicó a ningún dispositivo, y mover `_attach_user_desktop` a un módulo común.
 
 ### Notas para siguientes pasos
 
