@@ -31,6 +31,13 @@ async def _run():
         assert not await _try("http://localhost:8080"), "other localhost ports must be rejected"
         assert await _try("http://tauri.localhost"), "Tauri app origin must be accepted"
         assert await _try(None), "non-browser local clients must be accepted"
+
+        # H-050: "Salir" in the app sends shutdown, which must reach __main__'s stop_event
+        stopped = asyncio.Event()
+        server.on_shutdown = stopped.set
+        async with connect(f"ws://127.0.0.1:{PORT}", origin="http://tauri.localhost") as ws:
+            await ws.send('{"type": "shutdown"}')
+            await asyncio.wait_for(stopped.wait(), 2)
     finally:
         await server.stop()
 

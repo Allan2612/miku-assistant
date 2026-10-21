@@ -45,7 +45,8 @@ export interface Live2DManager {
   startIdleGestures(): void;
   stopIdleGestures(): void;
   hitTest(clientX: number, clientY: number): boolean;
-  speak(audioB64: string, mime?: string): Promise<void>;
+  /** Resolves true when playback ended (or failed), false when interrupted by stopSpeaking(). */
+  speak(audioB64: string, mime?: string): Promise<boolean>;
   stopSpeaking(): void;
   destroy(): void;
 }
@@ -56,6 +57,8 @@ class Live2DManagerImpl implements Live2DManager {
   canvas: HTMLCanvasElement | null = null;
   isModelReady: boolean = false;
   private activeFallbackAudio: HTMLAudioElement | null = null;
+  // Cleanup of the playing audio; stopSpeaking() must run it or the lip-sync interval leaks (H-045)
+  private interruptActive: (() => void) | null = null;
   private idleGestureTimer: number | null = null;
   private isSpeakingActive: boolean = false;
 
@@ -446,9 +449,9 @@ class Live2DManagerImpl implements Live2DManager {
     return URL.createObjectURL(blob);
   }
 
-  speak(audioB64: string, mime: string = "audio/wav"): Promise<void> {
+  speak(audioB64: string, mime: string = "audio/wav"): Promise<boolean> {
     if (!this.model) {
-      return Promise.resolve();
+      return Promise.resolve(true);
     }
 
     this.stopSpeaking();
@@ -463,7 +466,7 @@ class Live2DManagerImpl implements Live2DManager {
       blobUrl = `data:${normalizedMime};base64,${audioB64}`;
     }
 
-    return new Promise<void>((resolve) => {
+    return new Promise<boolean>((resolve) => {
       let finished = false;
       const audio = new Audio(blobUrl);
       audio.volume = 1.0;
@@ -473,10 +476,14 @@ class Live2DManagerImpl implements Live2DManager {
       let lipSyncInterval: number | null = null;
       const core = (this.model?.internalModel as any)?.coreModel;
 
-      const cleanup = () => {
+      const cleanup = (completed: boolean = true) => {
         if (finished) return;
         finished = true;
         this.isSpeakingActive = false;
+        if (this.interruptActive === interrupt) {
+          this.interruptActive = null;
+        }
+        audio.pause();
 
         if (lipSyncInterval !== null) {
           clearInterval(lipSyncInterval);
@@ -496,8 +503,10 @@ class Live2DManagerImpl implements Live2DManager {
             URL.revokeObjectURL(blobUrl);
           } catch (_) {}
         }
-        resolve();
+        resolve(completed);
       };
+      const interrupt = () => cleanup(false);
+      this.interruptActive = interrupt;
 
       const onEnded = () => cleanup();
       const onError = (e: any) => {
@@ -530,7 +539,7 @@ class Live2DManagerImpl implements Live2DManager {
             const unlockAndPlay = () => {
               window.removeEventListener("pointerdown", unlockAndPlay);
               window.removeEventListener("keydown", unlockAndPlay);
-              audio.play().then(() => startLipSync()).catch(cleanup);
+              audio.play().then(() => startLipSync()).catch(() => cleanup());
             };
 
             window.addEventListener("pointerdown", unlockAndPlay, { once: true });
@@ -550,6 +559,7 @@ class Live2DManagerImpl implements Live2DManager {
 
   stopSpeaking(): void {
     this.isSpeakingActive = false;
+    this.interruptActive?.();
     if (this.activeFallbackAudio) {
       try {
         this.activeFallbackAudio.pause();

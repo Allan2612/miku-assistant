@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Set, Dict, Any, Optional
+from typing import Callable, Set, Dict, Any, Optional
 import websockets
 from websockets.asyncio.server import ServerConnection
 
@@ -45,6 +45,8 @@ class MikuServer:
         self.server = None
         self._input_lock = asyncio.Lock()
         self._pending_farewell: bool = False
+        # Set by __main__: lets the app's "Salir" stop the whole backend (H-050)
+        self.on_shutdown: Optional[Callable[[], None]] = None
 
     def set_pipeline(self, pipeline: Any) -> None:
         """Sets or updates the orchestrator pipeline."""
@@ -191,6 +193,11 @@ class MikuServer:
                     elif msg_type == "dismiss":
                         logger.info("Client requested dismiss.")
                         await self.broadcast({"type": "hide"})
+
+                    elif msg_type == "shutdown":
+                        logger.info("Client requested backend shutdown.")
+                        if self.on_shutdown:
+                            self.on_shutdown()
 
                     else:
                         logger.debug("Unhandled client message: %s", data)

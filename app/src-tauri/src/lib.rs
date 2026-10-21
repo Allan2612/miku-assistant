@@ -52,7 +52,14 @@ pub fn run() {
                         }
                     }
                     "quit" => {
-                        std::process::exit(0);
+                        // Let the frontend tell the backend to shut down before we exit (H-050)
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.emit("tray-action", "quit");
+                        }
+                        std::thread::spawn(|| {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            std::process::exit(0);
+                        });
                     }
                     _ => {}
                 })

@@ -106,6 +106,7 @@ async def async_main() -> None:
     logger.info("Miku Core is active and waiting for connections on ws://127.0.0.1:8765")
 
     stop_event = asyncio.Event()
+    server.on_shutdown = stop_event.set
 
     def signal_handler():
         logger.info("Shutdown signal received.")

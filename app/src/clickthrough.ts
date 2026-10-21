@@ -3,7 +3,7 @@
  * Complies with docs/architecture.md: ~150ms check only while visible, completely stopped when hidden.
  */
 
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, cursorPosition } from "@tauri-apps/api/window";
 import { live2d } from "./live2d";
 
 export class ClickthroughController {
@@ -55,43 +55,52 @@ export class ClickthroughController {
     this.setIgnore(false);
   }
 
-  private checkHit(): void {
-    if (this.lastX < 0 || this.lastY < 0) return;
+  private checking = false;
 
-    // 1. Check if cursor is over interactive HTML UI elements (speech bubble, chat input, toggle button)
-    let hitUI = false;
+  /**
+   * Cursor in page coordinates. While the window ignores cursor events it receives no
+   * mousemove at all, so in Tauri the global cursor position is read instead (H-047).
+   */
+  private async cursorInPage(): Promise<[number, number]> {
+    if (!this.isTauriAvailable) return [this.lastX, this.lastY];
+    const win = getCurrentWindow();
+    const [cur, pos, scale] = await Promise.all([cursorPosition(), win.innerPosition(), win.scaleFactor()]);
+    return [(cur.x - pos.x) / scale, (cur.y - pos.y) / scale];
+  }
+
+  private async checkHit(): Promise<void> {
+    if (this.checking) return;
+    this.checking = true;
     try {
-      const el = document.elementFromPoint(this.lastX, this.lastY);
-      if (el) {
-        hitUI = Boolean(
-          el.closest(
-            ".miku-speech-bubble, .miku-input-bar, .miku-chat-toggle-btn, button, input"
-          )
-        );
+      const [x, y] = await this.cursorInPage();
+      if (this.timer === null) return; // stopped while awaiting
+      const inside = x >= 0 && y >= 0 && x <= window.innerWidth && y <= window.innerHeight;
+
+      // 1. Cursor over the speech bubble
+      const el = inside ? document.elementFromPoint(x, y) : null;
+      const hitUI = Boolean(el?.closest(".miku-speech-bubble"));
+
+      // 2. Cursor over the Live2D model body
+      const hit = hitUI || (inside && live2d.hitTest(x, y));
+
+      if (hit && this.isIgnoringCursor) {
+        this.setIgnore(false);
+      } else if (!hit && !this.isIgnoringCursor) {
+        this.setIgnore(true);
       }
-    } catch (_) {}
-
-    // 2. Check if cursor is over Live2D model body
-    const hitModel = live2d.hitTest(this.lastX, this.lastY);
-    const hit = hitUI || hitModel;
-
-    if (hit && this.isIgnoringCursor) {
-      // Cursor is over Miku or UI -> enable clicks
-      this.setIgnore(false);
-    } else if (!hit && !this.isIgnoringCursor) {
-      // Cursor is in empty space -> pass-through clicks to Windows desktop
-      this.setIgnore(true);
+    } catch (err) {
+      console.warn("[Clickthrough] hit check failed:", err);
+    } finally {
+      this.checking = false;
     }
   }
 
   private setIgnore(ignore: boolean): void {
     this.isIgnoringCursor = ignore;
     if (this.isTauriAvailable) {
-      try {
-        getCurrentWindow().setIgnoreCursorEvents(ignore);
-      } catch (err) {
-        console.warn("[Clickthrough] Failed to set ignoreCursorEvents:", err);
-      }
+      getCurrentWindow()
+        .setIgnoreCursorEvents(ignore)
+        .catch((err) => console.warn("[Clickthrough] Failed to set ignoreCursorEvents:", err));
     }
   }
 }

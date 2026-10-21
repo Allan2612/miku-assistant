@@ -156,7 +156,9 @@ function handleServerMessage(msg: ServerMessage): void {
       live2d.setExpression(msg.emotion);
       live2d
         .speak(msg.audio_b64, msg.mime)
-        .then(() => {
+        .then((completed) => {
+          // Interrupted (barge-in, hide, newer speak): the backend already moved on
+          if (!completed) return;
           ws.send({ type: "speak_done" });
           resetAutoHideTimer();
         })
@@ -285,6 +287,10 @@ async function setupShortcutsAndTray(): Promise<void> {
             break;
           case "toggle":
             toggleMiku();
+            break;
+          case "quit":
+            // Stop the Python backend too, or it keeps the mic open after "Salir" (H-050)
+            ws.send({ type: "shutdown" });
             break;
         }
       });
