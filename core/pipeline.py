@@ -11,7 +11,11 @@ Strict adherence to GEMINI.md:
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import logging
+import os
+import random
 from datetime import datetime, date
 from pathlib import Path
 from typing import Optional, Any, Tuple
@@ -26,6 +30,35 @@ from core.resources import ResourceManager
 from core.tools.timers import set_timer_notifier
 
 logger = logging.getLogger("miku.pipeline")
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+
+# Spoken right after activation so it is obvious Miku is listening; kept very short
+ACK_PHRASES = ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!")
+ACK_WAIT_S = 3.0  # max wait for the frontend to finish playing the cue
+
+
+def _normalize(text: str) -> str:
+    return "".join(c for c in text.lower() if c.isalnum() or c == " ").strip()
+
+
+_ACK_NORMALIZED = {_normalize(p) for p in ACK_PHRASES} | {"si"}
+
+
+def _trim_silence(wav_bytes: bytes, threshold: float = 0.01, keep_s: float = 0.08) -> bytes:
+    """edge-tts pads short phrases to ~1.9 s: trim it so the mic opens right after the cue."""
+    import io
+    import soundfile as sf
+
+    audio, sr = sf.read(io.BytesIO(wav_bytes), dtype="float32")
+    loud = np.flatnonzero(np.abs(audio) > threshold)
+    if loud.size == 0:
+        return wav_bytes
+    keep = int(keep_s * sr)
+    audio = audio[max(0, loud[0] - keep):loud[-1] + keep]
+    out = io.BytesIO()
+    sf.write(out, audio, sr, format="WAV", subtype="PCM_16")
+    return out.getvalue()
 
 
 class MikuPipeline:
@@ -61,6 +94,8 @@ class MikuPipeline:
         self._last_text = ""
         self._last_text_time = 0.0
         self._speak_watchdog_task: Optional[asyncio.Task] = None
+        self._ack_done: Optional[asyncio.Event] = None
+        self._bg_tasks: set = set()
 
         # Register callback for async timer announcements
         try:
@@ -114,6 +149,79 @@ class MikuPipeline:
                 logger.warning("RVC conversion failed (%s). Falling back to edge-tts voice.", e)
 
         return audio_b64, mime
+
+    def _spawn_bg(self, coro: Any) -> None:
+        """Fire-and-forget task with a strong reference (unreferenced tasks can be collected)."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    @staticmethod
+    def _ack_file(phrase: str) -> Path:
+        digest = hashlib.md5(phrase.encode("utf-8")).hexdigest()
+        return ROOT_DIR / "cache" / "voice" / f"ack_{digest}.wav"
+
+    async def _ack_audio(self, phrase: str) -> Optional[Tuple[str, str]]:
+        """Miku's voice (RVC, cached on disk) if ready; otherwise the cached base voice."""
+        rvc_file = self._ack_file(phrase)
+        if rvc_file.exists():
+            return base64.b64encode(rvc_file.read_bytes()).decode("ascii"), "audio/wav"
+        base = await self.tts.synthesize(phrase, cache=True)
+        if base and self.rvc is not None and self.rvc.enabled and self.rvc.is_running and not self.rvc.is_warming_up:
+            self._spawn_bg(self._convert_ack(base[0], rvc_file))
+        return base
+
+    async def _convert_ack(self, base_b64: str, rvc_file: Path) -> None:
+        res = await self.rvc.convert(base_b64)
+        if res:
+            tmp = rvc_file.with_suffix(".tmp")
+            tmp.write_bytes(_trim_silence(base64.b64decode(res[0])))
+            os.replace(tmp, rvc_file)
+            logger.info("Cached Miku-voice acknowledgement: %s", rvc_file.name)
+
+    async def prepare_acks(self) -> None:
+        """Pre-generates every acknowledgement (base voice now, Miku's voice once RVC is loaded)."""
+        try:
+            for phrase in ACK_PHRASES:
+                await self.tts.synthesize(phrase, cache=True)
+            if self.rvc is None or not self.rvc.enabled:
+                return
+            for _ in range(240):  # the first RVC load can take minutes
+                if self.rvc.is_running and not self.rvc.is_warming_up:
+                    break
+                await asyncio.sleep(1)
+            for phrase in ACK_PHRASES:
+                if not self._ack_file(phrase).exists():
+                    base = await self.tts.synthesize(phrase, cache=True)
+                    if base:
+                        await self._convert_ack(base[0], self._ack_file(phrase))
+        except Exception:
+            logger.exception("Could not prepare acknowledgement phrases")
+
+    async def _acknowledge(self) -> None:
+        """Short spoken cue ("¿Sí?") on activation; returns once it has finished playing."""
+        phrase = random.choice(ACK_PHRASES)
+        audio = await self._ack_audio(phrase)
+        if not audio:
+            return
+        audio_b64, mime = audio
+        self._ack_done = asyncio.Event()
+        try:
+            await self.server.broadcast({
+                "type": "speak", "audio_b64": audio_b64, "mime": mime, "text": phrase, "emotion": "happy",
+            })
+            await asyncio.wait_for(self._ack_done.wait(), ACK_WAIT_S)
+        except asyncio.TimeoutError:
+            logger.info("No speak_done for the acknowledgement; listening anyway.")
+        finally:
+            self._ack_done = None
+
+    def ack_finished(self) -> bool:
+        """Called by the server on speak_done: True if it belonged to the acknowledgement cue."""
+        if self._ack_done is not None and not self._ack_done.is_set():
+            self._ack_done.set()
+            return True
+        return False
 
     async def _speak(self, text: str, emotion: str, farewell: bool = False, cache: bool = False) -> None:
         """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032)."""
@@ -181,17 +289,18 @@ class MikuPipeline:
                 self.wakeword.pause()
 
             try:
-                # 1. Ensure Miku is visible and notify UI to show listening state
+                # 1. Concurrently pre-warm STT and RVC worker while the user begins speaking
+                stt_warmup = None if self.stt.is_loaded else asyncio.create_task(self.stt.warmup())
+                if self.rvc is not None and self.rvc.enabled and not self.rvc.is_running:
+                    self._spawn_bg(self.rvc.warmup())
+
+                # 2. Show Miku, say a short "¿Sí?" so the user knows she is listening, then listen.
+                # The mic opens only after the cue has finished playing, so it is not recorded.
                 await self.server.broadcast({"type": "show"})
+                await self.server.broadcast({"type": "expression", "name": "happy"})
+                await self._acknowledge()
                 await self.server.broadcast({"type": "state", "value": "listening"})
                 await self.server.broadcast({"type": "expression", "name": "neutral"})
-
-                # 2. Concurrently pre-warm STT and RVC worker while user begins speaking
-                warmup_tasks = []
-                if not self.stt.is_loaded:
-                    warmup_tasks.append(asyncio.create_task(self.stt.warmup()))
-                if self.rvc is not None and self.rvc.enabled and not self.rvc.is_running:
-                    warmup_tasks.append(asyncio.create_task(self.rvc.warmup()))
 
                 # 3. Capture phrase from microphone with VAD
                 # Mic opens here and closes immediately upon silence
@@ -212,12 +321,19 @@ class MikuPipeline:
                 await self.server.broadcast({"type": "state", "value": "thinking"})
                 await self.server.broadcast({"type": "expression", "name": "thinking"})
 
-                # Ensure STT warmup is completed
-                if warmup_tasks:
-                    await asyncio.gather(*warmup_tasks, return_exceptions=True)
+                # Wait for Whisper only: waiting for the RVC load (35-80 s) here delayed every
+                # first answer after an unload; RVC falls back to the base voice while it loads
+                if stt_warmup is not None:
+                    await asyncio.gather(stt_warmup, return_exceptions=True)
 
                 # 5. Transcribe audio with faster-whisper on CPU
                 transcribed_text = await self.stt.transcribe(audio)
+
+                # Miku's own cue picked up by the mic must never reach Gemini: "sí" would confirm
+                # a pending destructive action
+                if _normalize(transcribed_text) in _ACK_NORMALIZED:
+                    logger.info("Transcription is just the acknowledgement cue (%r). Ignoring.", transcribed_text)
+                    transcribed_text = ""
 
                 if not transcribed_text:
                     logger.info("Empty transcription. Returning to idle.")
@@ -324,7 +440,7 @@ class MikuPipeline:
         Runs when Miku Assistant boots up and frontend connects.
         """
         # Once per day, as persona.md says: restarting the backend must not greet again (H-032)
-        marker = Path(__file__).resolve().parent.parent / "cache" / "last_greeting.txt"
+        marker = ROOT_DIR / "cache" / "last_greeting.txt"
         today = date.today().isoformat()
         try:
             if marker.exists() and marker.read_text(encoding="ascii").strip() == today:

@@ -30,7 +30,7 @@ Si la respuesta corresponde a una despedida (detectada por palabras clave en lo 
 **Pendiente:** el frontend aún no lee `config.yaml → live2d.expressions`. Hoy llama a la expresión del modelo con el nombre de la emoción y, si no existe, mueve parámetros fijos (`live2d.ts → setExpression`).
 
 ## Frases fijas (sin LLM, para ahorrar tokens y latencia)
-- Al aparecer por atajo: no habla, solo animación + estado "escuchando".
+- Al activarla (wake word, atajo o clic): una frase corta al azar ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!") y después escucha. El micrófono se abre cuando termina la frase. Se generan al arrancar con la voz de Miku y se guardan en `cache/voice/ack_*.wav`.
 - Saludo al arrancar el PC (solo la primera vez del día), elegido según la hora: "¡Buenos días!", "¡Buenas tardes!", "¡Buenas noches!".
 - Fin de temporizador: "¡Tu temporizador de {label} ha terminado!"; recordatorios: "¡Recordatorio: {texto}!".
 - Sin conexión con Gemini: una de las respuestas de "me quedé sin batería" de `llm.py`; con la API key inválida, "No puedo conectarme con Gemini: revisa la API key". *(La frase "Ups, no tengo conexión" está pendiente.)*

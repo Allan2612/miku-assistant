@@ -56,6 +56,10 @@ class RVCManager:
         )
 
     @property
+    def is_warming_up(self) -> bool:
+        return self._is_warming_up
+
+    @property
     def is_running(self) -> bool:
         """Returns True if the worker subprocess is currently active and alive."""
         return self._proc is not None and self._proc.returncode is None
@@ -172,6 +176,11 @@ class RVCManager:
         Returns (converted_audio_b64, "audio/wav") or None on failure.
         """
         if not self.enabled or not audio_b64:
+            return None
+
+        # A load takes 35-80 s: answer now with the base voice instead of waiting for it (H-028)
+        if self._is_warming_up:
+            logger.info("RVC still loading. Using the base voice for this answer.")
             return None
 
         async with self._lock:

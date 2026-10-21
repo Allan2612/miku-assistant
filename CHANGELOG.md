@@ -20,8 +20,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - RVC: sin respuestas desfasadas tras un timeout; logs del worker en `cache/rvc_worker.log`.
 - Interrumpir a Miku ya no deja intervalos activos; la wake word se reanuda tras errores.
 - Temporizadores, volumen, silencio y apagado hacen lo que se pide.
+- La primera respuesta tras descargar RVC ya no espera su carga (35-80 s): usa la voz base mientras carga.
 
 ### Añadido
+- Al activarla, Miku responde con una frase corta ("¿Sí?", "¿Dime?"…) antes de escuchar, para que se note que empezó.
 - `tests/` con pruebas sin dependencias (`core\.venv\Scripts\python.exe -m tests.<nombre>`).
 - `core/requirements.lock` con las versiones exactas del entorno que funciona.
 

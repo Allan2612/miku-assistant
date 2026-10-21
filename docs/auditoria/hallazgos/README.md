@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** auditoría cerrada y corregida el 2026-10-21: 55 arreglados, 1 parcial, 2 a la espera de una decisión, 1 descartado (ver "Arreglos" en [99-resumen.md](99-resumen.md)).
+- **Estado:** auditoría cerrada y corregida el 2026-10-21: 55 arreglados, 2 decididos (H-002: sin confirmación; H-028: carga al arrancar), 1 parcial, 1 descartado (ver "Arreglos" en [99-resumen.md](99-resumen.md)).
 
 ## Archivos
 
@@ -67,7 +67,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-008 | Alta | arreglado | `core/tools/apps.py:290` | `close_app` mata procesos por subcadena y con `kill()` |
 | H-023 | Alta | arreglado | `core/llm.py:249` | El atajo local cierra procesos con "apaga la luz" o "apaga el PC" |
 | H-020 | Media | arreglado | `core/server.py:50` | `broadcast` falla si cambian los clientes mientras envía |
-| H-002 | Media | decisión pendiente | `core/tools/apps.py:271` | `close_app` cierra apps sin confirmación |
+| H-002 | Media | decidido | `core/tools/apps.py:271` | `close_app` cierra apps sin confirmación |
 | H-003 | Media | arreglado | `core/tools/__init__.py:33` | El timeout de 5 s por herramienta no existe |
 | H-011 | Media | arreglado | `core/tools/files.py:97` | `open_file` ejecuta programas y scripts de Descargas |
 | H-013 | Media | arreglado | `core/tools/media.py:86` | `media_control` y `mute` hacen lo contrario de lo pedido |
@@ -75,7 +75,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-024 | Media | arreglado | `core/llm.py:227` | El atajo local secuestra peticiones y siempre dice que funcionó |
 | H-025 | Media | arreglado | `core/llm.py:337` | El atajo local bloquea el bucle de eventos |
 | H-026 | Media | arreglado | `core/llm.py:384` | Las llamadas a Gemini no tienen tiempo máximo |
-| H-028 | Media | decisión pendiente | `core/__main__.py:125` | Whisper y RVC se cargan al arrancar el PC |
+| H-028 | Media | decidido | `core/__main__.py:125` | Whisper y RVC se cargan al arrancar el PC |
 | H-030 | Media | arreglado | `core/pipeline.py:280` | Un error al procesar texto deja la wake word en pausa |
 | H-034 | Media | arreglado | `core/audio_in.py:100` | VAD por energía: con ruido graba hasta el máximo |
 | H-035 | Media | arreglado | `core/stt.py:92` | El prompt de Whisper puede hacer oír comandos en el ruido |

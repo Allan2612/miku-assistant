@@ -74,10 +74,10 @@ Agrupado por archivo para tocar cada uno una sola vez:
 
 **Parcial (1):** H-039. Los logs del worker ya van a `cache/rvc_worker.log` y la respuesta de `load` se comprueba, pero `terminate_worker` sigue sin cerrar las *pipes* del proceso (solo provoca avisos de Python al salir).
 
-**A la espera de tu decisión (2):**
+**Decididos (2):**
 
-- H-002: ¿`close_app` debe pedir confirmación? Hoy no la pide, pero ya solo cierra por nombre exacto y nunca procesos del sistema.
-- H-028: ¿Whisper y RVC se cargan al arrancar el PC (primera respuesta más rápida) o solo al activar a Miku (0 MB de VRAM en reposo)? Hoy se cargan al arrancar.
+- H-002: `close_app` no pide confirmación (decisión del usuario). Ya solo cierra por nombre exacto y nunca procesos del sistema.
+- H-028: Whisper y RVC se siguen cargando al arrancar. Cargar RVC al activar a Miku no puede ocultar sus 35-80 s de carga, y se descargan solos tras 10 min sin uso. Además, si RVC está cargando, la respuesta usa la voz base en lugar de esperar, y la transcripción ya no espera a RVC.
 
 **Verificación:** 10 archivos de test en `tests/` (`core\.venv\Scripts\python.exe -m tests.<nombre>`), todos pasan; `tsc` y `cargo check` sin errores. RVC se probó de punta a punta con los modelos reales en la RTX 3050. La detección de voz se probó con las muestras de voz y señales sintéticas, no con el micrófono.
 

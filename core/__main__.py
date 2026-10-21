@@ -137,6 +137,7 @@ async def async_main() -> None:
 
     # Schedule once-per-day startup greeting according to current hour
     background.add(asyncio.create_task(pipeline.check_startup_greeting()))
+    background.add(asyncio.create_task(pipeline.prepare_acks()))
 
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):

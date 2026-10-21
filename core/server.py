@@ -194,6 +194,9 @@ class MikuServer:
 
                     elif msg_type == "speak_done":
                         logger.info("Client reported speak_done.")
+                        # End of the "¿Sí?" cue: the pipeline now opens the mic, nothing else to do
+                        if self.pipeline and self.pipeline.ack_finished():
+                            continue
                         await self.broadcast({"type": "state", "value": "idle"})
                         farewell = False
                         if self.pipeline:

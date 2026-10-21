@@ -79,10 +79,73 @@ async def _run():
     assert "speak" in server.sent
 
 
+class AckServer(FakeServer):
+    """Plays the "¿Sí?" cue like the frontend: speak_done shortly after the speak message."""
+    pipeline = None
+
+    async def broadcast(self, msg):
+        self.sent.append(msg["type"] if msg["type"] != "speak" else "speak:" + msg["text"])
+        if msg["type"] == "speak":
+            asyncio.get_running_loop().call_later(0.05, self.pipeline.ack_finished)
+
+
+class FakeMic:
+    def __init__(self, server):
+        self.server, self.opened_after = server, None
+
+    async def record_phrase(self, **_):
+        self.opened_after = list(self.server.sent)
+        return [0.0]
+
+
+class FakeSTT:
+    is_loaded = True
+
+    def __init__(self, text):
+        self.text = text
+
+    async def transcribe(self, audio):
+        return self.text
+
+
+class RecordingBrain(FakeBrain):
+    def __init__(self):
+        super().__init__()
+        self.heard = []
+
+    async def chat(self, text):
+        self.heard.append(text)
+        return await super().chat(text)
+
+
+async def _activation(heard_text):
+    server = AckServer()
+    brain = RecordingBrain()
+    p = MikuPipeline(brain=brain, tts=FakeTTS(), stt=FakeSTT(heard_text), audio_in=FakeMic(server),
+                     resources=FakeResources(), server=server, rvc=None)
+    server.pipeline = p
+    p.set_wakeword(FakeWake())
+    await p.handle_voice_activation()
+    return server, brain, p.audio_in
+
+
+def test_activation_says_yes_then_listens():
+    server, brain, mic = asyncio.run(_activation("qué hora es"))
+    ack = next(m for m in server.sent if m.startswith("speak:"))
+    assert ack[6:] in ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!"), ack
+    assert ack in mic.opened_after and "state" in mic.opened_after, "mic must open after the cue"
+    assert brain.heard == ["qué hora es"], brain.heard
+
+    # The cue itself picked up by the mic must not reach Gemini ("sí" could confirm a shutdown)
+    _, brain, _ = asyncio.run(_activation("Sí."))
+    assert brain.heard == [], brain.heard
+
+
 def test_pipeline_flows():
     asyncio.run(_run())
 
 
 if __name__ == "__main__":
     test_pipeline_flows()
+    test_activation_says_yes_then_listens()
     print("ok")
