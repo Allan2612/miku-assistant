@@ -192,7 +192,7 @@ def load_config(
             model=wakeword_data.get("model", "models/wakeword/hey_miku.onnx"),
             threshold=float(wakeword_data.get("threshold", 0.7)),
             patience=int(wakeword_data.get("patience", 2)),
-            vad_threshold=float(wakeword_data.get("vad_threshold", 0.5)),
+            vad_threshold=float(wakeword_data.get("vad_threshold", 0.0)),  # 0 = openWakeWord VAD off (previous behavior)
         ),
         live2d=Live2DConfig(
             model=live2d_data.get("model", "models/miku/miku.model3.json"),

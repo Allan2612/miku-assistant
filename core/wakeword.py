@@ -42,6 +42,8 @@ class WakeWordListener:
         self.model_path: str = config.model
         self.threshold: float = config.threshold
         self.patience: int = getattr(config, "patience", 2)
+        self.vad_threshold: float = getattr(config, "vad_threshold", 0.0)
+        self._errors = 0
         self._on_wake = on_wake
         self._loop = loop
 
@@ -117,7 +119,7 @@ class WakeWordListener:
             self._model = Model(
                 wakeword_models=[model_id],
                 inference_framework="onnx",
-                vad_threshold=0.0,
+                vad_threshold=self.vad_threshold,
             )
 
             def audio_callback(indata: np.ndarray, frames: int, time_info: dict, status: sd.CallbackFlags) -> None:
@@ -200,7 +202,10 @@ class WakeWordListener:
                             pass
 
             except Exception as e:
-                logger.debug("Error during wakeword chunk prediction: %s", e)
+                # Visible in the normal log, but not 12 times per second (H-037)
+                self._errors += 1
+                if self._errors == 1 or self._errors % 500 == 0:
+                    logger.warning("Wake word prediction failing (%d errors so far): %s", self._errors, e)
 
     def pause(self) -> None:
         """Temporarily pauses listening (e.g. while Miku is speaking or user is talking)."""
