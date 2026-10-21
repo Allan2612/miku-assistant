@@ -15,6 +15,10 @@ export type ServerMessage =
 
 export type MessageHandler = (msg: ServerMessage) => void;
 
+const KNOWN_TYPES = new Set<string>([
+  "show", "hide", "state", "subtitle", "expression", "stop_speaking", "speak", "confirm_request",
+]);
+
 export class WebSocketClient {
   private ws: WebSocket | null = null;
   private url: string = "ws://127.0.0.1:8765";
@@ -22,7 +26,6 @@ export class WebSocketClient {
   private reconnectTimeout: number | null = null;
   private retryDelay: number = 1000;
   private maxRetryDelay: number = 10000;
-  private queue: string[] = [];
   public isConnected: boolean = false;
   private isExplicitlyClosed: boolean = false;
 
@@ -43,6 +46,13 @@ export class WebSocketClient {
       this.reconnectTimeout = null;
     }
 
+    // Never keep two sockets: the old one's onclose would schedule yet another reconnect (H-022)
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
+    }
+
     try {
       this.ws = new WebSocket(this.url);
 
@@ -53,17 +63,15 @@ export class WebSocketClient {
 
         // Send ready event
         this.send({ type: "ready" });
-
-        // Flush queued messages
-        while (this.queue.length > 0) {
-          const item = this.queue.shift();
-          if (item) this.ws?.send(item);
-        }
       };
 
       this.ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data) as ServerMessage;
+          if (!msg || typeof msg !== "object" || !KNOWN_TYPES.has(msg.type)) {
+            console.warn("[WS] Ignoring unknown message:", event.data);
+            return;
+          }
           for (const handler of this.handlers) {
             handler(msg);
           }
@@ -105,10 +113,9 @@ export class WebSocketClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(payload);
     } else {
-      if (this.queue.length >= 20) {
-        this.queue.shift(); // Bound memory
-      }
-      this.queue.push(payload);
+      // Messages are not queued: an "activate" from minutes ago must not fire when the
+      // backend comes back (H-022). "ready" is sent again on every (re)connect anyway.
+      console.warn("[WS] Not connected, dropping message:", payload);
     }
   }
 
