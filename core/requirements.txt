@@ -17,5 +17,6 @@ librosa>=0.10.0
 av>=12.0.0
 transformers>=4.40.0
 openwakeword>=0.6.0
+# Exact working versions: requirements.lock
 # torch is NOT installed from PyPI: it needs the CUDA build (only rvc_worker.py imports it).
 #   pip install torch --index-url https://download.pytorch.org/whl/cu126
