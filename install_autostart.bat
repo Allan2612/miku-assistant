@@ -9,7 +9,7 @@ echo ====================================================
 set "TARGET_BAT=%~dp0start.bat"
 set "SHORTCUT_PATH=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\MikuAssistant.lnk"
 
-powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT_PATH%'); $s.TargetPath = '%TARGET_BAT%'; $s.WorkingDirectory = '%~dp0'; $s.Description = 'Miku Assistant Desktop AI'; $s.Save()"
+powershell -NoProfile -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('%SHORTCUT_PATH%'); $s.TargetPath = '%TARGET_BAT%'; $s.WorkingDirectory = '%~dp0'; $s.Description = 'Miku Assistant Desktop AI'; $s.WindowStyle = 7; $s.Save()"
 
 if exist "%SHORTCUT_PATH%" (
     echo [*] Acceso directo de inicio creado exitosamente en:
