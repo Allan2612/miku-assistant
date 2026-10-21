@@ -5,7 +5,26 @@ Todos los cambios notables de este proyecto se documentarán en este archivo.
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
+### Seguridad (auditoría, ver `docs/auditoria/`)
+- El servidor WebSocket solo acepta la app y clientes locales: ninguna página web puede controlar a Miku.
+- `open_app` ya no ejecuta líneas de comandos ni abre consolas; `type_text` no escribe en consolas ni pulsa Enter.
+- `close_app` cierra solo por nombre exacto, nunca procesos del sistema ni el propio Miku.
+- `open_file` no abre ejecutables ni scripts.
+- Las acciones destructivas (apagar, reiniciar, suspender) solo se ejecutan si el usuario dice "sí".
+- CSP en la ventana de Tauri; quitados el plugin `opener` y permisos sin uso.
+
+### Corregido
+- Atajo local: "apaga el PC" ya no mata procesos, "pon la música" reproduce, frases ambiguas van a Gemini.
+- Ctrl+Alt+M (faltaban permisos), click-through, "Salir" apaga también el backend, `stop.bat` solo mata procesos de Miku.
+- Fin de frase con silero-vad: la música o el ruido ya no alargan la grabación.
+- RVC: sin respuestas desfasadas tras un timeout; logs del worker en `cache/rvc_worker.log`.
+- Interrumpir a Miku ya no deja intervalos activos; la wake word se reanuda tras errores.
+- Temporizadores, volumen, silencio y apagado hacen lo que se pide.
+
 ### Añadido
+- `tests/` con pruebas sin dependencias (`core\.venv\Scripts\python.exe -m tests.<nombre>`).
+- `core/requirements.lock` con las versiones exactas del entorno que funciona.
+
 - **Fase 8 — Pulido**:
   - **Experiencia Limpia por Voz (Sin Botones)**:
     - Eliminadas las barras de entrada de texto, botones de envío y barras de acciones flotantes en `app/src/ui.ts` y `app/src/styles.css`.

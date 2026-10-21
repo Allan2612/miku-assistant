@@ -27,13 +27,13 @@ Hora y fecha actuales: {datetime}
 Si la respuesta corresponde a una despedida (detectada por palabras clave en lo que dijo el usuario), tras terminar de hablar se ejecuta `hide` inmediatamente, sin esperar el temporizador.
 
 ## Mapeo emoción → modelo
-Configurable en `config.yaml → live2d.expressions`, porque cada modelo Live2D nombra distinto sus expresiones. Si una emoción no tiene mapeo, se usa la neutra. `thinking` se usa también como estado mientras Gemini responde.
+**Pendiente:** el frontend aún no lee `config.yaml → live2d.expressions`. Hoy llama a la expresión del modelo con el nombre de la emoción y, si no existe, mueve parámetros fijos (`live2d.ts → setExpression`).
 
 ## Frases fijas (sin LLM, para ahorrar tokens y latencia)
 - Al aparecer por atajo: no habla, solo animación + estado "escuchando".
 - Saludo al arrancar el PC (solo la primera vez del día), elegido según la hora: "¡Buenos días!", "¡Buenas tardes!", "¡Buenas noches!".
-- Fin de temporizador: "[surprised] ¡Ding! Se acabó el temporizador de {label}."
-- Error de red: "[sad] Ups, no tengo conexión ahora mismo."
-- No entendió el audio: "[thinking] ¿Me lo repites?"
+- Fin de temporizador: "¡Tu temporizador de {label} ha terminado!"; recordatorios: "¡Recordatorio: {texto}!".
+- Sin conexión con Gemini: una de las respuestas de "me quedé sin batería" de `llm.py`; con la API key inválida, "No puedo conectarme con Gemini: revisa la API key". *(La frase "Ups, no tengo conexión" está pendiente.)*
+- No entendió el audio: **pendiente**; hoy Miku vuelve a reposo en silencio.
 
 Estas frases se pueden pregenerar con TTS + RVC y cachear en disco (`cache/voice/`) para que suenen al instante.

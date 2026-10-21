@@ -28,7 +28,7 @@ Dos procesos principales que se comunican por WebSocket local, más un subproces
 | Render 2D | **pixi.js v7** + **pixi-live2d-display-lipsyncpatch** | Live2D Cubism 2/3/4 con lip sync integrado (`model.speak()`). Verificar compatibilidad de versiones antes de instalar |
 | Backend | Python 3.11 + `websockets` | Ligero (~50 MB RAM base), sin FastAPI |
 | VAD | **silero-vad** (ONNX, CPU) | Detecta inicio/fin de voz con consumo mínimo |
-| Voz → texto | **faster-whisper**, modelo `small`, `cpu`, `int8`, `cpu_threads: 4`, idioma `es` | 0 MB VRAM, ~0.5 s para audios cortos, sin contexto CUDA fantasma. Se descarga tras inactividad |
+| Voz → texto | **faster-whisper**, modelo según `config.yaml` (hoy `base`), `cpu`, `int8`, `cpu_threads` de la config, idioma de `language` | 0 MB VRAM, ~0.5 s para audios cortos, sin contexto CUDA fantasma. Se descarga tras inactividad |
 | Cerebro | **Gemini API** (`google-genai`), modelo Flash actual | Function calling, rápido, capa gratuita. Nombre del modelo en `config.yaml` |
 | Texto → voz | **edge-tts** (voz femenina, p. ej. `es-MX-DaliaNeural`) | Gratis, buena calidad, base para RVC |
 | Voz Miku | **RVC** en subproceso aislado (`rvc_worker.py` por `stdio`/`pipe`) | Usa GPU (RTX 3050). Al matar el subproceso tras inactividad, Windows libera el 100 % de la VRAM y RAM de PyTorch |
@@ -54,6 +54,8 @@ Si TTS o RVC fallan, Miku responde solo con subtítulo o con la voz base de `edg
 
 ## Protocolo WebSocket (JSON)
 
+El servidor solo acepta conexiones cuyo `Origin` sea la app (`http://tauri.localhost`), el servidor de desarrollo (`http://localhost:1420`) o clientes locales sin `Origin` (scripts). Cualquier página web abierta en el navegador es rechazada.
+
 Backend → Frontend:
 ```jsonc
 { "type": "show" }
@@ -62,14 +64,15 @@ Backend → Frontend:
 { "type": "subtitle", "who": "user|miku", "text": "..." }
 { "type": "expression", "name": "happy" }
 { "type": "speak", "audio_b64": "...", "mime": "audio/wav", "text": "...", "emotion": "happy" }
-{ "type": "confirm_request", "id": "abc", "text": "¿Cierro Chrome?" }
+{ "type": "stop_speaking" }        // barge-in: cortar el audio actual
+// confirm_request / confirm_response: pendientes; la confirmación se hace hoy por voz (ver tools.md)
 ```
 Frontend → Backend:
 ```jsonc
 { "type": "ready" }
 { "type": "activate" }            // atajo global o clic en Miku
 { "type": "text_input", "text": "..." }   // caja de texto opcional
-{ "type": "confirm_response", "id": "abc", "ok": true }
+{ "type": "shutdown" }            // "Salir" en la bandeja: apaga también el backend
 { "type": "speak_done" }
 { "type": "dismiss" }             // usuario la despide
 ```

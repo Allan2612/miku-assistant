@@ -19,7 +19,7 @@ Trabaja fase por fase. Cada fase termina con una prueba que hace el usuario. No 
 
 ## Fase 2 — Cerebro por texto
 - [x] Servidor WS en `core/` y cliente con reconexión en `app/`
-- [x] Caja de texto (aparece al hacer clic en Miku) → `text_input`
+- [x] Caja de texto (aparece al hacer clic en Miku) → `text_input` *(retirada después en el modo "solo voz"; el backend aún acepta `text_input`)*
 - [x] `llm.py` con Gemini, persona de `persona.md`, historial corto y parseo de `[emocion]`
 - [x] Subtítulos tipo burbuja + cambio de expresión
 - [x] Auto-ocultar tras `hide_after_seconds`

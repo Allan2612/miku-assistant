@@ -8,8 +8,8 @@ Leyenda: 🔒 = requiere confirmación del usuario antes de ejecutarse.
 | Función | Parámetros | Implementación |
 |---|---|---|
 | `open_app` | `name: str` | 1) alias de `config.yaml → apps`; 2) búsqueda difusa en accesos directos del menú Inicio (`%ProgramData%` y `%AppData%\Microsoft\Windows\Start Menu`), cacheada al arrancar; 3) `os.startfile`. Si hay varias coincidencias, devuelve las opciones |
-| `close_app` 🔒 | `name: str` | `psutil` → `terminate()` del proceso coincidente |
-| `list_open_apps` | — | Ventanas visibles con título (`pywin32` o `pygetwindow`) |
+| `close_app` | `name: str` | `psutil`: solo procesos con el **nombre exacto** (o su alias); nunca procesos del sistema ni el propio Miku. `terminate()` y, si a los 3 s sigue vivo, `kill()`. Sin confirmación (decisión revisable, H-002) |
+| `list_open_apps` | — | **Pendiente: no implementada** |
 | `focus_app` | `name: str` | Traer ventana al frente |
 | `show_desktop` | — | Tecla Win+D |
 
@@ -57,11 +57,12 @@ No hay herramientas para borrar, mover ni renombrar archivos.
 |---|---|---|
 | `take_note` | `text: str` | Añade una línea con fecha a `notes.md` en Documentos |
 | `read_notes` | `last_n: int = 5` | Devuelve las últimas notas |
+| `open_notes` | — | Abre `notes.md` en el editor predeterminado |
 
 ## Escritura — `tools/apps.py`
 | Función | Parámetros | Implementación |
 |---|---|---|
-| `type_text` | `text: str` | Escribe en la ventana activa (`pyautogui.write` o `SendInput`). Máx. 500 caracteres |
+| `type_text` | `text: str` | Escribe en la ventana activa con `keybd_event`. Máx. 500 caracteres, sin saltos de línea; se niega a escribir en consolas |
 
 ## Visión (Fase 9) — `tools/vision.py`
 | Función | Parámetros | Implementación |
@@ -69,9 +70,9 @@ No hay herramientas para borrar, mover ni renombrar archivos.
 | `look_at_screen` | `question: str` | Captura (`mss`), reduce a 1280 px de ancho y la envía a Gemini junto con la pregunta |
 
 ## Reglas de implementación
-- Registro con decorador: `@tool(name, description, params, destructive=False)`. A partir de él se generan las declaraciones para Gemini y la ejecución.
+- Registro con decorador: `@tool(name, description, destructive=False)`. Los parámetros salen de la firma de la función; a partir de ella se generan las declaraciones para Gemini.
 - Las descripciones en español, claras y cortas: Gemini decide con ellas.
-- Timeout de 5 s por herramienta; cualquier excepción devuelve `{"ok": false, "result": "<mensaje humano>"}` sin romper el pipeline.
-- Confirmación 🔒: el backend envía `confirm_request`; Miku pregunta por voz y acepta "sí" o "no" por voz, o un botón en la burbuja. Si no hay respuesta en 10 s, cancela.
-- Máximo 5 llamadas a herramientas por petición (evita bucles).
+- Timeout de 10 s por herramienta (`TOOL_TIMEOUT_S`); un error o un timeout devuelven `{"ok": false, "result": "<mensaje humano>"}` sin romper el pipeline.
+- Confirmación 🔒 (`destructive=True`, hoy solo `shutdown_pc`): la primera llamada no ejecuta nada, guarda la acción y devuelve la pregunta, que Miku lee. Solo si el **siguiente mensaje del usuario** es un "sí" corto (en menos de 60 s) se ejecuta la acción guardada; el `confirmed=True` del LLM se ignora. Cualquier otra respuesta la cancela. Todavía no hay botón en la burbuja ni mensajes `confirm_request`.
+- Máximo 2 llamadas a herramientas por petición (`maximum_remote_calls` en `llm.py`, evita bucles).
 - Loguear cada llamada a herramienta con sus parámetros.
