@@ -3,52 +3,21 @@ Miku Assistant - Web and Search Tools (tools/web.py)
 """
 
 import logging
+import os
+import subprocess
 import urllib.parse
 import webbrowser
 from typing import Dict, Any
 
 from core.tools import tool
+from core.tools._win import find_opera_gx as _find_opera_gx
 
 logger = logging.getLogger("miku.tools.web")
 
 
-import os
-import subprocess
-from pathlib import Path
-from typing import Optional
-
-def _find_opera_gx() -> Optional[str]:
-    """Finds the Opera GX executable path on the system."""
-    candidates = [
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Opera GX" / "opera.exe",
-        Path(os.environ.get("PROGRAMFILES", "")) / "Opera GX" / "opera.exe",
-        Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Opera GX" / "opera.exe",
-        Path(os.environ.get("APPDATA", "")) / "Local" / "Programs" / "Opera GX" / "opera.exe",
-    ]
-    for c in candidates:
-        if c.is_file():
-            return str(c)
-    return None
-
-def _open_in_browser(target_url: str) -> None:
-    opera_exe = _find_opera_gx()
-    if opera_exe:
-        try:
-            logger.info("Opening URL in Opera GX: %s", target_url)
-            subprocess.Popen([opera_exe, target_url])
-            return
-        except Exception as e:
-            logger.warning("Failed to launch Opera GX with URL %s: %s", target_url, e)
-
-    try:
-        os.startfile(target_url)
-    except Exception:
-        webbrowser.open(target_url)
-
-
 @tool(
     name="open_url",
-    description="Abre una URL web válida en el navegador predeterminado (solo http/https)."
+    description="Abre una URL web válida (solo http/https) en Opera GX si está instalado, si no en el navegador predeterminado."
 )
 def open_url(url: str = "", uri: str = "") -> Dict[str, Any]:
     """Abre una URL en el navegador."""

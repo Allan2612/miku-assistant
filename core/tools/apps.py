@@ -12,27 +12,15 @@ import time
 from typing import Dict, List, Optional, Any
 import psutil
 
+from core.config import load_config
 from core.tools import tool
+from core.tools._win import attach_user_desktop as _attach_user_desktop, find_opera_gx as _find_opera_gx_path
 
 logger = logging.getLogger("miku.tools.apps")
 
 # Cache for Start Menu shortcuts
 _SHORTCUTS_CACHE: Dict[str, str] = {}
 _CACHE_INITIALIZED: bool = False
-
-def _find_opera_gx_path() -> Optional[str]:
-    """Finds the Opera GX executable path on the system."""
-    candidates = [
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Opera GX" / "opera.exe",
-        Path(os.environ.get("PROGRAMFILES", "")) / "Opera GX" / "opera.exe",
-        Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Opera GX" / "opera.exe",
-        Path(os.environ.get("APPDATA", "")) / "Local" / "Programs" / "Opera GX" / "opera.exe",
-    ]
-    for c in candidates:
-        if c.is_file():
-            return str(c)
-    return None
-
 
 # App aliases loaded from config or default fallback
 DEFAULT_APP_ALIASES = {
@@ -63,6 +51,8 @@ DEFAULT_APP_ALIASES = {
     "code": "Code.exe",
     "edge": "msedge.exe",
 }
+# config.yaml -> apps adds or overrides aliases (H-009)
+DEFAULT_APP_ALIASES.update({k.lower(): v for k, v in load_config().apps.items()})
 
 
 # Shells and script hosts: opening them lets the LLM chain type_text into a command line (H-007)
@@ -121,21 +111,6 @@ class PROCESS_INFORMATION(ctypes.Structure):
         ('dwProcessId', wintypes.DWORD),
         ('dwThreadId', wintypes.DWORD),
     ]
-
-
-def _attach_user_desktop() -> None:
-    """Ensures current thread is attached to the interactive user desktop (WinSta0\\Default)."""
-    try:
-        user32 = ctypes.windll.user32
-        GENERIC_ALL = 0x10000000
-        h_winsta = user32.OpenWindowStationW("WinSta0", False, GENERIC_ALL)
-        if h_winsta:
-            user32.SetProcessWindowStation(h_winsta)
-        h_desk = user32.OpenDesktopW("Default", 0, False, GENERIC_ALL)
-        if h_desk:
-            user32.SetThreadDesktop(h_desk)
-    except Exception as e:
-        logger.debug("Desktop attach failed: %s", e)
 
 
 def _clean_query(name: str) -> str:

@@ -10,6 +10,7 @@ from pycaw.pycaw import AudioUtilities
 from pycaw.constants import AudioDeviceState
 
 from core.tools import tool
+from core.tools._win import attach_user_desktop as _attach_user_desktop
 
 logger = logging.getLogger("miku.tools.media")
 
@@ -18,21 +19,6 @@ VK_MEDIA_NEXT_TRACK = 0xB0
 VK_MEDIA_PREV_TRACK = 0xB1
 VK_MEDIA_STOP = 0xB2
 VK_MEDIA_PLAY_PAUSE = 0xB3
-
-
-def _attach_user_desktop() -> None:
-    """Attaches thread to interactive desktop so keyboard events reach active apps."""
-    try:
-        user32 = ctypes.windll.user32
-        GENERIC_ALL = 0x10000000
-        h_winsta = user32.OpenWindowStationW("WinSta0", False, GENERIC_ALL)
-        if h_winsta:
-            user32.SetProcessWindowStation(h_winsta)
-        h_desk = user32.OpenDesktopW("Default", 0, False, GENERIC_ALL)
-        if h_desk:
-            user32.SetThreadDesktop(h_desk)
-    except Exception as e:
-        logger.debug("Failed to attach to Default desktop: %s", e)
 
 
 def _press_key(vk_code: int) -> None:

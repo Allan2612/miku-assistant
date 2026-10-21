@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 from typing import Dict, List, Set, Any
 
+from core.config import load_config
 from core.tools import tool
 
 logger = logging.getLogger("miku.tools.files")
@@ -21,11 +22,8 @@ _EXECUTABLE_EXTS = {
     ".msi", ".msp", ".scr", ".pif", ".lnk", ".url", ".hta", ".cpl", ".jar", ".reg", ".appref-ms",
 }
 
-DEFAULT_SEARCH_ROOTS = [
-    Path.home() / "Desktop",
-    Path.home() / "Documents",
-    Path.home() / "Downloads",
-]
+# config.yaml -> tools.file_search_roots (H-009)
+DEFAULT_SEARCH_ROOTS = [Path(p).expanduser() for p in load_config().tools.file_search_roots]
 
 
 @tool(
