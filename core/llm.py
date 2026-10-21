@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import os
 import re
 import time
@@ -47,8 +48,6 @@ Si el usuario se despide ("adiós", "gracias, eso es todo", "vete", "chao"), res
 Hora y fecha actuales: {current_time}
 Momento del día: {time_of_day}
 """
-
-import random
 
 VALID_EMOTIONS = {"happy", "neutral", "surprised", "sad", "angry", "thinking"}
 
@@ -118,8 +117,11 @@ class MikuBrain:
         )
 
     def is_farewell(self, user_text: str) -> bool:
+        # Short goodbyes only, whole words: "vete a la configuración y..." is not a farewell (H-027)
         norm = user_text.lower().strip()
-        return any(kw in norm for kw in FAREWELL_KEYWORDS)
+        if len(norm.split()) > 6:
+            return False
+        return any(re.search(r"\b" + re.escape(kw) + r"\b", norm) for kw in FAREWELL_KEYWORDS)
 
     def _build_system_instruction(self) -> str:
         now = datetime.now()
@@ -215,7 +217,7 @@ class MikuBrain:
             open_notes()
             return ("happy", "¡Yatta! Ya te abrí el Bloc de notas.", False)
 
-        if low in ("el navegador", "navegador", "internet", "chrome", "abrir navegador", "opera", "opera gx", "operagx", "abrir opera", "abrir opera gx"):
+        if low in ("el navegador", "navegador", "internet", "abrir navegador", "opera", "opera gx", "operagx", "abrir opera", "abrir opera gx"):
             from core.tools.apps import open_app
             open_app("opera gx")
             return ("happy", "¡Listo! Ya abrí Opera GX para ti.", False)
@@ -233,7 +235,7 @@ class MikuBrain:
                 from core.tools.web import open_url
                 open_url("https://www.youtube.com")
                 return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
-            elif any(b in target for b in ("opera", "navegador", "internet", "chrome", "web")):
+            elif any(b in target for b in ("opera", "navegador", "internet", "web")):
                 from core.tools.apps import open_app
                 open_app("opera gx")
                 return ("happy", "¡Listo! Ya abrí Opera GX para ti.", False)
@@ -426,6 +428,10 @@ class MikuBrain:
                 is_rate_limit = any(term in err_str for term in [
                     "429", "resourceexhausted", "quota", "rate limit", "503", "unavailable", "high demand", "overloaded"
                 ])
+                # A bad API key fails on every model: say so instead of trying them all (H-027)
+                if any(term in err_str for term in ["api key", "api_key", "permission_denied", "unauthenticated", "401", "403"]):
+                    logger.error("Gemini authentication failed: %s", e)
+                    return ("sad", "No puedo conectarme con Gemini: revisa la API key en el archivo .env.", False)
                 cooldown_sec = 60.0 if is_rate_limit else 15.0
                 self._model_cooldown[model] = time.monotonic() + cooldown_sec
                 logger.warning(
