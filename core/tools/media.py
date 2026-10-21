@@ -4,6 +4,7 @@ Miku Assistant - Media and Audio Tools (tools/media.py)
 
 import ctypes
 import logging
+import re
 from typing import Dict, List, Any, Optional
 from pycaw.pycaw import AudioUtilities
 from pycaw.constants import AudioDeviceState
@@ -83,10 +84,8 @@ def media_control(action: str) -> Dict[str, Any]:
     """Envía comandos multimedia virtuales."""
     act = action.strip().lower()
 
-    if any(k in act for k in ("play", "pause", "reproduc", "paus", "alternar", "continuar", "cancion", "canción", "musica", "música")):
-        _press_key(VK_MEDIA_PLAY_PAUSE)
-        return {"ok": True, "result": "Reproducción alternada (play/pause)."}
-    elif any(k in act for k in ("next", "siguient", "pasar", "adelant")):
+    # next/prev/stop first: "siguiente canción" also contains play/pause words (H-013)
+    if any(k in act for k in ("next", "siguient", "pasar", "adelant")):
         _press_key(VK_MEDIA_NEXT_TRACK)
         return {"ok": True, "result": "Pasando a la siguiente canción."}
     elif any(k in act for k in ("prev", "anterior", "retroced", "atras", "atrás")):
@@ -95,9 +94,10 @@ def media_control(action: str) -> Dict[str, Any]:
     elif any(k in act for k in ("stop", "deten", "parar", "frenar")):
         _press_key(VK_MEDIA_STOP)
         return {"ok": True, "result": "Reproducción detenida."}
-    else:
+    elif any(k in act for k in ("play", "pause", "reproduc", "paus", "alternar", "continuar", "cancion", "canción", "musica", "música")):
         _press_key(VK_MEDIA_PLAY_PAUSE)
-        return {"ok": True, "result": f"Comando '{action}' aplicado (play/pause)."}
+        return {"ok": True, "result": "Reproducción alternada (play/pause)."}
+    return {"ok": False, "result": f"No reconozco la acción '{action}' (usa play_pause, next, previous o stop)."}
 
 
 @tool(
@@ -109,15 +109,18 @@ def set_volume(level: int) -> Dict[str, Any]:
     clamped = max(0, min(100, int(level)))
     scalar = clamped / 100.0
 
-    endpoints = _get_active_output_endpoints()
-    for endpoint in endpoints:
+    applied = 0
+    for endpoint in _get_active_output_endpoints():
         try:
             endpoint.SetMasterVolumeLevelScalar(scalar, None)
             if clamped > 0 and endpoint.GetMute():
                 endpoint.SetMute(False, None)
+            applied += 1
         except Exception:
             pass
 
+    if not applied:
+        return {"ok": False, "result": "No pude cambiar el volumen: no hay dispositivos de salida activos."}
     return {"ok": True, "result": f"Volumen ajustado al {clamped}%."}
 
 
@@ -154,20 +157,26 @@ def change_volume(delta: int) -> Dict[str, Any]:
 def mute(on: Optional[bool] = None, action: str = "", state: str = "") -> Dict[str, Any]:
     """Silencia o reactiva el volumen maestro en todos los dispositivos de salida."""
     if on is None:
-        act = (action or state).lower().strip()
-        if any(w in act for w in ("unmute", "desilenciar", "activar", "reactivar", "no", "false")):
+        # Whole words, in priority order: substrings turned "activar el silencio" into unmute (H-013)
+        words = set(re.findall(r"\w+", (action or state).lower()))
+        if words & {"unmute", "desilenciar", "desmutear", "reactivar", "quita", "quitar", "false", "off", "no"}:
             target_on = False
-        else:
+        elif words & {"silencio", "silencia", "silenciar", "mute", "mutea", "mutear", "true", "on"}:
             target_on = True
+        else:
+            target_on = not (words & {"activa", "activar", "sonido", "enciende"})
     else:
         target_on = bool(on)
 
-    endpoints = _get_active_output_endpoints()
-    for endpoint in endpoints:
+    applied = 0
+    for endpoint in _get_active_output_endpoints():
         try:
             endpoint.SetMute(target_on, None)
+            applied += 1
         except Exception:
             pass
+    if not applied:
+        return {"ok": False, "result": "No pude cambiar el silencio: no hay dispositivos de salida activos."}
     state_str = "silenciado" if target_on else "reactivado"
     return {"ok": True, "result": f"Sonido {state_str}."}
 

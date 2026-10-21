@@ -15,6 +15,12 @@ logger = logging.getLogger("miku.tools.files")
 # Track files found during the current session to ensure safe opening
 _SESSION_FOUND_FILES: Set[str] = set()
 
+# os.startfile runs these instead of opening them (H-011)
+_EXECUTABLE_EXTS = {
+    ".exe", ".com", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
+    ".msi", ".msp", ".scr", ".pif", ".lnk", ".url", ".hta", ".cpl", ".jar", ".reg", ".appref-ms",
+}
+
 DEFAULT_SEARCH_ROOTS = [
     Path.home() / "Desktop",
     Path.home() / "Documents",
@@ -92,6 +98,9 @@ def open_file(path: str) -> Dict[str, Any]:
                 target = f
                 break
 
+    if target and Path(target).suffix.lower() in _EXECUTABLE_EXTS:
+        return {"ok": False, "result": f"Por seguridad no abro programas ni scripts ({Path(target).name}). Ábrelo tú si confías en él."}
+
     if target:
         try:
             os.startfile(target)
@@ -133,6 +142,6 @@ def open_folder(name: str = "", folder: str = "", folder_name: str = "") -> Dict
     target = folder_map.get(q)
     if target and target.exists():
         os.startfile(str(target))
-        return {"ok": True, "result": f"He abierto la carpeta {name}."}
+        return {"ok": True, "result": f"He abierto la carpeta {target_name}."}
 
-    return {"ok": False, "result": f"No reconozco la carpeta '{name}'. Las disponibles son: Escritorio, Descargas, Documentos, Imágenes, Música y Videos."}
+    return {"ok": False, "result": f"No reconozco la carpeta '{target_name}'. Las disponibles son: Escritorio, Descargas, Documentos, Imágenes, Música y Videos."}

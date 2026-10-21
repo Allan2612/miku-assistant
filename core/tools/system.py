@@ -74,24 +74,24 @@ def lock_pc() -> Dict[str, Any]:
 )
 def shutdown_pc(mode: str = "shutdown", confirmed: bool = False) -> Dict[str, Any]:
     """Apaga o reinicia el sistema con confirmación previa obligatoria."""
-    m = mode.strip().lower()
+    # Normalize once so the confirmation question and the executed action always match (H-015)
+    m = {"apagar": "shutdown", "reiniciar": "restart", "suspender": "sleep"}.get(mode.strip().lower(), mode.strip().lower())
+    if m not in ("shutdown", "restart", "sleep"):
+        return {"ok": False, "result": f"Modo desconocido '{mode}' (usa shutdown, restart o sleep)."}
 
     if not confirmed:
-        action_name = "apagar" if m == "shutdown" else "reiniciar" if m == "restart" else "suspender"
+        action_name = {"shutdown": "apagar", "restart": "reiniciar", "sleep": "suspender"}[m]
         return {
             "ok": False,
             "requires_confirmation": True,
             "result": f"¿Estás seguro de que deseas {action_name} la computadora? Por favor confirma diciendo sí."
         }
 
-    if m in ("shutdown", "apagar"):
+    if m == "shutdown":
         subprocess.run(["shutdown", "/s", "/t", "30", "/c", "Miku Assistant: Apagando el equipo en 30 segundos."], check=False)
         return {"ok": True, "result": "El equipo se apagará en 30 segundos (puedes cancelar con 'shutdown /a')."}
-    elif m in ("restart", "reiniciar"):
+    if m == "restart":
         subprocess.run(["shutdown", "/r", "/t", "30", "/c", "Miku Assistant: Reiniciando el equipo en 30 segundos."], check=False)
         return {"ok": True, "result": "El equipo se reiniciará en 30 segundos."}
-    elif m in ("sleep", "suspender"):
-        ctypes.windll.Powrprof.SetSuspendState(0, 1, 0)
-        return {"ok": True, "result": "Equipo suspendido."}
-    else:
-        return {"ok": False, "result": f"Modo desconocido '{mode}' (usa shutdown, restart o sleep)."}
+    ctypes.windll.Powrprof.SetSuspendState(0, 1, 0)
+    return {"ok": True, "result": "Equipo suspendido."}
