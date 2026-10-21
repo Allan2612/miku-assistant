@@ -72,7 +72,7 @@ class WakewordConfig:
     model: str = "models/wakeword/hey_miku.onnx"
     threshold: float = 0.7
     patience: int = 2
-    vad_threshold: float = 0.5
+    vad_threshold: float = 0.0
 
 
 @dataclass(slots=True)
