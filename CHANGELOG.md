@@ -21,6 +21,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Interrumpir a Miku ya no deja intervalos activos; la wake word se reanuda tras errores.
 - Temporizadores, volumen, silencio y apagado hacen lo que se pide.
 - La primera respuesta tras descargar RVC ya no espera su carga (35-80 s): usa la voz base mientras carga.
+- Transcripción: Whisper `small` en lugar de `base` (8 hilos). Con ruido de micrófono, `base` fallaba en ~1 de cada 2 palabras en español y `small` en ~1 de cada 4; tarda ~1,3 s por frase en vez de ~0,4 s.
 
 ### Añadido
 - Al activarla, Miku responde con una frase corta ("¿Sí?", "¿Dime?"…) antes de escuchar, para que se note que empezó.
