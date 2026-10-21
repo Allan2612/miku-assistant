@@ -17,6 +17,7 @@ _TIMERS: Dict[int, Dict[str, Any]] = {}
 _NEXT_TIMER_ID: int = 1
 _TIMER_NOTIFIER: Optional[Callable[[str], Awaitable[None]]] = None
 _MAIN_LOOP: Optional[asyncio.AbstractEventLoop] = None
+MAX_TIMERS = 20
 
 
 def set_timer_notifier(callback: Callable[[str], Awaitable[None]], loop: Optional[asyncio.AbstractEventLoop] = None) -> None:
@@ -58,7 +59,7 @@ async def _timer_worker(timer_id: int, duration_seconds: float, label: str) -> N
         await asyncio.sleep(duration_seconds)
         logger.info("Timer #%d '%s' expired!", timer_id, label)
 
-        msg = f"¡Tu temporizador de {label} ha terminado!"
+        msg = f"¡{label}!" if label.startswith("Recordatorio") else f"¡Tu temporizador de {label} ha terminado!"
         if _TIMER_NOTIFIER:
             try:
                 await _TIMER_NOTIFIER(msg)
@@ -81,23 +82,26 @@ def set_timer(minutes: float, label: str = "Temporizador") -> Dict[str, Any]:
 
     if minutes <= 0:
         return {"ok": False, "result": "La duración del temporizador debe ser mayor a 0 minutos."}
+    if len(_TIMERS) >= MAX_TIMERS:
+        return {"ok": False, "result": f"Ya hay {MAX_TIMERS} temporizadores activos; cancela alguno primero."}
 
     duration_sec = minutes * 60.0
     timer_id = _NEXT_TIMER_ID
     _NEXT_TIMER_ID += 1
 
-    clean_label = label.strip() or f"Temporizador de {minutes} min"
+    label = label.strip()
+    clean_label = label if label and label.lower() != "temporizador" else f"{minutes:g} minutos"
     end_time = datetime.datetime.now() + datetime.timedelta(seconds=duration_sec)
 
-    task = _schedule_worker(timer_id, duration_sec, clean_label)
-
+    # Register before scheduling: a very short timer could finish (and pop itself) first (H-017)
     _TIMERS[timer_id] = {
         "id": timer_id,
         "label": clean_label,
         "minutes": minutes,
         "end_time": end_time.strftime("%H:%M:%S"),
-        "task": task,
+        "task": None,
     }
+    _TIMERS[timer_id]["task"] = _schedule_worker(timer_id, duration_sec, clean_label)
 
     return {"ok": True, "result": f"Temporizador #{timer_id} de {minutes} minuto(s) para '{clean_label}' configurado (sonará a las {end_time.strftime('%H:%M')})."}
 
@@ -110,6 +114,9 @@ def set_reminder(time_str: str, text: str) -> Dict[str, Any]:
     """Programa un recordatorio a una hora fija en formato HH:MM."""
     global _NEXT_TIMER_ID
     clean_time = time_str.strip()
+
+    if len(_TIMERS) >= MAX_TIMERS:
+        return {"ok": False, "result": f"Ya hay {MAX_TIMERS} temporizadores activos; cancela alguno primero."}
 
     try:
         parts = clean_time.split(":")
@@ -128,15 +135,14 @@ def set_reminder(time_str: str, text: str) -> Dict[str, Any]:
     _NEXT_TIMER_ID += 1
 
     label = f"Recordatorio: {text}"
-    task = _schedule_worker(timer_id, diff_sec, label)
-
     _TIMERS[timer_id] = {
         "id": timer_id,
         "label": label,
         "minutes": round(diff_sec / 60.0, 1),
         "end_time": target_dt.strftime("%H:%M:%S"),
-        "task": task,
+        "task": None,
     }
+    _TIMERS[timer_id]["task"] = _schedule_worker(timer_id, diff_sec, label)
 
     return {"ok": True, "result": f"Recordatorio #{timer_id} configurado para las {clean_time} ({round(diff_sec/60)} minutos a partir de ahora)."}
 
@@ -167,8 +173,9 @@ def cancel_timer(timer_id: int) -> Dict[str, Any]:
     if not info:
         return {"ok": False, "result": f"No existe ningún temporizador activo con el ID #{timer_id}."}
 
-    task: asyncio.Task = info["task"]
-    task.cancel()
+    task = info["task"]
+    if task is not None:
+        task.cancel()
     _TIMERS.pop(int(timer_id), None)
 
     return {"ok": True, "result": f"Temporizador #{timer_id} ({info['label']}) cancelado."}
