@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import logging.handlers
 import os
 import signal
 import sys
@@ -32,7 +33,10 @@ async def async_main() -> None:
     pid_file = Path(root_dir) / "cache" / "core.pid"
     pid_file.write_text(str(os.getpid()), encoding="ascii")
     handlers: list[logging.Handler] = [
-        logging.FileHandler("cache/core.log", mode="a", encoding="utf-8")
+        # Rotating: the log grew without limit (H-029)
+        logging.handlers.RotatingFileHandler(
+            Path(root_dir) / "cache" / "core.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
+        )
     ]
     if sys.stderr is not None:
         handlers.append(logging.StreamHandler(sys.stderr))
@@ -48,7 +52,7 @@ async def async_main() -> None:
     api_key_status = "present" if config.gemini_api_key else "not set (check .env)"
 
     logger.info("==========================================")
-    logger.info("  Miku Assistant Core - Phase 7 Running   ")
+    logger.info("         Miku Assistant Core Running      ")
     logger.info("==========================================")
     logger.info("Config loaded successfully:")
     logger.info("  - Language: %s | Hotkey: %s | Log Level: %s", config.language, config.hotkey, config.log_level)
@@ -127,23 +131,19 @@ async def async_main() -> None:
     wakeword.start()
 
     # Pre-warm STT and RVC in background for instant first interaction
-    asyncio.create_task(stt.warmup())
+    background = {asyncio.create_task(stt.warmup())}  # keep refs so tasks are not collected
     if rvc.enabled:
-        asyncio.create_task(rvc.warmup())
+        background.add(asyncio.create_task(rvc.warmup()))
 
     # Schedule once-per-day startup greeting according to current hour
-    asyncio.create_task(pipeline.check_startup_greeting())
+    background.add(asyncio.create_task(pipeline.check_startup_greeting()))
 
     if sys.platform != "win32":
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(sig, signal_handler)
 
     try:
-        while not stop_event.is_set():
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=1.0)
-            except asyncio.TimeoutError:
-                pass
+        await stop_event.wait()
     except (asyncio.CancelledError, KeyboardInterrupt):
         pass
     finally:

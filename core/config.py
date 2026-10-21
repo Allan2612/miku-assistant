@@ -126,16 +126,17 @@ def load_config(
             if isinstance(loaded, dict):
                 raw_data = loaded
 
-    window_data = raw_data.get("window", {})
-    behavior_data = raw_data.get("behavior", {})
-    llm_data = raw_data.get("llm", {})
-    stt_data = raw_data.get("stt", {})
-    tts_data = raw_data.get("tts", {})
-    rvc_data = raw_data.get("rvc", {})
-    wakeword_data = raw_data.get("wakeword", {})
-    live2d_data = raw_data.get("live2d", {})
-    tools_data = raw_data.get("tools", {})
-    apps_data = raw_data.get("apps", {})
+    # "or {}": an empty YAML section loads as None (H-033)
+    window_data = raw_data.get("window") or {}
+    behavior_data = raw_data.get("behavior") or {}
+    llm_data = raw_data.get("llm") or {}
+    stt_data = raw_data.get("stt") or {}
+    tts_data = raw_data.get("tts") or {}
+    rvc_data = raw_data.get("rvc") or {}
+    wakeword_data = raw_data.get("wakeword") or {}
+    live2d_data = raw_data.get("live2d") or {}
+    tools_data = raw_data.get("tools") or {}
+    apps_data = raw_data.get("apps") or {}
 
     return AppConfig(
         hotkey=raw_data.get("hotkey", "Ctrl+Alt+M"),
