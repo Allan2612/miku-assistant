@@ -7,23 +7,9 @@ use tauri::{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
-            // Position main window bottom-right on desktop
-            if let Some(window) = app.get_webview_window("main") {
-                if let Ok(Some(monitor)) = window.current_monitor() {
-                    let mon_pos = monitor.position();
-                    let mon_size = monitor.size();
-                    let scale = monitor.scale_factor();
-                    let win_w = (420.0 * scale) as i32;
-                    let win_h = (620.0 * scale) as i32;
-                    let margin = (12.0 * scale) as i32;
-                    let x = mon_pos.x + mon_size.width as i32 - win_w - margin;
-                    let y = mon_pos.y + mon_size.height as i32 - win_h - margin;
-                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(x, y)));
-                }
-            }
+            // The frontend positions the window (positionWindow in main.ts) using the work area
 
             // Build Tray Menu: Mostrar / Ocultar / Salir
             let show_i = MenuItem::with_id(app, "show", "Mostrar", true, None::<&str>)?;
