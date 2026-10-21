@@ -19,6 +19,8 @@
    - Revisa qué expresiones trae (archivos `.exp3.json`) y mapéalas en `config.yaml → live2d.expressions`.
 2. **Cubism Core**: descarga el "Cubism SDK for Web" de la web oficial de Live2D y copia `live2dcubismcore.min.js` a `app/public/lib/`.
 3. **Modelo RVC de Miku** (`.pth` y, si tiene, `.index`) en `models/rvc/`. Fase 6.
+   - También hace falta **`models/rvc/rmvpe.pt`** (estimador de tono de RVC). Sin él, RVC falla y Miku usa la voz base de edge-tts.
+   - La primera vez que arranca RVC se descargan de Hugging Face **ContentVec** (`lengyue233/content-vec-best`, unos cientos de MB) y el modelo de **Whisper**: el primer uso necesita internet y puede tardar un par de minutos.
 4. **(Opcional) Wake word** `hey_miku.onnx` entrenado con el notebook de openWakeWord, en `models/wakeword/`. Fase 7.
 
 ## Cómo trabajar con Gemini CLI
