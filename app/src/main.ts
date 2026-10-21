@@ -174,8 +174,22 @@ function handleServerMessage(msg: ServerMessage): void {
 /**
  * Show Miku with appear animation and resume rendering
  */
+// A show/hide that arrives mid-animation is applied when the animation ends, not dropped (H-044)
+let pendingVisibility: "show" | "hide" | null = null;
+
+function applyPendingVisibility(): void {
+  const next = pendingVisibility;
+  pendingVisibility = null;
+  if (next === "show") showMiku();
+  else if (next === "hide") hideMiku();
+}
+
 export async function showMiku(): Promise<void> {
-  if (isVisible || animations.isAnimating) return;
+  if (animations.isAnimating) {
+    pendingVisibility = "show";
+    return;
+  }
+  if (isVisible) return;
 
   const appEl = document.querySelector<HTMLDivElement>("#app");
   if (!appEl) return;
@@ -183,8 +197,9 @@ export async function showMiku(): Promise<void> {
   if (isTauri) {
     try {
       await positionWindow();
+      // No setFocus(): the window is always-on-top, and stealing focus sent type_text
+      // into Miku instead of the user's app (H-044)
       await getCurrentWindow().show();
-      await getCurrentWindow().setFocus();
     } catch (err) {
       console.warn("[Window] show error:", err);
     }
@@ -202,13 +217,18 @@ export async function showMiku(): Promise<void> {
 
   resetAutoHideTimer();
   console.log("[Miku Assistant] Miku is visible at bottom-right.");
+  applyPendingVisibility();
 }
 
 /**
  * Hide Miku with disappear animation and completely stop ticker (0% CPU / 0% GPU)
  */
 export async function hideMiku(): Promise<void> {
-  if (!isVisible || animations.isAnimating) return;
+  if (animations.isAnimating) {
+    pendingVisibility = "hide";
+    return;
+  }
+  if (!isVisible) return;
 
   clearAutoHideTimer();
   ui.clearSubtitle();
@@ -236,6 +256,7 @@ export async function hideMiku(): Promise<void> {
 
   isVisible = false;
   console.log("[Miku Assistant] Miku is now hidden. Render ticker frozen (0% GPU).");
+  applyPendingVisibility();
 }
 
 let lastActivateTime = 0;
