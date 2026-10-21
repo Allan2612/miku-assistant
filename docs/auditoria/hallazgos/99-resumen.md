@@ -67,3 +67,19 @@ Agrupado por archivo para tocar cada uno una sola vez:
 - Los 63 scripts de `scratch/` se revisaron con búsqueda de riesgos y por propósito; solo se leyeron enteros los que se proponen convertir en tests.
 - `CHANGELOG.md` se comprobó en sus afirmaciones verificables, no entrada por entrada.
 - `package-lock.json` se revisó con `npm audit`, no a mano. `cargo audit` no se ejecutó.
+
+## Arreglos (2026-10-21, commits `9de705b` a `7ebedc7`)
+
+**Arreglados (27):** H-001, H-004, H-005, H-006, H-007, H-008, H-011, H-012, H-013, H-014, H-015, H-019, H-020, H-023, H-024, H-025, H-026, H-030, H-038, H-039, H-043, H-045, H-047, H-049, H-050, H-053, H-059. Los dos críticos y los cuatro altos están cerrados.
+
+**Parciales (5):**
+
+- H-003: las herramientas ya no se ejecutan dentro del bucle de eventos (H-025), pero sigue sin haber un tiempo máximo por herramienta.
+- H-021: import actualizado a la API nueva de websockets; `text_input` sigue procesándose dentro del bucle de mensajes del cliente.
+- H-051: `withGlobalTauri` desactivado; faltan la CSP (hay que probarla con la app) y quitar el plugin `opener`.
+- H-052: `requirements.txt` completo; faltan versiones fijadas o un archivo de bloqueo.
+- H-055: hay tests en `tests/` (5 archivos, sin dependencias: `python -m tests.<nombre>`) para H-001, H-006/7/8, H-011, H-013, H-015, H-019, H-023/24 y H-050; nada más está cubierto.
+
+**Decisiones tomadas por defecto (cambiables):** `close_app` sigue sin pedir confirmación (H-002, ahora solo cierra por nombre exacto); `text_input` se mantiene en el servidor (protegido por el origen); Whisper y RVC se siguen cargando al arrancar (H-028).
+
+**Pendiente de probar con la app compilada:** el atajo Ctrl+Alt+M (H-049), el click-through (H-047), "Salir" desde la bandeja (H-050), que la app sigue conectando con el origen `http://tauri.localhost` (H-019) y `stop.bat` (H-053). Hay que recompilar la app (`npm run tauri build`) para que entren los cambios de Tauri y del frontend.
