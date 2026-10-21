@@ -26,6 +26,8 @@ ALLOWED_ORIGINS = [
     None,
 ]
 
+MAX_TEXT_INPUT = 1000  # characters sent to Gemini per message
+
 
 class MikuServer:
     def __init__(
@@ -47,6 +49,19 @@ class MikuServer:
         self._pending_farewell: bool = False
         # Set by __main__: lets the app's "Salir" stop the whole backend (H-050)
         self.on_shutdown: Optional[Callable[[], None]] = None
+        # Strong refs: un-referenced tasks can be garbage-collected and lose their errors (H-021)
+        self._tasks: Set[asyncio.Task] = set()
+
+    def _spawn(self, coro: Any) -> None:
+        """Runs a coroutine without blocking the client's message loop."""
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._task_done)
+
+    def _task_done(self, task: asyncio.Task) -> None:
+        self._tasks.discard(task)
+        if not task.cancelled() and task.exception():
+            logger.error("Background task failed", exc_info=task.exception())
 
     def set_pipeline(self, pipeline: Any) -> None:
         """Sets or updates the orchestrator pipeline."""
@@ -162,17 +177,18 @@ class MikuServer:
                         await websocket.send(json.dumps({"type": "state", "value": "idle"}))
 
                     elif msg_type == "text_input":
-                        user_text = data.get("text", "")
+                        user_text = str(data.get("text", ""))[:MAX_TEXT_INPUT]
                         if user_text:
+                            # As a task: dismiss/speak_done from this client must not wait for the answer
                             if self.pipeline:
-                                await self.pipeline.handle_text_input(user_text)
+                                self._spawn(self.pipeline.handle_text_input(user_text))
                             else:
-                                await self.handle_text_input(user_text)
+                                self._spawn(self.handle_text_input(user_text))
 
                     elif msg_type == "activate":
                         logger.info("Client requested activation.")
                         if self.pipeline:
-                            asyncio.create_task(self.pipeline.handle_voice_activation())
+                            self._spawn(self.pipeline.handle_voice_activation())
                         else:
                             await self.broadcast({"type": "show"})
 

@@ -3,6 +3,7 @@ Miku Assistant - Tools Registry and Manager
 Strict adherence to GEMINI.md:
 - Closed list of PC control functions.
 - Destructive tools only run after the USER confirms (H-001), never on the LLM's word.
+- Each tool call is abandoned after TOOL_TIMEOUT_S (H-003).
 - Graceful error isolation (returns dict {"ok": bool, "result": str}).
 """
 
@@ -10,6 +11,7 @@ import functools
 import inspect
 import logging
 import re
+import threading
 import time
 from typing import Callable, Dict, List, Any, Optional
 
@@ -25,6 +27,29 @@ _user_confirmed: Optional[Dict[str, Any]] = None
 _CONFIRM_WINDOW_S = 60.0
 _YES_WORDS = {"sí", "si", "confirmo", "adelante", "hazlo", "claro", "dale", "vale", "ok", "okay", "afirmativo", "correcto"}
 _NO_WORDS = {"no", "cancela", "cancelar", "espera", "nada"}
+
+# H-003: a hung tool must not hang the turn. Threads cannot be killed, so after the limit we stop
+# waiting and report an error. Daemon threads, so a stuck call never blocks backend shutdown.
+TOOL_TIMEOUT_S = 10.0
+
+
+def _run_with_timeout(func: Callable, args: tuple, kwargs: dict) -> Any:
+    box: Dict[str, Any] = {}
+
+    def target() -> None:
+        try:
+            box["res"] = func(*args, **kwargs)
+        except BaseException as e:
+            box["err"] = e
+
+    t = threading.Thread(target=target, daemon=True, name="miku-tool")
+    t.start()
+    t.join(TOOL_TIMEOUT_S)
+    if t.is_alive():
+        raise TimeoutError
+    if "err" in box:
+        raise box["err"]
+    return box["res"]
 
 
 def note_user_reply(text: str) -> None:
@@ -75,11 +100,14 @@ def tool(name: Optional[str] = None, description: Optional[str] = None, destruct
             start_t = time.perf_counter()
             logger.info("Executing tool [%s] args=%s kwargs=%s", tool_name, _short(args), _short(kwargs))
             try:
-                res = func(*args, **kwargs)
+                res = _run_with_timeout(func, args, kwargs)
                 logger.info("Tool [%s] succeeded in %.3fs: %s", tool_name, time.perf_counter() - start_t, _short(res))
                 if isinstance(res, dict) and "ok" in res and "result" in res:
                     return res
                 return {"ok": True, "result": str(res)}
+            except TimeoutError:
+                logger.error("Tool [%s] timed out after %.0fs", tool_name, TOOL_TIMEOUT_S)
+                return {"ok": False, "result": f"{tool_name} tardó demasiado y lo dejé de esperar."}
             except Exception as e:
                 logger.error("Tool [%s] failed after %.3fs: %s", tool_name, time.perf_counter() - start_t, e, exc_info=True)
                 return {"ok": False, "result": f"Error al ejecutar {tool_name}: {e}"}
