@@ -9,7 +9,7 @@ El objetivo de diseño es **consumo casi nulo en reposo** y **respuesta en menos
 Dos procesos que hablan por WebSocket local (`ws://127.0.0.1:8765`), más un subproceso de GPU que solo existe mientras se usa:
 
 ```
-app/  (Tauri v2 + TypeScript)  ◄──── WebSocket ────►  core/  (Python 3.11, asyncio)
+app/  (Tauri v2 + TypeScript)  ◄──── WebSocket ────►  core/  (Python 3.14, asyncio)
   Ventana transparente                                   Activación (atajo / wake word)
   Live2D con PixiJS                                      Micrófono + VAD + Whisper (CPU)
   Animaciones, lip sync, subtítulos                      Gemini con function calling
@@ -52,7 +52,7 @@ Si TTS o RVC fallan, Miku responde con la voz base o solo con subtítulo; nunca 
 ## Requisitos
 
 - Windows 10/11 con GPU NVIDIA (probado en RTX 3050 de 8 GB)
-- Python 3.11, Node.js 20+, Rust (`rustup`) y Microsoft C++ Build Tools
+- Python 3.14 (la versión del venv actual), Node.js 20+, Rust (`rustup`) y Microsoft C++ Build Tools
 - API key de Gemini (Google AI Studio)
 
 Recursos que **no** están en el repo y hay que conseguir aparte (detalles en [docs/setup.md](docs/setup.md)):
@@ -71,8 +71,9 @@ copy .env.example .env
 
 :: Backend
 cd core
-py -3.11 -m venv .venv
+py -3.14 -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cu126
 cd ..
 
 :: Frontend
