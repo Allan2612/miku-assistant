@@ -1,6 +1,6 @@
 """H-034: the streaming VAD must tell speech from silence, noise and music-like tones.
 
-Uses the voice samples in app/public/samples/ (speech) and synthetic signals.
+Uses the voice samples in app/samples/ (speech) and synthetic signals.
 Run: core\\.venv\\Scripts\\python.exe -m tests.test_vad  (or with pytest)
 """
 
@@ -38,7 +38,7 @@ def test_vad_separates_speech_from_noise():
     noise = (rng.standard_normal(16000 * 3) * 0.02).astype(np.float32)
     chord = (0.2 * (np.sin(2 * np.pi * 220 * t) + np.sin(2 * np.pi * 277 * t) + np.sin(2 * np.pi * 330 * t))).astype(np.float32)
 
-    speech = _speech_ratio(vad, _load_16k(ROOT / "app/public/samples/sample_miku_mellow.wav"))
+    speech = _speech_ratio(vad, _load_16k(ROOT / "app/samples/sample_miku_mellow.wav"))
     others = {name: _speech_ratio(vad, a) for name, a in (("silence", silence), ("noise", noise), ("chord", chord))}
     print(f"speech={speech:.2f}", {k: round(v, 2) for k, v in others.items()})
     assert speech > 0.4, speech

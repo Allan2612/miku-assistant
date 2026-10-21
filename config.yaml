@@ -12,7 +12,7 @@ stt: { model: "base", device: "cpu", compute_type: "int8", cpu_threads: 6 }
 tts: { voice: "es-MX-DaliaNeural", rate: "+5%", pitch: "+10Hz" }
 rvc: { enabled: true, model: "models/rvc/miku_mellow.pth", index: "models/rvc/miku_mellow.index", f0_up_key: 0, index_rate: 0.25 }
 wakeword: { enabled: true, model: "models/wakeword/hey_miku.onnx", threshold: 0.50, patience: 1 }
-live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0.25, expressions: { happy: null, sad: null, surprised: null, angry: null, neutral: null } }
+live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0, expressions: { happy: null, sad: null, surprised: null, angry: null, neutral: null } }
 tools: { confirm_destructive: true, file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }
 apps: {
   opera: "opera.exe",

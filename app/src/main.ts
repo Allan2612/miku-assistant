@@ -357,7 +357,7 @@ async function bootstrap(): Promise<void> {
       modelPath = "/" + modelPath;
     }
 
-    const scale = live2dCfg.scale || 0.25;
+    const scale = live2dCfg.scale ?? 0; // 0 = auto-fit
     if (statusEl) statusEl.textContent = "Cargando modelo Live2D...";
 
     // 5. Load Live2D model with safe-framing

@@ -14,7 +14,7 @@ import core.audio_in as audio_in
 from tests.test_vad import ROOT, _load_16k
 
 # One continuous phrase of the sample (it holds three phrases separated by ~1 s of digital silence)
-speech = _load_16k(ROOT / "app/public/samples/sample_miku_mellow.wav")[int(1.54 * 16000):int(4.1 * 16000)]
+speech = _load_16k(ROOT / "app/samples/sample_miku_mellow.wav")[int(1.54 * 16000):int(4.1 * 16000)]
 t = np.arange(16000 * 8) / 16000
 music = (0.2 * (np.sin(2 * np.pi * 220 * t) + np.sin(2 * np.pi * 277 * t))).astype(np.float32)
 SIGNAL = np.concatenate([np.zeros(8000, np.float32), speech, music])

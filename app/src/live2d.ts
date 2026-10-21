@@ -119,7 +119,8 @@ class Live2DManagerImpl implements Live2DManager {
       const autoFitScale = Math.min(maxFitWidth, maxFitHeight);
 
       // Default framing: elegant waist-up view with 10% breathing room on all sides
-      const defaultScale = (scale > 0 && scale !== 0.25) ? scale : autoFitScale * 1.08;
+      // live2d.scale in config.yaml: 0 = fit the window automatically (H-046)
+      const defaultScale = scale > 0 ? scale : autoFitScale * 1.08;
       const defaultX = this.app.screen.width / 2;
       const defaultY = this.app.screen.height * 0.68;
 
@@ -249,8 +250,9 @@ class Live2DManagerImpl implements Live2DManager {
       (e) => {
         e.preventDefault();
         const factor = e.deltaY < 0 ? 1.04 : 0.96;
-        model.scale.x *= factor;
-        model.scale.y *= factor;
+        // Bounded so Miku can neither vanish nor overflow the window (H-046)
+        const next = Math.min(defaultScale * 1.25, Math.max(defaultScale * 0.5, model.scale.x * factor));
+        model.scale.set(next);
         saveTransform();
       },
       { passive: false }
