@@ -284,54 +284,65 @@ class MikuPipeline:
             if self.wakeword is not None:
                 self.wakeword.pause()
             logger.info("Processing text input: %s", clean)
-
-            # Pre-warm RVC in background if needed
-            if self.rvc is not None and self.rvc.enabled and not self.rvc.is_running:
-                asyncio.create_task(self.rvc.warmup())
-
-            # 1. User subtitle
-            await self.server.broadcast({
-                "type": "subtitle",
-                "who": "user",
-                "text": text,
-            })
-
-            # 2. Indicate thinking state
-            await self.server.broadcast({"type": "state", "value": "thinking"})
-            await self.server.broadcast({"type": "expression", "name": "thinking"})
-
-            # 3. LLM completion
-            emotion, answer, is_farewell = await self.brain.chat(text)
-            self._pending_farewell = is_farewell
-            self.resources.touch()
-
-            # 4. Synthesize speech (edge-tts -> RVC)
-            voice_res = await self._synthesize_voice(answer)
-            self.resources.touch()
-
-            if voice_res:
-                audio_b64, mime = voice_res
-                await self.server.broadcast({"type": "expression", "name": emotion})
-                await self.server.broadcast({"type": "subtitle", "who": "miku", "text": answer})
-                self._is_speaking = True
-                await self.server.broadcast({"type": "state", "value": "speaking"})
-                await self.server.broadcast({
-                    "type": "speak",
-                    "audio_b64": audio_b64,
-                    "mime": mime,
-                    "text": answer,
-                    "emotion": emotion,
-                })
-                self._schedule_speak_done_watchdog(answer)
-            else:
-                await self.server.broadcast({"type": "expression", "name": emotion})
-                await self.server.broadcast({"type": "subtitle", "who": "miku", "text": answer})
+            try:
+                await self._process_text(text)
+            except Exception:
+                # Without this the wake word stayed paused and the UI stuck on "thinking" (H-030)
+                logger.exception("Error in text input pipeline")
                 await self.server.broadcast({"type": "state", "value": "idle"})
                 if self.wakeword is not None:
                     self.wakeword.resume()
-                if is_farewell:
-                    await asyncio.sleep(3.5)
-                    await self.server.broadcast({"type": "hide"})
+
+    async def _process_text(self, text: str) -> None:
+        """Body of handle_text_input; runs under the pipeline lock."""
+
+        # Pre-warm RVC in background if needed
+        if self.rvc is not None and self.rvc.enabled and not self.rvc.is_running:
+            asyncio.create_task(self.rvc.warmup())
+
+        # 1. User subtitle
+        await self.server.broadcast({
+            "type": "subtitle",
+            "who": "user",
+            "text": text,
+        })
+
+        # 2. Indicate thinking state
+        await self.server.broadcast({"type": "state", "value": "thinking"})
+        await self.server.broadcast({"type": "expression", "name": "thinking"})
+
+        # 3. LLM completion
+        emotion, answer, is_farewell = await self.brain.chat(text)
+        self._pending_farewell = is_farewell
+        self.resources.touch()
+
+        # 4. Synthesize speech (edge-tts -> RVC)
+        voice_res = await self._synthesize_voice(answer)
+        self.resources.touch()
+
+        if voice_res:
+            audio_b64, mime = voice_res
+            await self.server.broadcast({"type": "expression", "name": emotion})
+            await self.server.broadcast({"type": "subtitle", "who": "miku", "text": answer})
+            self._is_speaking = True
+            await self.server.broadcast({"type": "state", "value": "speaking"})
+            await self.server.broadcast({
+                "type": "speak",
+                "audio_b64": audio_b64,
+                "mime": mime,
+                "text": answer,
+                "emotion": emotion,
+            })
+            self._schedule_speak_done_watchdog(answer)
+        else:
+            await self.server.broadcast({"type": "expression", "name": emotion})
+            await self.server.broadcast({"type": "subtitle", "who": "miku", "text": answer})
+            await self.server.broadcast({"type": "state", "value": "idle"})
+            if self.wakeword is not None:
+                self.wakeword.resume()
+            if is_farewell:
+                await asyncio.sleep(3.5)
+                await self.server.broadcast({"type": "hide"})
 
     def handle_speak_done(self) -> bool:
         """Returns True if there is a pending farewell animation to trigger."""

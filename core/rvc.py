@@ -24,6 +24,10 @@ logger = logging.getLogger("miku.rvc")
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
+# First load may download ContentVec from Hugging Face; a timeout now restarts the worker,
+# so a short limit would never let that first download finish (H-041).
+LOAD_TIMEOUT_S = 180.0
+
 
 class RVCManager:
     """Manages the isolated GPU RVC worker subprocess from the main core process."""
@@ -53,6 +57,12 @@ class RVCManager:
         """Returns True if the worker subprocess is currently active and alive."""
         return self._proc is not None and self._proc.returncode is None
 
+    @staticmethod
+    def _log_file():
+        log_path = ROOT_DIR / "cache" / "rvc_worker.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        return open(log_path, "ab")
+
     async def _ensure_worker(self) -> bool:
         """Spawns the worker subprocess if not currently running."""
         if not self.enabled:
@@ -64,6 +74,7 @@ class RVCManager:
         worker_script = ROOT_DIR / "core" / "rvc_worker.py"
         python_exe = sys.executable
 
+        log_file = self._log_file()
         try:
             logger.info("Spawning isolated RVC worker subprocess (%s)...", worker_script.name)
             self._proc = await asyncio.create_subprocess_exec(
@@ -71,7 +82,7 @@ class RVCManager:
                 str(worker_script),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,  # worker logs to stderr
+                stderr=log_file,  # worker logs to stderr; keep them (H-039)
                 cwd=str(ROOT_DIR),
                 limit=10 * 1024 * 1024,  # 10 MB line buffer for base64 audio responses
             )
@@ -81,6 +92,8 @@ class RVCManager:
             logger.error("Failed to spawn RVC worker subprocess: %s", e)
             self._proc = None
             return False
+        finally:
+            log_file.close()  # the child keeps its own handle
 
     async def _send_command(self, payload: dict, timeout: float = 30.0) -> Optional[dict]:
         """Sends a JSON-RPC line to the worker and awaits a single-line JSON response."""
@@ -105,10 +118,13 @@ class RVCManager:
             resp = json.loads(line_bytes.decode("utf-8").strip())
             return resp
         except asyncio.TimeoutError:
-            logger.error("Timeout (%.1fs) waiting for RVC worker response.", timeout)
+            # The worker would answer later and every following reply would be off by one (H-038)
+            logger.error("Timeout (%.1fs) waiting for RVC worker response. Restarting worker.", timeout)
+            self.terminate_worker()
             return None
         except Exception as e:
-            logger.error("Error communicating with RVC worker: %s", e)
+            logger.error("Error communicating with RVC worker: %s. Restarting worker.", e)
+            self.terminate_worker()
             return None
 
     async def warmup(self) -> bool:
@@ -133,7 +149,7 @@ class RVCManager:
                     "cmd": "warmup",
                     "model": self.model_path,
                     "index": self.index_path,
-                }, timeout=35.0)
+                }, timeout=LOAD_TIMEOUT_S)
 
                 if resp and resp.get("status") == "ok":
                     logger.info("RVC worker warmed up and ready in GPU VRAM.")
@@ -162,12 +178,15 @@ class RVCManager:
                 ok = await self._ensure_worker()
                 if not ok:
                     return None
-                # Load models
-                await self._send_command({
+                # Load models; if that fails, converting would only wait for another timeout
+                resp = await self._send_command({
                     "cmd": "load",
                     "model": self.model_path,
                     "index": self.index_path,
-                }, timeout=35.0)
+                }, timeout=LOAD_TIMEOUT_S)
+                if not resp or resp.get("status") != "ok":
+                    logger.warning("RVC worker failed to load models: %s", resp)
+                    return None
 
             # 2. Dispatch conversion
             try:
