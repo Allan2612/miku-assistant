@@ -1,4 +1,5 @@
-import sys, torch, numpy as np, traceback, pdb
+# Copied from RVC (MIT, see core/infer_pack/LICENSE); debug-only imports removed (H-042)
+import torch, numpy as np
 import torch.nn as nn
 from time import time as ttime
 import torch.nn.functional as F
@@ -331,7 +332,7 @@ class RMVPE:
     def __init__(self, model_path, is_half, device=None):
         self.resample_kernel = {}
         model = E2E(4, 1, (2, 2))
-        ckpt = torch.load(model_path, map_location="cpu")
+        ckpt = torch.load(model_path, map_location="cpu", weights_only=True)
         model.load_state_dict(ckpt)
         model.eval()
         if is_half == True:

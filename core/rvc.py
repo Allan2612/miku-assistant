@@ -27,6 +27,9 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 # First load may download ContentVec from Hugging Face; a timeout now restarts the worker,
 # so a short limit would never let that first download finish (H-041).
 LOAD_TIMEOUT_S = 180.0
+# Measured on the RTX 3050: 6-20 s for a 7 s phrase when another program shares the GPU.
+# A timeout restarts the worker (35-80 s reload), so it must not fire on a merely slow conversion.
+CONVERT_TIMEOUT_S = 60.0
 
 
 class RVCManager:
@@ -196,7 +199,7 @@ class RVCManager:
                     "f0_up_key": self.f0_up_key,
                     "index_rate": self.index_rate,
                     "protect": 0.33,
-                }, timeout=25.0)
+                }, timeout=CONVERT_TIMEOUT_S)
 
                 if resp and resp.get("status") == "ok" and resp.get("audio_b64"):
                     return resp["audio_b64"], resp.get("mime", "audio/wav")

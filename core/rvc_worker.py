@@ -113,12 +113,17 @@ class RVCInferenceEngine:
 
             if self.net_g is None or self.current_model_path != str(m_path):
                 logger.info("Loading VITS generator: %s", m_path.name)
-                cpt = torch.load(str(m_path), map_location="cpu")
+                cpt = torch.load(str(m_path), map_location="cpu", weights_only=True)
                 config = cpt["config"]
                 self.target_sr = int(config[-1]) if isinstance(config[-1], (int, float)) else 40000
 
                 net_g = SynthesizerTrnMs768NSFsid(*config, is_half=self.is_half)
-                net_g.load_state_dict(cpt["weight"], strict=False)
+                # strict=False is the RVC convention (training-only enc_q weights), but report real gaps (H-041)
+                missing = [k for k in net_g.load_state_dict(cpt["weight"], strict=False).missing_keys
+                           if not k.startswith("enc_q.")]
+                if missing:
+                    logger.warning("Voice checkpoint is missing %d weights (e.g. %s): voice may sound wrong",
+                                   len(missing), missing[:3])
                 net_g.eval()
 
                 if self.device == "cuda":
@@ -228,12 +233,12 @@ class RVCInferenceEngine:
                 score, idx = self.index.search(feats_query, k=8)
                 weight = np.square(1.0 / (score + 1e-4))
                 weight /= np.sum(weight, axis=1, keepdims=True)
-                reconstructed = np.zeros_like(feats_query)
-                for i in range(len(feats_query)):
-                    for j in range(8):
-                        k = int(idx[i, j])
-                        if 0 <= k < self.index.ntotal:
-                            reconstructed[i] += weight[i, j] * self.index.reconstruct(k)
+                # One batched lookup of only the neighbors needed (H-041); preloading every vector
+                # would cost ~380 MB of RAM. FAISS returns -1 for missing neighbors.
+                valid = (idx >= 0) & (idx < self.index.ntotal)
+                neighbors = self.index.reconstruct_batch(np.where(valid, idx, 0).ravel().astype("int64"))
+                neighbors = neighbors.reshape(*idx.shape, self.index.d)
+                reconstructed = np.einsum("tk,tkd->td", weight * valid, neighbors)
                 feats = (1.0 - index_rate) * feats_orig + index_rate * reconstructed
             except Exception as e:
                 logger.warning("FAISS index retrieval skipped due to error: %s", e)
