@@ -16,7 +16,12 @@ from typing import Optional, List
 import numpy as np
 import sounddevice as sd
 
+from core.vad import StreamingVAD
+
 logger = logging.getLogger("miku.audio_in")
+
+VAD_SPEECH = 0.5    # speech probability that starts the phrase
+VAD_SILENCE = 0.35  # below this, the chunk counts as silence
 
 
 class AudioInput:
@@ -25,7 +30,21 @@ class AudioInput:
     def __init__(self, sample_rate: int = 16000, channels: int = 1) -> None:
         self.sample_rate = sample_rate
         self.channels = channels
-        self._block_size = 512  # 32ms at 16kHz
+        self._block_size = 512  # 32ms at 16kHz (also the silero-vad chunk size)
+        self._vad: Optional[StreamingVAD] = None
+        self._vad_failed = False
+
+    def _get_vad(self) -> Optional[StreamingVAD]:
+        """Silero VAD, loaded once; None (energy fallback) if it cannot load."""
+        if self._vad is None and not self._vad_failed:
+            try:
+                self._vad = StreamingVAD()
+            except Exception as e:
+                self._vad_failed = True
+                logger.warning("Silero VAD unavailable (%s). Falling back to energy-based detection.", e)
+        if self._vad is not None:
+            self._vad.reset()
+        return self._vad
 
     async def record_phrase(
         self,
@@ -70,6 +89,7 @@ class AudioInput:
         energy_threshold = 0.0020
         silence_threshold = 0.0015
 
+        vad = self._get_vad()
         start_time = time.monotonic()
         stream = None
 
@@ -102,6 +122,37 @@ class AudioInput:
                     smoothed_rms = rms
                 else:
                     smoothed_rms = 0.65 * smoothed_rms + 0.35 * rms
+
+                # Silero decides speech vs. not-speech: music or a fan no longer keep the
+                # recording open until max_seconds (H-034). Energy is only the fallback.
+                if vad is not None:
+                    prob = vad(chunk.reshape(-1))
+                    if not speech_started:
+                        pre_buffer.append(chunk)
+                        if (time.monotonic() - start_time) > initial_timeout:
+                            logger.info("No speech detected within %.1fs timeout.", initial_timeout)
+                            break
+                        if prob > VAD_SPEECH:
+                            speech_started = True
+                            speech_accumulated = chunk_duration
+                            silence_accumulated = 0.0
+                            recorded_chunks.extend(list(pre_buffer))
+                            logger.info("Speech start detected (VAD p=%.2f)", prob)
+                    else:
+                        recorded_chunks.append(chunk)
+                        speech_accumulated += chunk_duration
+                        if prob < VAD_SILENCE:
+                            silence_accumulated += chunk_duration
+                            if silence_accumulated >= silence_limit:
+                                logger.info(
+                                    "Silence of %.2fs detected after %.2fs of speech (VAD). Ending recording.",
+                                    silence_accumulated,
+                                    speech_accumulated,
+                                )
+                                break
+                        else:
+                            silence_accumulated = max(0.0, silence_accumulated - chunk_duration * 0.5)
+                    continue
 
                 # First 200ms (6 chunks) used to adapt to ambient noise floor
                 if not calibrated:
