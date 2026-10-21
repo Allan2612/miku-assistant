@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import datetime, date
+from pathlib import Path
 from typing import Optional, Any, Tuple
 import numpy as np
 
@@ -115,30 +115,44 @@ class MikuPipeline:
 
         return audio_b64, mime
 
-    async def announce_timer(self, message: str) -> None:
-        """Invoked asynchronously when a timer or reminder expires."""
-        logger.info("Announcing timer: %s", message)
+    async def _speak(self, text: str, emotion: str, farewell: bool = False) -> None:
+        """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032)."""
+        voice_res = await self._synthesize_voice(text)
         self.resources.touch()
-        await self.server.broadcast({"type": "show"})
-        await self.server.broadcast({"type": "expression", "name": "happy"})
-        await self.server.broadcast({
-            "type": "subtitle",
-            "who": "miku",
-            "text": message,
-        })
-        voice_res = await self._synthesize_voice(message)
+        await self.server.broadcast({"type": "expression", "name": emotion})
+        await self.server.broadcast({"type": "subtitle", "who": "miku", "text": text})
         if voice_res:
             audio_b64, mime = voice_res
+            # Paused while speaking: Miku's own voice must not trigger the wake word
+            if self.wakeword is not None:
+                self.wakeword.pause()
+            self._is_speaking = True
             await self.server.broadcast({"type": "state", "value": "speaking"})
             await self.server.broadcast({
                 "type": "speak",
                 "audio_b64": audio_b64,
                 "mime": mime,
-                "text": message,
-                "emotion": "happy",
+                "text": text,
+                "emotion": emotion,
             })
+            self._schedule_speak_done_watchdog(text)
         else:
+            logger.warning("Voice unavailable. Degrading to text subtitle.")
             await self.server.broadcast({"type": "state", "value": "idle"})
+            if self.wakeword is not None:
+                self.wakeword.resume()
+            if farewell:
+                await asyncio.sleep(3.5)
+                await self.server.broadcast({"type": "hide"})
+
+    async def announce_timer(self, message: str) -> None:
+        """Invoked asynchronously when a timer or reminder expires."""
+        logger.info("Announcing timer: %s", message)
+        # Wait for any ongoing conversation instead of talking over it (H-031)
+        async with self._pipeline_lock:
+            self.resources.touch()
+            await self.server.broadcast({"type": "show"})
+            await self._speak(message, "happy")
 
     async def handle_voice_activation(self) -> None:
         """
@@ -224,37 +238,11 @@ class MikuPipeline:
                 emotion, answer, is_farewell = await self.brain.chat(transcribed_text)
                 self._pending_farewell = is_farewell
 
-                # 8. Synthesize speech (edge-tts -> RVC)
-                voice_res = await self._synthesize_voice(answer)
-                self.resources.touch()
+                # 8. Synthesize speech (edge-tts -> RVC) and speak
+                await self._speak(answer, emotion, farewell=is_farewell)
 
-                if voice_res:
-                    audio_b64, mime = voice_res
-                    await self.server.broadcast({"type": "expression", "name": emotion})
-                    await self.server.broadcast({"type": "subtitle", "who": "miku", "text": answer})
-                    self._is_speaking = True
-                    await self.server.broadcast({"type": "state", "value": "speaking"})
-                    await self.server.broadcast({
-                        "type": "speak",
-                        "audio_b64": audio_b64,
-                        "mime": mime,
-                        "text": answer,
-                        "emotion": emotion,
-                    })
-                    self._schedule_speak_done_watchdog(answer)
-                else:
-                    logger.warning("Voice unavailable. Degrading to text subtitle.")
-                    await self.server.broadcast({"type": "expression", "name": emotion})
-                    await self.server.broadcast({"type": "subtitle", "who": "miku", "text": answer})
-                    await self.server.broadcast({"type": "state", "value": "idle"})
-                    if self.wakeword is not None:
-                        self.wakeword.resume()
-                    if is_farewell:
-                        await asyncio.sleep(3.5)
-                        await self.server.broadcast({"type": "hide"})
-
-            except Exception as e:
-                logger.error("Error in voice activation pipeline: %s", e)
+            except Exception:
+                logger.exception("Error in voice activation pipeline")
                 await self.server.broadcast({"type": "state", "value": "idle"})
                 if self.wakeword is not None:
                     self.wakeword.resume()
@@ -316,33 +304,8 @@ class MikuPipeline:
         self._pending_farewell = is_farewell
         self.resources.touch()
 
-        # 4. Synthesize speech (edge-tts -> RVC)
-        voice_res = await self._synthesize_voice(answer)
-        self.resources.touch()
-
-        if voice_res:
-            audio_b64, mime = voice_res
-            await self.server.broadcast({"type": "expression", "name": emotion})
-            await self.server.broadcast({"type": "subtitle", "who": "miku", "text": answer})
-            self._is_speaking = True
-            await self.server.broadcast({"type": "state", "value": "speaking"})
-            await self.server.broadcast({
-                "type": "speak",
-                "audio_b64": audio_b64,
-                "mime": mime,
-                "text": answer,
-                "emotion": emotion,
-            })
-            self._schedule_speak_done_watchdog(answer)
-        else:
-            await self.server.broadcast({"type": "expression", "name": emotion})
-            await self.server.broadcast({"type": "subtitle", "who": "miku", "text": answer})
-            await self.server.broadcast({"type": "state", "value": "idle"})
-            if self.wakeword is not None:
-                self.wakeword.resume()
-            if is_farewell:
-                await asyncio.sleep(3.5)
-                await self.server.broadcast({"type": "hide"})
+        # 4. Synthesize speech (edge-tts -> RVC) and speak
+        await self._speak(answer, emotion, farewell=is_farewell)
 
     def handle_speak_done(self) -> bool:
         """Returns True if there is a pending farewell animation to trigger."""
@@ -360,7 +323,15 @@ class MikuPipeline:
         Greets the user according to the time of day (Fase 8).
         Runs when Miku Assistant boots up and frontend connects.
         """
+        # Once per day, as persona.md says: restarting the backend must not greet again (H-032)
+        marker = Path(__file__).resolve().parent.parent / "cache" / "last_greeting.txt"
+        today = date.today().isoformat()
         try:
+            if marker.exists() and marker.read_text(encoding="ascii").strip() == today:
+                logger.info("Startup greeting already played today. Skipping.")
+                return
+            marker.write_text(today, encoding="ascii")
+
             # Wait up to 15s for frontend client to connect
             for _ in range(30):
                 if self.server.clients:
@@ -379,21 +350,8 @@ class MikuPipeline:
                 greeting = "¡Buenas noches! ¿Qué necesitas hoy?"
 
             logger.info("Playing startup greeting: %s", greeting)
-            await self.server.broadcast({"type": "show"})
-            await self.server.broadcast({"type": "expression", "name": "happy"})
-            await self.server.broadcast({"type": "subtitle", "who": "miku", "text": greeting})
-            voice_res = await self._synthesize_voice(greeting)
-            if voice_res:
-                audio_b64, mime = voice_res
-                self._is_speaking = True
-                await self.server.broadcast({"type": "state", "value": "speaking"})
-                await self.server.broadcast({
-                    "type": "speak",
-                    "audio_b64": audio_b64,
-                    "mime": mime,
-                    "text": greeting,
-                    "emotion": "happy",
-                })
-                self._schedule_speak_done_watchdog(greeting)
-        except Exception as e:
-            logger.debug("Startup greeting check exception: %s", e)
+            async with self._pipeline_lock:
+                await self.server.broadcast({"type": "show"})
+                await self._speak(greeting, "happy")
+        except Exception:
+            logger.exception("Startup greeting failed")
