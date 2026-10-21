@@ -28,6 +28,9 @@ async def async_main() -> None:
     config = load_config()
 
     os.makedirs("cache", exist_ok=True)
+    # stop.bat kills exactly this process tree instead of matching command lines (H-053)
+    pid_file = Path(root_dir) / "cache" / "core.pid"
+    pid_file.write_text(str(os.getpid()), encoding="ascii")
     handlers: list[logging.Handler] = [
         logging.FileHandler("cache/core.log", mode="a", encoding="utf-8")
     ]
@@ -148,6 +151,7 @@ async def async_main() -> None:
         rvc.terminate_worker()
         await resources.stop()
         await server.stop()
+        pid_file.unlink(missing_ok=True)
 
 
 def main() -> None:
