@@ -10,12 +10,21 @@ import json
 import logging
 from typing import Set, Dict, Any, Optional
 import websockets
-from websockets.server import WebSocketServerProtocol
+from websockets.asyncio.server import ServerConnection
 
 from core.llm import MikuBrain
 from core.tts import TTSManager
 
 logger = logging.getLogger("miku.server")
+
+# Browsers always send Origin, so this blocks any web page from driving Miku.
+# None allows local non-browser clients (scripts, tests), which send no Origin.
+ALLOWED_ORIGINS = [
+    "http://tauri.localhost",   # Tauri v2 on Windows (production)
+    "https://tauri.localhost",
+    "http://localhost:1420",    # vite dev server
+    None,
+]
 
 
 class MikuServer:
@@ -32,7 +41,7 @@ class MikuServer:
         self.brain = brain or MikuBrain()
         self.tts = tts or TTSManager()
         self.pipeline = pipeline
-        self.clients: Set[WebSocketServerProtocol] = set()
+        self.clients: Set[ServerConnection] = set()
         self.server = None
         self._input_lock = asyncio.Lock()
         self._pending_farewell: bool = False
@@ -47,10 +56,11 @@ class MikuServer:
             return
         payload = json.dumps(message, ensure_ascii=False)
         disconnected = set()
-        for client in self.clients:
+        # Copy: handle_client may add/remove clients while we await send()
+        for client in list(self.clients):
             try:
                 await client.send(payload)
-            except websockets.exceptions.ConnectionClosed:
+            except Exception:
                 disconnected.add(client)
         self.clients -= disconnected
 
@@ -133,7 +143,7 @@ class MikuServer:
 
 
 
-    async def handle_client(self, websocket: WebSocketServerProtocol) -> None:
+    async def handle_client(self, websocket: ServerConnection) -> None:
         """Handles individual client connection lifecycle."""
         self.clients.add(websocket)
         client_addr = websocket.remote_address
@@ -200,7 +210,9 @@ class MikuServer:
     async def start(self) -> None:
         """Starts the WebSocket server."""
         logger.info("Starting WebSocket server on ws://%s:%d", self.host, self.port)
-        self.server = await websockets.serve(self.handle_client, self.host, self.port)
+        self.server = await websockets.serve(
+            self.handle_client, self.host, self.port, origins=ALLOWED_ORIGINS
+        )
 
     async def stop(self) -> None:
         """Stops the WebSocket server and closes active client connections."""
