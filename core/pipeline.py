@@ -91,12 +91,12 @@ class MikuPipeline:
         """Attaches the wakeword listener to pause/resume during active interactions."""
         self.wakeword = wakeword
 
-    async def _synthesize_voice(self, text: str) -> Optional[Tuple[str, str]]:
+    async def _synthesize_voice(self, text: str, cache: bool = False) -> Optional[Tuple[str, str]]:
         """
         Synthesizes speech with edge-tts and converts to Miku voice via RVC.
         Gracefully falls back to edge-tts if RVC fails or is disabled.
         """
-        tts_res = await self.tts.synthesize(text)
+        tts_res = await self.tts.synthesize(text, cache=cache)
         if not tts_res:
             return None
 
@@ -115,9 +115,9 @@ class MikuPipeline:
 
         return audio_b64, mime
 
-    async def _speak(self, text: str, emotion: str, farewell: bool = False) -> None:
+    async def _speak(self, text: str, emotion: str, farewell: bool = False, cache: bool = False) -> None:
         """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032)."""
-        voice_res = await self._synthesize_voice(text)
+        voice_res = await self._synthesize_voice(text, cache=cache)
         self.resources.touch()
         await self.server.broadcast({"type": "expression", "name": emotion})
         await self.server.broadcast({"type": "subtitle", "who": "miku", "text": text})
@@ -352,6 +352,6 @@ class MikuPipeline:
             logger.info("Playing startup greeting: %s", greeting)
             async with self._pipeline_lock:
                 await self.server.broadcast({"type": "show"})
-                await self._speak(greeting, "happy")
+                await self._speak(greeting, "happy", cache=True)  # fixed phrase
         except Exception:
             logger.exception("Startup greeting failed")

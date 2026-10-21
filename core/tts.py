@@ -38,10 +38,12 @@ class TTSManager:
         md5_hash = hashlib.md5(key.encode("utf-8")).hexdigest()
         return self.cache_dir / f"{md5_hash}.mp3"
 
-    async def synthesize(self, text: str) -> Optional[Tuple[str, str]]:
+    async def synthesize(self, text: str, cache: bool = False) -> Optional[Tuple[str, str]]:
         """
         Synthesizes speech for the given text.
         Returns (audio_b64, mime_type) or None if synthesis fails.
+        Only fixed phrases should pass cache=True: LLM answers are almost never repeated,
+        so caching them only grew cache/voice/ forever (H-040).
         """
         clean_text = text.strip()
         if not clean_text:
@@ -78,11 +80,14 @@ class TTSManager:
                 logger.warning("edge-tts returned empty audio data for: '%s'", clean_text)
                 return None
 
-            # 3. Write to disk cache
-            try:
-                cache_file.write_bytes(audio_data)
-            except Exception as e:
-                logger.warning("Could not cache synthesized audio: %s", e)
+            # 3. Write to disk cache (temp file + rename: a crash never leaves a truncated mp3)
+            if cache:
+                try:
+                    tmp = cache_file.with_suffix(".tmp")
+                    tmp.write_bytes(audio_data)
+                    os.replace(tmp, cache_file)
+                except Exception as e:
+                    logger.warning("Could not cache synthesized audio: %s", e)
 
             b64 = base64.b64encode(audio_data).decode("ascii")
             return b64, "audio/mpeg"
@@ -100,4 +105,4 @@ class TTSManager:
             cache_file = self._get_cache_path(clean)
             if not cache_file.exists():
                 logger.info("Pre-caching fixed voice phrase: '%s'", clean)
-                await self.synthesize(clean)
+                await self.synthesize(clean, cache=True)

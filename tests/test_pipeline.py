@@ -28,7 +28,7 @@ class FakeBrain:
 
 
 class FakeTTS:
-    async def synthesize(self, text):
+    async def synthesize(self, text, cache=False):
         return "QUJD", "audio/mpeg"
 
 
