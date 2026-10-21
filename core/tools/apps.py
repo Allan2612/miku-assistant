@@ -8,7 +8,6 @@ import logging
 import os
 from pathlib import Path
 import re
-import subprocess
 import time
 from typing import Dict, List, Optional, Any
 import psutil
@@ -60,13 +59,36 @@ DEFAULT_APP_ALIASES = {
     "explorador": "explorer.exe",
     "explorador de archivos": "explorer.exe",
     "archivos": "explorer.exe",
-    "terminal": "wt.exe",
-    "cmd": "cmd.exe",
-    "powershell": "powershell.exe",
     "vscode": "Code.exe",
     "code": "Code.exe",
     "edge": "msedge.exe",
 }
+
+
+# Shells and script hosts: opening them lets the LLM chain type_text into a command line (H-007)
+_BLOCKED_LAUNCH = {
+    "cmd", "powershell", "pwsh", "wt", "windowsterminal", "bash", "wsl",
+    "wscript", "cscript", "mshta", "rundll32", "regsvr32", "reg", "regedit",
+}
+
+# Never killed by close_app (H-008)
+_PROTECTED_PROCESSES = {
+    "explorer", "dwm", "csrss", "winlogon", "wininit", "lsass", "services",
+    "svchost", "smss", "system", "fontdrvhost", "sihost", "taskmgr",
+}
+
+# Bare executable name only: no spaces, paths, quotes or arguments (H-006)
+_SIMPLE_EXE = re.compile(r"^[\w.-]+$")
+
+# Start Menu shortcut names that open a shell
+_BLOCKED_SHORTCUT_WORDS = ("powershell", "terminal", "command prompt", "símbolo del sistema", "simbolo del sistema", "cmd")
+
+
+def _is_shell(name: str) -> bool:
+    n = name.lower().removesuffix(".exe")
+    return n in _BLOCKED_LAUNCH or any(w in n for w in _BLOCKED_SHORTCUT_WORDS)
+
+_CONSOLE_CLASSES = {"ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS"}
 
 
 class STARTUPINFOW(ctypes.Structure):
@@ -138,7 +160,8 @@ def _launch_target(target: str) -> bool:
         si.wShowWindow = 1  # SW_SHOWNORMAL
 
         pi = PROCESS_INFORMATION()
-        cmd = ctypes.create_unicode_buffer(str(target))
+        # Quoted: the whole target is the executable, never "exe + arguments" (H-006)
+        cmd = ctypes.create_unicode_buffer(f'"{target}"')
         ret = ctypes.windll.kernel32.CreateProcessW(
             None, cmd, None, None, False, 0, None, None, ctypes.byref(si), ctypes.byref(pi)
         )
@@ -160,15 +183,6 @@ def _launch_target(target: str) -> bool:
     # 3. Tertiary: os.startfile
     try:
         os.startfile(target)
-        return True
-    except Exception:
-        pass
-
-    # 4. Quaternary: subprocess start
-    try:
-        si_sub = subprocess.STARTUPINFO()
-        si_sub.lpDesktop = "WinSta0\\Default"
-        subprocess.Popen(f'cmd.exe /c start "" "{target}"', shell=True, startupinfo=si_sub)
         return True
     except Exception:
         pass
@@ -213,6 +227,8 @@ def open_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
         return {"ok": False, "result": "Debes especificar el nombre de la aplicación."}
     _index_start_menu_shortcuts()
     query = _clean_query(target_name)
+    if _is_shell(query):
+        return {"ok": False, "result": "Por seguridad no abro consolas ni intérpretes de comandos."}
 
     # 0. Check Opera GX specifically
     if query in ("opera", "opera gx", "operagx", "navegador", "browser", "internet"):
@@ -235,6 +251,8 @@ def open_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
     # 2. Check exact or substring shortcut match
     matches: List[str] = []
     for sc_name, sc_path in _SHORTCUTS_CACHE.items():
+        if _is_shell(sc_name):
+            continue
         if query == sc_name:
             matches = [sc_path]
             break
@@ -256,8 +274,11 @@ def open_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
             match_names = [Path(m).stem for m in matches[:3]]
             return {"ok": True, "result": f"Encontré varias opciones ({', '.join(match_names)}). Abrí {Path(best_match).stem}."}
 
-    # 3. Direct executable attempt
-    for candidate in [f"{query}.exe", query]:
+    # 3. Direct executable attempt: bare names only, never shells (H-006, H-007)
+    exe_stem = query.removesuffix(".exe")
+    if not _SIMPLE_EXE.match(query):
+        return {"ok": False, "result": f"No pude encontrar la aplicación '{target_name}' en el menú Inicio ni en los alias conocidos."}
+    for candidate in [f"{exe_stem}.exe"]:
         if _launch_target(candidate):
             time.sleep(0.3)
             _attach_user_desktop()
@@ -280,22 +301,36 @@ def close_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
     query = _clean_query(target_name).replace(".exe", "")
     alias = DEFAULT_APP_ALIASES.get(query, query).lower().replace(".exe", "")
 
-    closed_count = 0
-    terminated_names = set()
+    if query in _PROTECTED_PROCESSES or alias in _PROTECTED_PROCESSES:
+        return {"ok": False, "result": f"Por seguridad no cierro '{target_name}'."}
 
-    for proc in psutil.process_iter(["pid", "name", "exe"]):
+    # Never kill Miku's own backend or the process that launched it
+    me = psutil.Process()
+    own_pids = {me.pid} | {p.pid for p in me.parents()}
+
+    # Exact name match only: substrings killed unrelated processes (H-008)
+    targets: List[psutil.Process] = []
+    for proc in psutil.process_iter(["pid", "name"]):
+        name = (proc.info["name"] or "").lower().removesuffix(".exe")
+        if name and name in (query, alias) and proc.info["pid"] not in own_pids:
+            targets.append(proc)
+
+    terminated_names = set()
+    for proc in targets:
         try:
-            p_name = proc.info["name"].lower() if proc.info["name"] else ""
-            clean_p = p_name.replace(".exe", "")
-            if query == clean_p or alias == clean_p or query in clean_p:
-                proc.kill()
-                closed_count += 1
-                terminated_names.add(proc.info["name"])
+            proc.terminate()  # lets the app close cleanly; kill() only as fallback
+            terminated_names.add(proc.info["name"])
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
+    _, alive = psutil.wait_procs(targets, timeout=3)
+    for proc in alive:
+        try:
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
 
-    if closed_count > 0:
-        return {"ok": True, "result": f"He cerrado {target_name} ({', '.join(terminated_names)})."}
+    if terminated_names:
+        return {"ok": True, "result": f"He cerrado {target_name} ({', '.join(sorted(terminated_names))})."}
     return {"ok": False, "result": f"No encontré ninguna aplicación activa llamada '{target_name}'."}
 
 
@@ -367,10 +402,16 @@ def focus_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
 def type_text(text: str) -> Dict[str, Any]:
     """Escribe texto simulando pulsaciones de teclado en la ventana activa del usuario."""
     _attach_user_desktop()
-    if len(text) > 500:
-        text = text[:500]
-
     user32 = ctypes.windll.user32
+
+    # Never type into a console: that would turn type_text into command execution (H-007)
+    cls = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(user32.GetForegroundWindow(), cls, 256)
+    if cls.value in _CONSOLE_CLASSES:
+        return {"ok": False, "result": "Por seguridad no escribo en consolas ni terminales."}
+
+    # No line breaks: Enter would submit forms or commands
+    text = " ".join(text.splitlines())[:500]
     for char in text:
         vk = user32.VkKeyScanW(ord(char))
         if vk != -1:
