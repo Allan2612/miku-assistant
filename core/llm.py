@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from core.tools import get_registered_tools
+from core.tools import get_registered_tools, note_user_reply
 
 load_dotenv()
 
@@ -40,7 +40,7 @@ Tienes herramientas disponibles para controlar el ordenador en tiempo real (abri
 Cuando el usuario pida realizar cualquier acción en el PC, ES OBLIGATORIO LLAMAR A LA HERRAMIENTA CORRESPONDIENTE. NUNCA respondas que hiciste la acción sin haber ejecutado la herramienta, porque si no la ejecutas, la acción no ocurre físicamente en el ordenador.
 Tras la llamada a la herramienta, confirma el resultado con una frase alegre y corta.
 
-Confirmaciones de seguridad: Solo la acción de apagar o reiniciar el equipo (shutdown_pc) requiere confirmación previa si confirmed no es True. Las demás acciones (como cerrar aplicaciones, cambiar volumen o abrir programas) se ejecutan directamente cuando el usuario lo pide.
+Confirmaciones de seguridad: apagar, reiniciar o suspender el equipo (shutdown_pc) necesita que el usuario confirme. La primera llamada no ejecuta nada y devuelve una pregunta: házsela al usuario tal cual. Si en su siguiente mensaje responde que sí, vuelve a llamar a shutdown_pc con los mismos argumentos. Las demás acciones (como cerrar aplicaciones, cambiar volumen o abrir programas) se ejecutan directamente cuando el usuario lo pide.
 
 Si el usuario se despide ("adiós", "gracias, eso es todo", "vete", "chao"), responde con una despedida corta y la etiqueta [happy]; el sistema te ocultará.
 
@@ -337,6 +337,9 @@ class MikuBrain:
         clean_input = user_text.strip()
         if not clean_input:
             return "neutral", "¿Sí? Dime qué necesitas.", False
+
+        # Only the user's own reply can confirm a pending destructive tool (H-001)
+        note_user_reply(clean_input)
 
         # In-memory deduplication: if exact same query arrives within 2.0s, reuse response with 0 extra API calls
         now = time.monotonic()

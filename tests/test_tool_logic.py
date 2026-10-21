@@ -3,6 +3,7 @@
 Run: core\\.venv\\Scripts\\python.exe -m tests.test_tool_logic  (or with pytest)
 """
 
+from core.tools import note_user_reply
 import core.tools.files as files
 import core.tools.media as media
 import core.tools.system as system
@@ -37,6 +38,7 @@ def test_shutdown_question_matches_action():
     system.subprocess.run = lambda args, check: ran.append(args)
     res = system.shutdown_pc(mode="apagar")
     assert "apagar" in res["result"] and not ran, res
+    note_user_reply("sí")  # the user, not the LLM, confirms (H-001)
     system.shutdown_pc(mode="apagar", confirmed=True)
     assert ran and ran[0][1] == "/s", ran
 
