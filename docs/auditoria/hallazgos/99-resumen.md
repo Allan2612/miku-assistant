@@ -68,18 +68,30 @@ Agrupado por archivo para tocar cada uno una sola vez:
 - `CHANGELOG.md` se comprobó en sus afirmaciones verificables, no entrada por entrada.
 - `package-lock.json` se revisó con `npm audit`, no a mano. `cargo audit` no se ejecutó.
 
-## Arreglos (2026-10-21, commits `9de705b` a `7ebedc7`)
+## Arreglos (2026-10-21)
 
-**Arreglados (27):** H-001, H-004, H-005, H-006, H-007, H-008, H-011, H-012, H-013, H-014, H-015, H-019, H-020, H-023, H-024, H-025, H-026, H-030, H-038, H-039, H-043, H-045, H-047, H-049, H-050, H-053, H-059. Los dos críticos y los cuatro altos están cerrados.
+**55 de 58 arreglados** (commits `9de705b` a `5f9f07b` en `develop`). Todos los críticos, altos y medios están cerrados.
 
-**Parciales (5):**
+**Parcial (1):** H-039. Los logs del worker ya van a `cache/rvc_worker.log` y la respuesta de `load` se comprueba, pero `terminate_worker` sigue sin cerrar las *pipes* del proceso (solo provoca avisos de Python al salir).
 
-- H-003: las herramientas ya no se ejecutan dentro del bucle de eventos (H-025), pero sigue sin haber un tiempo máximo por herramienta.
-- H-021: import actualizado a la API nueva de websockets; `text_input` sigue procesándose dentro del bucle de mensajes del cliente.
-- H-051: `withGlobalTauri` desactivado; faltan la CSP (hay que probarla con la app) y quitar el plugin `opener`.
-- H-052: `requirements.txt` completo; faltan versiones fijadas o un archivo de bloqueo.
-- H-055: hay tests en `tests/` (5 archivos, sin dependencias: `python -m tests.<nombre>`) para H-001, H-006/7/8, H-011, H-013, H-015, H-019, H-023/24 y H-050; nada más está cubierto.
+**A la espera de tu decisión (2):**
 
-**Decisiones tomadas por defecto (cambiables):** `close_app` sigue sin pedir confirmación (H-002, ahora solo cierra por nombre exacto); `text_input` se mantiene en el servidor (protegido por el origen); Whisper y RVC se siguen cargando al arrancar (H-028).
+- H-002: ¿`close_app` debe pedir confirmación? Hoy no la pide, pero ya solo cierra por nombre exacto y nunca procesos del sistema.
+- H-028: ¿Whisper y RVC se cargan al arrancar el PC (primera respuesta más rápida) o solo al activar a Miku (0 MB de VRAM en reposo)? Hoy se cargan al arrancar.
 
-**Pendiente de probar con la app compilada:** el atajo Ctrl+Alt+M (H-049), el click-through (H-047), "Salir" desde la bandeja (H-050), que la app sigue conectando con el origen `http://tauri.localhost` (H-019) y `stop.bat` (H-053). Hay que recompilar la app (`npm run tauri build`) para que entren los cambios de Tauri y del frontend.
+**Verificación:** 10 archivos de test en `tests/` (`core\.venv\Scripts\python.exe -m tests.<nombre>`), todos pasan; `tsc` y `cargo check` sin errores. RVC se probó de punta a punta con los modelos reales en la RTX 3050. La detección de voz se probó con las muestras de voz y señales sintéticas, no con el micrófono.
+
+**Hallazgos de la propia tanda de arreglos:**
+
+- La primera carga de RVC tardó 82,6 s: el timeout antiguo de 35 s nunca la habría dejado terminar (confirma H-038).
+- Una conversión tarda entre 6 y 20 s con la GPU compartida (otro programa la tenía al 97 % durante la prueba); el timeout de conversión pasó a 60 s.
+- Los tests destaparon que "quita el silencio" silenciaba el PC; también está corregido.
+
+**Pendiente de probar con la app recompilada** (`npm run tauri build`):
+
+1. Que la app arranca y dibuja a Miku con la nueva CSP (si sale en blanco, revertir el commit `aca41fa`).
+2. Que conecta con el backend con el origen `http://tauri.localhost`.
+3. Ctrl+Alt+M con otra ventana enfocada; pasar el ratón por encima de Miku y hacer clic.
+4. "Salir" desde la bandeja: el micrófono debe quedar libre.
+5. `stop.bat` y `start.bat` (este ahora se niega a arrancar dos veces).
+6. Hablarle con música de fondo: la grabación debe cortar al terminar la frase.
