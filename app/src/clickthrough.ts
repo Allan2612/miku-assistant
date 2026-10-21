@@ -74,6 +74,10 @@ export class ClickthroughController {
     try {
       const [x, y] = await this.cursorInPage();
       if (this.timer === null) return; // stopped while awaiting
+
+      // Miku follows the cursor with her eyes and head (the focus controller eases it).
+      // Outside Tauri the position is unknown (-1) until the mouse first moves.
+      if (this.isTauriAvailable || this.lastX >= 0) live2d.focus(x, y);
       const inside = x >= 0 && y >= 0 && x <= window.innerWidth && y <= window.innerHeight;
 
       // 1. Cursor over the speech bubble
