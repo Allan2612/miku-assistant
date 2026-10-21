@@ -17,6 +17,8 @@ import numpy as np
 
 logger = logging.getLogger("miku.stt")
 
+NO_SPEECH_MAX = 0.6
+
 
 class STTManager:
     """Manages the faster-whisper CPU model lifecycle and transcription."""
@@ -27,11 +29,13 @@ class STTManager:
         device: str = "cpu",
         compute_type: str = "int8",
         cpu_threads: int = 4,
+        language: str = "es",
     ) -> None:
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
         self.cpu_threads = cpu_threads
+        self.language = language
         self._model = None
         self._lock = asyncio.Lock()
         logger.info(
@@ -85,16 +89,12 @@ class STTManager:
         start_t = time.perf_counter()
         segments, info = self._model.transcribe(
             audio,
-            language="es",
+            language=self.language,
             beam_size=1,
             best_of=1,
             temperature=0.0,
-            initial_prompt=(
-                "Miku, Hey Miku, Oye Miku, hola Miku. Abre el bloc de notas, abre Google Chrome, "
-                "abre Spotify, reproduce música, pausa la música, sube el volumen, baja el volumen, "
-                "qué hora es, qué tiempo hace, busca en YouTube, busca en Google, qué guapa que estás, "
-                "qué linda que estás, muchas gracias, adiós, chao."
-            ),
+            # Vocabulary only: whole commands here get "heard" in noise and run by the fast path (H-035)
+            initial_prompt="Miku, Spotify, YouTube, Google, Opera GX, Discord, Steam, Bloc de notas.",
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=400),
             repetition_penalty=1.15,
@@ -104,6 +104,10 @@ class STTManager:
         texts: List[str] = []
         for segment in segments:
             clean_text = segment.text.strip()
+            # Whisper itself says this segment is probably not speech: drop it instead of acting on it
+            if segment.no_speech_prob > NO_SPEECH_MAX:
+                logger.info("Dropping likely non-speech segment (p=%.2f): '%s'", segment.no_speech_prob, clean_text)
+                continue
             if clean_text:
                 texts.append(clean_text)
 

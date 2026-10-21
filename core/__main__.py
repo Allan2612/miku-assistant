@@ -78,6 +78,7 @@ async def async_main() -> None:
         device=config.stt.device,
         compute_type=config.stt.compute_type,
         cpu_threads=config.stt.cpu_threads,
+        language=config.language,
     )
 
     rvc = RVCManager(config=config.rvc)
