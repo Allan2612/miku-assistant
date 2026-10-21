@@ -6,6 +6,7 @@ conversation history, emotion parsing, and dynamic multi-model fallback on rate 
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -94,7 +95,8 @@ class MikuBrain:
         if not api_key:
             logger.warning("GEMINI_API_KEY is not set in environment!")
 
-        self.client = genai.Client(api_key=api_key)
+        # 15 s per HTTP request: a hung connection must fail so the model fallback can kick in (H-026)
+        self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=15_000))
         self.tools = get_registered_tools()
         self._chat_session = None
         self._turns_count = 0
@@ -223,8 +225,8 @@ class MikuBrain:
             open_url("https://www.youtube.com")
             return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
 
-        # 2. Open app / website / notes with verbs (abre, abrir, inicia, lanza, ejecuta, pon)
-        m_open = re.match(r"^(?:miku\s*,?\s*)?(?:abre|abrir|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar|pon|poner)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+)?(.+)$", low)
+        # 2. Open app / website / notes with verbs ("pon" is left out: "pon la música" means play, H-024)
+        m_open = re.match(r"^(?:miku\s*,?\s*)?(?:abre|abrir|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+)?(.+)$", low)
         if m_open:
             target = m_open.group(1).strip()
             if "youtube" in target:
@@ -245,14 +247,16 @@ class MikuBrain:
                 if res.get("ok"):
                     return ("happy", f"¡Listo! Ya abrí {target}.", False)
 
-        # 3. Close app
-        m_close = re.match(r"^(?:miku\s*,?\s*)?(?:cierra|cerrar|quitar|apaga)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)$", low)
+        # 3. Close app: only known app aliases; anything else ("apaga el PC", "cierra la ventana") goes to Gemini (H-023)
+        m_close = re.match(r"^(?:miku\s*,?\s*)?(?:cierra|cerrar)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)$", low)
         if m_close:
-            target = m_close.group(1).strip()
-            from core.tools.apps import close_app
-            res = close_app(target)
-            if res.get("ok"):
-                return ("happy", f"Listo, cerré {target}.", False)
+            from core.tools.apps import close_app, DEFAULT_APP_ALIASES, _clean_query
+            target = _clean_query(m_close.group(1))
+            if target in DEFAULT_APP_ALIASES:
+                res = close_app(target)
+                if res.get("ok"):
+                    return ("happy", f"Listo, cerré {target}.", False)
+                return ("sad", res.get("result", f"No pude cerrar {target}."), False)
 
         # 4. Web Search / YouTube Search
         m_search_yt = re.match(r"^(?:miku\s*,?\s*)?(?:busca|buscar)\s+en\s+youtube\s+(.+)$", low)
@@ -263,36 +267,43 @@ class MikuBrain:
             return ("happy", f"¡Buscando '{q}' en YouTube!", False)
 
         m_search_goog = re.match(r"^(?:miku\s*,?\s*)?(?:busca|buscar)\s+(?:en\s+google\s+)?(.+)$", low)
-        if m_search_goog and "youtube" not in low and not low.startswith("busca en"):
+        # "busca el archivo X" is a file search for Gemini (find_file), not a Google search
+        if (m_search_goog and "youtube" not in low and not low.startswith("busca en")
+                and not re.match(r"^(?:el |la |mi |mis |un |una )?(?:archivo|documento|carpeta)", m_search_goog.group(1))):
             q = m_search_goog.group(1).strip()
             from core.tools.web import web_search
             web_search(q)
             return ("happy", f"¡Listo! Ya busqué '{q}' en Google.", False)
 
-        # 5. Volume / Media
-        if any(w in low for w in ["sube el volumen", "subir volumen", "más volumen", "aumenta el volumen"]):
-            from core.tools.media import change_volume
-            change_volume(15)
-            return ("happy", "¡Subí el volumen!", False)
-        if any(w in low for w in ["baja el volumen", "bajar volumen", "menos volumen", "disminuye el volumen"]):
-            from core.tools.media import change_volume
-            change_volume(-15)
-            return ("happy", "¡Listo, bajé el volumen!", False)
-        if any(w in low for w in ["silencio", "mutea", "mutear", "silencia el volumen", "mute"]):
-            from core.tools.media import mute
-            mute(True)
-            return ("happy", "¡Silenciado!", False)
-        if any(w in low for w in ["pausa la música", "pausar música", "pausa la cancion", "pausa la canción", "pausa"]):
-            from core.tools.media import media_control
-            media_control("pause")
-            return ("happy", "Música pausada.", False)
-        if any(w in low for w in ["reanuda la música", "reproduce la música", "reproducir música", "pon la música", "play"]):
-            from core.tools.media import media_control
-            media_control("play")
-            return ("happy", "¡Música reproduciéndose!", False)
+        # 5. Volume / Media: whole words only ("playlist" or "display" must not press play, H-024)
+        def has_word(*words: str) -> bool:
+            return any(re.search(rf"\b{re.escape(w)}\b", low) for w in words)
 
-        # 6. Date & Time
-        if any(w in low for w in ["qué hora", "que hora", "la hora", "dime la hora", "la hora actual"]):
+        def confirm(res: Dict[str, Any], ok_text: str) -> Tuple[str, str, bool]:
+            if res.get("ok"):
+                return ("happy", ok_text, False)
+            return ("sad", res.get("result", "No pude hacerlo."), False)
+
+        if has_word("sube el volumen", "subir volumen", "más volumen", "aumenta el volumen"):
+            from core.tools.media import change_volume
+            return confirm(change_volume(15), "¡Subí el volumen!")
+        if has_word("baja el volumen", "bajar volumen", "menos volumen", "disminuye el volumen"):
+            from core.tools.media import change_volume
+            return confirm(change_volume(-15), "¡Listo, bajé el volumen!")
+        # "quita el silencio" asks for the opposite: leave unmuting to Gemini
+        if (has_word("silencio", "silencia", "mutea", "mutear", "mute")
+                and not has_word("quita", "quitar", "desactiva", "desactivar", "desmutea", "unmute")):
+            from core.tools.media import mute
+            return confirm(mute(True), "¡Silenciado!")
+        if has_word("pausa la música", "pausar música", "pausa la cancion", "pausa la canción", "pausa"):
+            from core.tools.media import media_control
+            return confirm(media_control("pause"), "Música pausada.")
+        if has_word("reanuda la música", "reproduce la música", "reproducir música", "pon la música", "play"):
+            from core.tools.media import media_control
+            return confirm(media_control("play"), "¡Música reproduciéndose!")
+
+        # 6. Date & Time (questions only: "a la hora de comer" is not asking the time)
+        if any(w in low for w in ["qué hora", "que hora", "dime la hora"]):
             now_dt = datetime.now()
             return ("neutral", f"Son las {now_dt.strftime('%H:%M')}.", False)
 
@@ -334,7 +345,8 @@ class MikuBrain:
             return self._last_result
 
         # Instant local fast-path for direct PC commands (0ms cloud latency, 100% immune to 429)
-        fast_res = self._try_fast_path_tool(clean_input)
+        # Tools block (sleeps, process scans): run them off the event loop (H-025)
+        fast_res = await asyncio.to_thread(self._try_fast_path_tool, clean_input)
         if fast_res is not None:
             logger.info("Executed local fast-path command: '%s' -> %s", clean_input, fast_res[1])
             self._last_query_text = clean_input
