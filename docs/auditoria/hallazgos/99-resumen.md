@@ -9,8 +9,8 @@
 |---|---|---|---|
 | Crítica | 2 | 0 | **2** |
 | Alta | 3 | 1 | **4** |
-| Media | 19 | 3 | **22** |
-| Baja | 29 | 1 | **30** |
+| Media | 18 | 3 | **21** |
+| Baja | 30 | 1 | **31** |
 | **Total** | **53** | **5** | **58** |
 
 Además, 1 hallazgo descartado tras verificarlo (H-016).
