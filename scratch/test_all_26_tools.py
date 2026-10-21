@@ -1,3 +1,5 @@
+# WARNING: runs the real tools. close_app("bloc de notas") closes every open Notepad window:
+# save your notes first (H-056).
 import sys
 import logging
 from pathlib import Path
