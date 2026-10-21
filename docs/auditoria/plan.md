@@ -34,17 +34,17 @@ Fuera de alcance: rediseñar la arquitectura o cambiar código durante la audito
 
 ## Fase 0: preparación (antes de leer código)
 
-- [ ] Anotar el hash del commit auditado en `hallazgos/README.md`.
-- [ ] Generar el mapa del código con graphify (`graphify-out/GRAPH_REPORT.md`) y guardar la lista de nodos centrales: `tool()`, `async_main()`, `MikuBrain`, `load_config()`, `MikuPipeline`, `WakeWordListener`, `Live2DManager`. Son los puntos donde un fallo tiene más alcance.
+- [x] Anotar el hash del commit auditado en `hallazgos/README.md`.
+- [x] Generar el mapa del código con graphify (`graphify-out/GRAPH_REPORT.md`) y guardar la lista de nodos centrales: `tool()`, `async_main()`, `MikuBrain`, `load_config()`, `MikuPipeline`, `WakeWordListener`, `Live2DManager`. Son los puntos donde un fallo tiene más alcance.
 - [ ] Medir la **línea base** de recursos y anotarla en `hallazgos/00-linea-base.md`:
   - RAM de `app` y del backend con Miku oculta (Administrador de tareas).
   - VRAM con Miku oculta tras `unload_after_minutes` (`nvidia-smi`): debe ser 0 MB del proceso Python.
   - Latencia desde activación hasta que Miku empieza a hablar, 5 mediciones.
-- [ ] Ejecutar análisis automáticos y guardar la salida resumida en `hallazgos/00-linea-base.md`:
+- [x] Ejecutar análisis automáticos y guardar la salida resumida en `hallazgos/00-linea-base.md`:
   - Python: `ruff check core/`, `pip-audit -r core/requirements.txt`.
   - Frontend: `npx tsc --noEmit` y `npm audit` en `app/`.
   - Rust: `cargo audit` y `cargo clippy` en `app/src-tauri/`.
-- [ ] Buscar secretos en todo el historial de git (`git log -p | grep -E "AIza|sk-|gh[op]_"`).
+- [x] Buscar secretos en todo el historial de git (`git log -p | grep -E "AIza|sk-|gh[op]_"`).
 
 ## Fase 1: herramientas de control del PC (`core/tools/`, 1222 líneas)
 
@@ -243,8 +243,8 @@ No son código de producción, pero se leen enteros porque pueden contener secre
 ## Fase 13: cierre
 
 - [ ] Revisar todos los hallazgos `por-verificar` y confirmarlos o descartarlos.
-- [ ] Completar el índice de `hallazgos/README.md` con todos los hallazgos ordenados por severidad.
-- [ ] Escribir `hallazgos/99-resumen.md`: totales por severidad y fase, los 5 hallazgos más importantes y un orden de arreglo propuesto (críticos y altos primero, agrupados por archivo para minimizar cambios).
+- [x] Completar el índice de `hallazgos/README.md` con todos los hallazgos ordenados por severidad.
+- [x] Escribir `hallazgos/99-resumen.md`: totales por severidad y fase, los 5 hallazgos más importantes y un orden de arreglo propuesto (críticos y altos primero, agrupados por archivo para minimizar cambios).
 - [ ] Repetir las mediciones de la fase 0 si se arregló algo, y comparar.
 
 ## Listas de comprobación por categoría

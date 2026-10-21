@@ -4,13 +4,13 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** fases 1-12 completas; pendientes la fase 0 (mediciones) y el cierre (fase 0 pendiente: mediciones y análisis automáticos)
+- **Estado:** auditoría cerrada el 2026-10-21. Resumen en [99-resumen.md](99-resumen.md). Pendientes las mediciones con la app en marcha (`00-linea-base.md`) y las pruebas en vivo de los 5 hallazgos `por-verificar`.
 
 ## Archivos
 
 Un archivo por fase, creado al empezarla:
 
-| Archivo | Fase |
+| Archivo | Fase |tyt
 |---|---|
 | `00-linea-base.md` | 0. Mediciones y análisis automáticos |
 | `01-herramientas.md` | 1. `core/tools/` |
