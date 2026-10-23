@@ -67,5 +67,5 @@ Trabaja fase por fase. Cada fase termina con una prueba que hace el usuario. No 
 - **Prueba:** un día de uso normal sin cuelgues ni fugas de RAM/VRAM.
 
 ## Fase 9 — Extras (opcional)
-- [ ] `look_at_screen`: captura de pantalla enviada a Gemini (visión) para "¿qué ves en mi pantalla?" o "ayúdame con este error"
-- [ ] Recordatorios persistentes y notas
+- [x] `look_at_screen`: captura de pantalla enviada a Gemini (visión) para "¿qué ves en mi pantalla?" o "ayúdame con este error" (va en la misma petición que el audio; `core/screen.py`)
+- [x] Recordatorios persistentes y notas (`cache/timers.json`)

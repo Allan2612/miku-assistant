@@ -5,6 +5,26 @@ Todos los cambios notables de este proyecto se documentarán en este archivo.
 El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Unreleased]
+### Cambiado (plan de mejoras, ver `docs/mejoras.md`)
+- **Como máximo una petición a Gemini por turno** (plan gratuito). Whisper filtra ruido y alimenta el atajo local (0 peticiones); lo demás va en una sola petición con el audio, y Gemini responde y pide herramientas a la vez. Las herramientas se ejecutan en local y su resultado no vuelve a Gemini.
+- El "sí" para apagar o reiniciar se ejecuta en local, sin petición.
+- Modelo principal `gemini-3.5-flash-lite`, con el pensamiento al mínimo: los tokens de pensamiento agotaban el límite y dejaban respuestas vacías.
+- La ventana arranca sin `--js-flags=--lite-mode`: ahorraba 1 MB, pero Live2D gastaba 5 veces más CPU y Miku tardaba en aparecer.
+- Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
+
+### Añadido
+- Memoria a largo plazo (`remember` / `forget`), rutinas ("modo trabajo"), ventanas (minimizar, maximizar, restaurar), portapapeles, crear y leer archivos de texto.
+- Preguntas de actualidad y lectura de páginas web con la búsqueda integrada de Gemini, en la misma petición.
+- "¿Qué ves en mi pantalla?": la captura va en la misma petición que el audio.
+- Temporizadores y recordatorios persistentes: sobreviven a un reinicio.
+- Miku se despide ("¡Adiós!", "¡Chao!"…) antes de ocultarse por inactividad.
+- "Apunta que X" y "qué pendientes tengo" en el atajo local.
+
+### Corregido
+- `open_url`, `web_search` y `youtube_search` fallaban siempre (`_open_in_browser` borrado en un refactor).
+- Miku decía "¡Anotado!" sin llamar a ninguna herramienta: ahora admite que no lo hizo.
+- H-039: el worker de RVC terminado se espera en segundo plano y cierra sus *pipes*.
+
 ### Seguridad (auditoría, ver `docs/auditoria/`)
 - El servidor WebSocket solo acepta la app y clientes locales: ninguna página web puede controlar a Miku.
 - `open_app` ya no ejecuta líneas de comandos ni abre consolas; `type_text` no escribe en consolas ni pulsa Enter.

@@ -76,8 +76,9 @@ Descartado: Gemini como transcriptor aparte (probado el mismo día; ~1,2 s y cas
 petición por frase). Medido con ruido fuerte: Whisper `small` ~1,6 s con fallos tipo "blog de
 notas", "alabador"; flash-lite casi exacto. Test: `tests/test_one_request.py`.
 
-- [ ] Prueba real con la API (gasta 3–4 peticiones de flash-lite): que el modelo escriba la frase
-      **y** pida las tools en la misma respuesta, y que ponga `{lo que oyó}`.
+- [x] Probado por el usuario el 23-oct. Fallo encontrado: dijo "¡Anotado!" sin llamar a `take_note`.
+      Arreglado así: "apunta que X" va por el fast-path; el prompt ya no invita a decir "como si ya estuviera
+      hecho"; y si el modelo afirma una acción sin tool, Miku lo admite (`CLAIMED_ACTION_RE`).
 
 **Beneficios:** Gemini oye el audio real en vez del texto de Whisper, sin petición extra; las
 acciones de varias tools bajan de 2–3 peticiones a 1. **Coste:** la frase de Miku se escribe antes de
@@ -103,10 +104,10 @@ Hecha el 23-oct bajo la regla de **una petición por turno** (ver Fase 2):
 - [x] **Más herramientas** (34 en total): `window_action` (minimizar/maximizar/restaurar),
       `copy_to_clipboard` / `read_clipboard`, `create_text_file` (solo Escritorio, nunca sobrescribe),
       `read_text_file` (.txt/.md/.csv/.log, primeros 600 caracteres). Las de lectura se leen tal cual.
-- [ ] **Leer páginas web / preguntas de actualidad**: pendiente. Gemini 3 permite `google_search` +
-      tools propias en la misma petición (desde mar-2026), pero solo documentado en la Interactions API,
-      en Preview, con modo `validated`, y la búsqueda se cobra por consulta. Hay que probarlo con
-      peticiones reales antes de activarlo: si la API lo rechaza, fallaría toda petición.
+- [x] **Leer páginas web / preguntas de actualidad**: `google_search` + `url_context` en la misma petición
+      (`include_server_side_tool_invocations`, modo `VALIDATED`). **Sin probar con la API.** Si Gemini lo
+      rechaza (400), se desactiva para la sesión y se reintenta sin él (un 400 no gasta cuota).
+      `llm.web_search: false` lo apaga. La búsqueda se cobra por consulta en el plan de pago.
 - [ ] ~~Canal Telegram~~ — saltado por decisión del usuario.
 - [x] **Rutinas**: `routines:` en `config.yaml` + tool `run_routine`. "modo trabajo" / "activa el
       modo música" van por el fast-path: **0 peticiones**. Las tools destructivas se saltan.

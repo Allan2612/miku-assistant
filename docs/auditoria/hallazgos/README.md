@@ -4,7 +4,7 @@ Aquí se apunta lo que se va encontrando al seguir el [plan de auditoría](../pl
 
 - **Commit auditado:** `01f50c8`
 - **Inicio:** 2026-10-20
-- **Estado:** auditoría cerrada y corregida el 2026-10-21: 55 arreglados, 2 decididos (H-002: sin confirmación; H-028: carga al arrancar), 1 parcial, 1 descartado (ver "Arreglos" en [99-resumen.md](99-resumen.md)).
+- **Estado:** auditoría cerrada y corregida el 2026-10-21: 56 arreglados (H-039 completado el 2026-10-23), 2 decididos (H-002: sin confirmación; H-028: carga al arrancar), 1 descartado (ver "Arreglos" en [99-resumen.md](99-resumen.md)).
 
 ## Archivos
 
@@ -104,7 +104,7 @@ Se completa a medida que aparecen hallazgos, ordenado por severidad.
 | H-033 | Baja | arreglado | `core/config.py:129` | `config.py` no valida y repite valores por defecto |
 | H-036 | Baja | arreglado | `core/stt.py:88` | Detalles de `stt.py` |
 | H-037 | Baja | arreglado | `core/wakeword.py:80` | Detalles de `wakeword.py` |
-| H-039 | Baja | parcial | `core/rvc.py:74` | Detalles de `rvc.py` |
+| H-039 | Baja | arreglado | `core/rvc.py:74` | Detalles de `rvc.py` |
 | H-040 | Baja | arreglado | `core/tts.py:35` | Caché de voz sin límite; frases fijas sin precargar |
 | H-041 | Baja | arreglado | `core/rvc_worker.py:90` | Detalles de `rvc_worker.py` |
 | H-042 | Baja | arreglado | `core/rmvpe.py:1` | `rmvpe.py` es una copia de RVC con restos de depuración |

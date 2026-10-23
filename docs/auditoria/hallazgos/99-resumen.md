@@ -72,7 +72,7 @@ Agrupado por archivo para tocar cada uno una sola vez:
 
 **55 de 58 arreglados** (commits `9de705b` a `5f9f07b` en `develop`). Todos los críticos, altos y medios están cerrados.
 
-**Parcial (1):** H-039. Los logs del worker ya van a `cache/rvc_worker.log` y la respuesta de `load` se comprueba, pero `terminate_worker` sigue sin cerrar las *pipes* del proceso (solo provoca avisos de Python al salir).
+**Parcial (0):** H-039 se completó el 2026-10-23: `terminate_worker` cierra el stdin del worker y espera su salida en segundo plano, así asyncio cierra las *pipes* (probado con `python -X dev`: sin `ResourceWarning`).
 
 **Decididos (2):**
 
