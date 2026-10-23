@@ -80,7 +80,7 @@ Frontend → Backend:
 ## Ventana (Tauri)
 - `transparent: true`, `decorations: false`, `alwaysOnTop: true`, `skipTaskbar: true`, `shadow: false`, `resizable: false`.
 - Tamaño ~400×600, anclada abajo a la derecha sobre la barra de tareas (configurable).
-- **Optimización WebView2**: en `tauri.conf.json`, configurar argumentos adicionales del navegador (`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --js-flags=--lite-mode`) para minimizar la huella de RAM en segundo plano.
+- **Optimización WebView2**: en `tauri.conf.json`, configurar argumentos adicionales del navegador (`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`). Sin `--js-flags=--lite-mode`: medido el 23-oct, ahorraba ~1 MB de heap pero Live2D gastaba 5x más CPU (24% del hilo principal en reposo frente a 4,5%) y Miku tardaba en aparecer.
 - **Click-through**: `setIgnoreCursorEvents(true)` por defecto; cada ~150 ms (solo con Miku visible) se consulta la posición del cursor y se hace hit-test contra los límites del modelo para desactivar el ignore cuando el cursor está encima. Con Miku oculta, este intervalo se detiene por completo.
 - Icono en bandeja del sistema: Mostrar / Ocultar / Salir.
 
