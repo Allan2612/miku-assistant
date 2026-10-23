@@ -15,6 +15,22 @@ from core.tools._win import find_opera_gx as _find_opera_gx
 logger = logging.getLogger("miku.tools.web")
 
 
+def _open_in_browser(target_url: str) -> None:
+    opera_exe = _find_opera_gx()
+    if opera_exe:
+        try:
+            logger.info("Opening URL in Opera GX: %s", target_url)
+            subprocess.Popen([opera_exe, target_url])
+            return
+        except Exception as e:
+            logger.warning("Failed to launch Opera GX with URL %s: %s", target_url, e)
+
+    try:
+        os.startfile(target_url)
+    except Exception:
+        webbrowser.open(target_url)
+
+
 @tool(
     name="open_url",
     description="Abre una URL web válida (solo http/https) en Opera GX si está instalado, si no en el navegador predeterminado."
