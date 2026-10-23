@@ -21,7 +21,7 @@ class FakeBrain:
     def __init__(self, fail=False):
         self.fail = fail
 
-    async def chat(self, text):
+    async def chat(self, text, audio=None):
         if self.fail:
             raise RuntimeError("boom")
         return "happy", "¡Hola!", False
@@ -113,7 +113,7 @@ class RecordingBrain(FakeBrain):
         super().__init__()
         self.heard = []
 
-    async def chat(self, text):
+    async def chat(self, text, audio=None):
         self.heard.append(text)
         return await super().chat(text)
 
@@ -145,7 +145,34 @@ def test_pipeline_flows():
     asyncio.run(_run())
 
 
+async def _goodbye():
+    # Idle after an answer: Miku says a goodbye, then hides, and does not schedule another one
+    p, server = _pipeline(FakeBrain())
+    p.goodbye_after_s = 0.05
+    p.handle_speak_done()
+    await asyncio.sleep(0.2)
+    assert server.sent.count("speak") == 1, server.sent
+    assert p.handle_speak_done() is True, "the goodbye must end in a hide"
+    await asyncio.sleep(0.2)
+    assert server.sent.count("speak") == 1, "no goodbye after the goodbye"
+
+    # Any new activity cancels it
+    p, server = _pipeline(FakeBrain())
+    p.goodbye_after_s = 0.05
+    p.handle_speak_done()
+    await p.handle_text_input("hola")
+    sent_before = server.sent.count("speak")
+    p.cancel_goodbye()  # the answer's own speak_done would re-arm; drop it for this check
+    await asyncio.sleep(0.2)
+    assert server.sent.count("speak") == sent_before == 1, server.sent
+
+
+def test_goodbye_on_inactivity():
+    asyncio.run(_goodbye())
+
+
 if __name__ == "__main__":
     test_pipeline_flows()
+    test_goodbye_on_inactivity()
     test_activation_says_yes_then_listens()
     print("ok")

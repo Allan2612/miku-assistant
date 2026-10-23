@@ -44,7 +44,8 @@ async def async_main() -> None:
     numeric_level = getattr(logging, config.log_level, logging.INFO)
     logging.basicConfig(
         level=numeric_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        # Milliseconds: activation latency (wake word -> cue -> mic) is invisible at 1 s resolution
+        format="%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
         handlers=handlers,
     )
@@ -106,6 +107,8 @@ async def async_main() -> None:
         rvc=rvc,
         silence_ms=config.behavior.silence_ms,
         max_record_seconds=config.behavior.max_record_seconds,
+        # 4 s before the frontend's auto-hide: room to say goodbye before the window goes away
+        goodbye_after_s=max(0, config.behavior.hide_after_seconds - 4),
     )
     server.set_pipeline(pipeline)
 

@@ -7,19 +7,23 @@ conversation history, emotion parsing, and dynamic multi-model fallback on rate 
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import random
 import os
 import re
 import time
+import wave
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from core.tools import get_registered_tools, note_user_reply
+from core.tools import get_registered_tools, get_tool_metadata, note_user_reply
+from core.tools.memory import memory_facts
 
 load_dotenv()
 
@@ -39,9 +43,13 @@ Empieza SIEMPRE tu respuesta con una etiqueta de emoción entre corchetes, una d
 REGLA CRÍTICA DE CONTROL DEL PC:
 Tienes herramientas disponibles para controlar el ordenador en tiempo real (abrir aplicaciones, cerrar aplicaciones, ajustar o cambiar volumen, pausar/reanudar música, buscar en Google/YouTube, ver estado del sistema, fecha/hora, temporizadores, notas, etc.).
 Cuando el usuario pida realizar cualquier acción en el PC, ES OBLIGATORIO LLAMAR A LA HERRAMIENTA CORRESPONDIENTE. NUNCA respondas que hiciste la acción sin haber ejecutado la herramienta, porque si no la ejecutas, la acción no ocurre físicamente en el ordenador.
-Tras la llamada a la herramienta, confirma el resultado con una frase alegre y corta.
+Si necesitas varias acciones, pide todas las herramientas a la vez. En la MISMA respuesta escribe también la frase alegre y corta que dirás, como si ya estuviera hecho: no verás el resultado de las herramientas ni tendrás otro turno para hablar.
 
-Confirmaciones de seguridad: apagar, reiniciar o suspender el equipo (shutdown_pc) necesita que el usuario confirme. La primera llamada no ejecuta nada y devuelve una pregunta: házsela al usuario tal cual. Si en su siguiente mensaje responde que sí, vuelve a llamar a shutdown_pc con los mismos argumentos. Las demás acciones (como cerrar aplicaciones, cambiar volumen o abrir programas) se ejecutan directamente cuando el usuario lo pide.
+Confirmaciones de seguridad: para apagar, reiniciar o suspender el equipo llama a shutdown_pc; el sistema le pedirá confirmación al usuario por su cuenta. Las demás acciones (como cerrar aplicaciones, cambiar volumen o abrir programas) se ejecutan directamente cuando el usuario lo pide.
+
+Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si te pide que olvides algo, llama a forget.
+
+Si el mensaje del usuario llega como audio, empieza tu respuesta escribiendo entre llaves lo que dijo y después la etiqueta de emoción. Ejemplo: "{{abre el bloc de notas}} [happy] ¡Listo, abrí el Bloc de notas!"
 
 Si el usuario se despide ("adiós", "gracias, eso es todo", "vete", "chao"), responde con una despedida corta y la etiqueta [happy]; el sistema te ocultará.
 
@@ -50,6 +58,25 @@ Momento del día: {time_of_day}
 """
 
 VALID_EMOTIONS = {"happy", "neutral", "surprised", "sad", "angry", "thinking"}
+
+# "{what the user said}" at the start of an answer to an audio message
+HEARD_RE = re.compile(r"^\s*\{([^}]*)\}\s*")
+
+# Tools that return data: the model cannot see results (one request per turn), so they are read out verbatim
+SPEAK_RESULT_TOOLS = {
+    "find_file", "read_notes", "get_datetime", "get_system_status", "list_timers", "read_clipboard", "read_text_file",
+}
+
+
+def _to_wav(audio: np.ndarray, sample_rate: int = 16000) -> bytes:
+    """Encodes 16 kHz float32 mono audio as 16-bit PCM WAV bytes."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes((np.clip(np.asarray(audio, dtype=np.float32).flatten(), -1.0, 1.0) * 32767).astype(np.int16).tobytes())
+    return buf.getvalue()
 
 FAREWELL_KEYWORDS = [
     "adios", "adiós", "chao", "hasta luego", "nos vemos",
@@ -97,9 +124,8 @@ class MikuBrain:
         # 15 s per HTTP request: a hung connection must fail so the model fallback can kick in (H-026)
         self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=15_000))
         self.tools = get_registered_tools()
-        self._chat_session = None
-        self._turns_count = 0
         self.total_api_calls = 0
+        self.last_heard = ""
         self._last_query_text = ""
         self._last_query_time = 0.0
         self._last_result: Optional[Tuple[str, str, bool]] = None
@@ -133,36 +159,64 @@ class MikuBrain:
             period = "tarde (saluda con '¡Buenas tardes!' si el usuario te saluda)"
         else:
             period = "noche (saluda con '¡Buenas noches!' si el usuario te saluda)"
-        return SYSTEM_PROMPT_TEMPLATE.format(current_time=now_str, time_of_day=period)
+        prompt = SYSTEM_PROMPT_TEMPLATE.format(current_time=now_str, time_of_day=period)
+        facts = memory_facts()
+        if facts:
+            prompt += "\nLo que recuerdas del usuario:\n" + "\n".join(f"- {f}" for f in facts) + "\n"
+        return prompt
 
-    def _create_chat_session(self, model: str) -> Any:
-        """Instantiates a fresh AsyncChat session with function calling limited strictly to max 2 remote calls."""
-        system_instruction = self._build_system_instruction()
-        afc_config = types.AutomaticFunctionCallingConfig(maximum_remote_calls=2)
+    def _build_request(self, clean_input: str, audio: Optional[np.ndarray]) -> Tuple[List[types.Content], types.GenerateContentConfig]:
+        """One request per turn: text history + the user's audio (or text). Tools are declared, never auto-called."""
         config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
+            system_instruction=self._build_system_instruction(),
             tools=self.tools,
             temperature=self.temperature,
             max_output_tokens=300,
-            automatic_function_calling=afc_config,
+            # Thinking tokens count against max_output_tokens: left on, they ate the 300 and the answer came back empty
+            thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
+            # The user's quota allows ONE request per turn: we run the tools locally and never send results back
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
+        contents = [
+            types.Content(role=turn["role"], parts=[types.Part.from_text(text=turn["text"])])
+            for turn in self._history_turns[-(self.max_history * 2):]
+        ]
+        if audio is not None:
+            user_part = types.Part.from_bytes(data=_to_wav(audio), mime_type="audio/wav")
+        else:
+            user_part = types.Part.from_text(text=clean_input)
+        contents.append(types.Content(role="user", parts=[user_part]))
+        return contents, config
 
-        history_contents = []
-        for turn in self._history_turns[-(self.max_history * 2):]:
-            history_contents.append(
-                types.Content(
-                    role=turn["role"],
-                    parts=[types.Part.from_text(text=turn["text"])],
-                )
-            )
+    def _remember(self, user_text: str, model_text: str) -> None:
+        """Keeps the turn as text so the next request (on any model) has the context."""
+        self._history_turns.append({"role": "user", "text": user_text})
+        self._history_turns.append({"role": "model", "text": model_text})
+        if len(self._history_turns) > self.max_history * 4:
+            self._history_turns = self._history_turns[-(self.max_history * 2):]
 
-        chat = self.client.aio.chats.create(
-            model=model,
-            config=config,
-            history=history_contents if history_contents else None,
-        )
-        logger.info("Gemini AsyncChat session initialized for model '%s' (history turns: %d).", model, len(history_contents))
-        return chat
+    async def _run_tool_calls(self, calls: List[Any], answer: str) -> Tuple[Optional[str], Optional[str]]:
+        """Runs the model's tool calls locally. Returns (emotion, text) to say instead of the model's answer, if any."""
+        must_say: List[str] = []
+        failed = False
+        results: List[str] = []
+        for call in calls:
+            meta = get_tool_metadata(call.name or "")
+            if meta is None:
+                res: Dict[str, Any] = {"ok": False, "result": f"No sé hacer {call.name}."}
+            else:
+                # Tools block (sleeps, process scans): run them off the event loop (H-025)
+                res = await asyncio.to_thread(meta["function"], **dict(call.args or {}))
+            results.append(str(res.get("result", "")))
+            # The model never sees results: failures, confirmation questions and data must be read out as-is
+            if not res.get("ok") or call.name in SPEAK_RESULT_TOOLS:
+                must_say.append(str(res.get("result", "")))
+                failed = failed or (not res.get("ok") and not res.get("requires_confirmation"))
+        if must_say:
+            return ("sad" if failed else "neutral"), self._sanitize_for_speech(" ".join(must_say))
+        if not answer:
+            return "happy", self._sanitize_for_speech(" ".join(results)) or "¡Listo!"
+        return None, None
 
     @staticmethod
     def _sanitize_for_speech(text: str) -> str:
@@ -217,7 +271,15 @@ class MikuBrain:
             open_notes()
             return ("happy", "¡Yatta! Ya te abrí el Bloc de notas.", False)
 
-        if low in ("el navegador", "navegador", "internet", "abrir navegador", "opera", "opera gx", "operagx", "abrir opera", "abrir opera gx"):
+        # Routines: "modo trabajo", "activa el modo música" (0 requests)
+        m_routine = re.match(r"^(?:miku\s*,?\s*)?(?:activa\s+(?:el\s+)?|pon\s+(?:el\s+)?|rutina\s+)?modo\s+(\w+)$", low.strip("¡!¿?., "))
+        if m_routine:
+            from core.tools.routines import find_routine, run_routine
+            if find_routine(m_routine.group(1)):
+                res = run_routine(m_routine.group(1))
+                return ("happy" if res.get("ok") else "sad", res["result"], False)
+
+        if low in ("el navegador", "navegador", "internet", "abrir navegador", "opera", "ópera", "opera gx", "operagx", "abrir opera", "abrir opera gx"):
             from core.tools.apps import open_app
             open_app("opera gx")
             return ("happy", "¡Listo! Ya abrí Opera GX para ti.", False)
@@ -235,7 +297,7 @@ class MikuBrain:
                 from core.tools.web import open_url
                 open_url("https://www.youtube.com")
                 return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
-            elif any(b in target for b in ("opera", "navegador", "internet", "web")):
+            elif any(b in target for b in ("opera", "ópera", "navegador", "internet", "web")):
                 from core.tools.apps import open_app
                 open_app("opera gx")
                 return ("happy", "¡Listo! Ya abrí Opera GX para ti.", False)
@@ -330,18 +392,25 @@ class MikuBrain:
 
         return None
 
-    async def chat(self, user_text: str) -> Tuple[str, str, bool]:
+    async def chat(self, user_text: str, audio: Optional[np.ndarray] = None) -> Tuple[str, str, bool]:
         """
-        Sends message to Gemini with automatic function calling and returns:
-        (emotion, response_text, is_farewell)
-        Enforces deduplication, rate limit resilience, and automatic fallback across models.
+        Answers one user turn with at most ONE Gemini request and returns (emotion, response_text, is_farewell).
+        user_text is the local Whisper transcription (or typed text); audio, when given, is what Gemini hears.
+        Local paths (confirmation, dedup, fast-path) cost 0 requests. What Gemini heard ends in self.last_heard.
         """
         clean_input = user_text.strip()
+        self.last_heard = clean_input
         if not clean_input:
             return "neutral", "¿Sí? Dime qué necesitas.", False
 
-        # Only the user's own reply can confirm a pending destructive tool (H-001)
-        note_user_reply(clean_input)
+        # Only the user's own reply can confirm a pending destructive tool (H-001); the approved action
+        # runs here, locally, so confirming costs no request
+        confirmed = note_user_reply(clean_input)
+        if confirmed is not None:
+            res = await asyncio.to_thread(get_tool_metadata(confirmed["name"])["function"])
+            answer = self._sanitize_for_speech(str(res.get("result", "")))
+            self._remember(clean_input, answer)
+            return ("happy" if res.get("ok") else "sad"), answer, False
 
         # In-memory deduplication: if exact same query arrives within 2.0s, reuse response with 0 extra API calls
         now = time.monotonic()
@@ -358,8 +427,6 @@ class MikuBrain:
             self._last_query_time = now
             self._last_result = fast_res
             return fast_res
-
-        farewell = self.is_farewell(clean_input)
 
         # Build prioritized list of models to try
         models_to_try: List[str] = []
@@ -379,48 +446,25 @@ class MikuBrain:
             models_to_try.insert(0, self.current_model)
 
         last_error = None
+        contents, config = self._build_request(clean_input, audio)
+        response = None
 
+        # Only a failed request (error, 429, 503: no answer, no quota spent) moves on to the next model
         for model in models_to_try:
             try:
-                # Initialize or swap chat session if needed
-                if self._chat_session is None or self.current_model != model or self._turns_count >= self.max_history * 2:
-                    self.current_model = model
-                    self._chat_session = self._create_chat_session(model)
-                    self._turns_count = 0
-
-                self._turns_count += 1
+                self.current_model = model
                 self.total_api_calls += 1
                 logger.info(
-                    "--> [GEMINI REQ #%d] (Turn #%d) Model: %s | Query: '%s'",
+                    "--> [GEMINI REQ #%d] Model: %s | Query: '%s'%s",
                     self.total_api_calls,
-                    self._turns_count,
                     model,
                     clean_input,
+                    " (+audio)" if audio is not None else "",
                 )
-
-                response = await self._chat_session.send_message(clean_input)
-                raw_answer = (response.text or "").strip()
-                if not raw_answer:
-                    raw_answer = "[happy] ¡Listo! ¿En qué más te puedo ayudar?"
-
-                emotion, clean_text = self._parse_emotion(raw_answer)
-                if not clean_text:
-                    clean_text = "¡Listo!"
-
-                # Track history for seamless cross-model failovers
-                self._history_turns.append({"role": "user", "text": clean_input})
-                self._history_turns.append({"role": "model", "text": raw_answer})
-                if len(self._history_turns) > self.max_history * 4:
-                    self._history_turns = self._history_turns[-(self.max_history * 2):]
-
-                result = (emotion, clean_text, farewell)
-                self._last_query_text = clean_input
-                self._last_query_time = time.monotonic()
-                self._last_result = result
-
+                response = await self.client.aio.models.generate_content(model=model, contents=contents, config=config)
                 # Clear any previous cooldown for this healthy model
                 self._model_cooldown.pop(model, None)
-                return result
+                break
 
             except Exception as e:
                 last_error = e
@@ -432,7 +476,8 @@ class MikuBrain:
                 if any(term in err_str for term in ["api key", "api_key", "permission_denied", "unauthenticated", "401", "403"]):
                     logger.error("Gemini authentication failed: %s", e)
                     return ("sad", "No puedo conectarme con Gemini: revisa la API key en el archivo .env.", False)
-                cooldown_sec = 60.0 if is_rate_limit else 15.0
+                # A daily quota does not come back in a minute: stop retrying that model every turn
+                cooldown_sec = 3600.0 if "per day" in err_str else 60.0 if is_rate_limit else 15.0
                 self._model_cooldown[model] = time.monotonic() + cooldown_sec
                 logger.warning(
                     "Gemini model '%s' failed (rate_limit/quota=%s, cooldown=%.0fs): %s. Switching to fallback...",
@@ -441,20 +486,45 @@ class MikuBrain:
                     cooldown_sec,
                     e,
                 )
-                self._chat_session = None
 
-        logger.error("All Gemini model candidates failed! Last error: %s", last_error)
-        fallback_emotion, fallback_text = random.choice(OUT_OF_ENERGY_RESPONSES)
-        return (
-            fallback_emotion,
-            fallback_text,
-            False,
-        )
+        if response is None:
+            logger.error("All Gemini model candidates failed! Last error: %s", last_error)
+            fallback_emotion, fallback_text = random.choice(OUT_OF_ENERGY_RESPONSES)
+            return fallback_emotion, fallback_text, False
+
+        content = response.candidates[0].content if response.candidates else None
+        parts = (content.parts if content else None) or []
+        raw_answer = "".join(p.text for p in parts if p.text and not p.thought).strip()
+        calls = [p.function_call for p in parts if p.function_call]
+
+        heard = HEARD_RE.match(raw_answer)
+        if heard:
+            raw_answer = raw_answer[heard.end():]
+            self.last_heard = heard.group(1).strip() or clean_input
+        if not raw_answer and not calls:
+            logger.warning(
+                "Gemini returned an empty answer (finish_reason=%s).",
+                response.candidates[0].finish_reason if response.candidates else None,
+            )
+        emotion, clean_text = self._parse_emotion(raw_answer)
+
+        if calls:
+            logger.info("Gemini asked for tools: %s", [f"{c.name}({dict(c.args or {})})" for c in calls])
+            tool_emotion, tool_text = await self._run_tool_calls(calls, clean_text)
+            if tool_text:
+                emotion, clean_text = tool_emotion, tool_text
+        if not clean_text:
+            emotion, clean_text = "thinking", "Perdona, no te entendí bien. ¿Me lo repites?"
+
+        self._remember(self.last_heard, f"[{emotion}] {clean_text}")
+        result = (emotion, clean_text, self.is_farewell(self.last_heard))
+        self._last_query_text = clean_input
+        self._last_query_time = time.monotonic()
+        self._last_result = result
+        return result
 
     def clear_history(self) -> None:
-        """Clears conversation history and resets chat session."""
-        self._chat_session = None
-        self._turns_count = 0
+        """Clears conversation history."""
         self._last_query_text = ""
         self._last_query_time = 0.0
         self._last_result = None

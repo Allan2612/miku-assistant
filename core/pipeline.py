@@ -36,6 +36,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 # Spoken right after activation so it is obvious Miku is listening; kept very short
 ACK_PHRASES = ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!")
 ACK_WAIT_S = 3.0  # max wait for the frontend to finish playing the cue
+# Said before hiding on inactivity (fixed phrases: voice cached on disk, 0 Gemini requests)
+GOODBYE_PHRASES = ("¡Adiós!", "¡Chao!", "¡Nos vemos!", "¡Hasta luego!", "Me voy, ¡llámame si me necesitas!")
 
 
 def _normalize(text: str) -> str:
@@ -75,6 +77,7 @@ class MikuPipeline:
         rvc: Optional[RVCManager] = None,
         silence_ms: int = 800,
         max_record_seconds: int = 15,
+        goodbye_after_s: float = 0.0,
     ) -> None:
         self.brain = brain
         self.tts = tts
@@ -85,6 +88,8 @@ class MikuPipeline:
         self.rvc = rvc
         self.silence_ms = silence_ms
         self.max_record_seconds = max_record_seconds
+        self.goodbye_after_s = goodbye_after_s  # 0 = off
+        self._goodbye_task: Optional[asyncio.Task] = None
         self.wakeword: Optional[Any] = None
 
         self._pipeline_lock = asyncio.Lock()
@@ -121,6 +126,28 @@ class MikuPipeline:
                 pass
 
         self._speak_watchdog_task = asyncio.create_task(_watchdog())
+
+    def _arm_goodbye(self) -> None:
+        """An interaction just ended: if nothing else happens, say goodbye and hide."""
+        self.cancel_goodbye()
+        if self.goodbye_after_s > 0:
+            self._goodbye_task = asyncio.create_task(self._goodbye_later())
+
+    def cancel_goodbye(self) -> None:
+        """Any new activity (activation, text, timer, dismiss) cancels the pending goodbye."""
+        if self._goodbye_task and not self._goodbye_task.done() and self._goodbye_task is not asyncio.current_task():
+            self._goodbye_task.cancel()
+        self._goodbye_task = None
+        # A goodbye cut off by barge-in must not hide Miku after the next answer
+        self._pending_farewell = False
+
+    async def _goodbye_later(self) -> None:
+        await asyncio.sleep(self.goodbye_after_s)
+        if self._pipeline_lock.locked() or self._is_speaking or self._is_listening or not self.server.clients:
+            return
+        async with self._pipeline_lock:
+            self._pending_farewell = True  # handle_speak_done -> server hides Miku
+            await self._speak(random.choice(GOODBYE_PHRASES), "happy", farewell=True, cache=True)
 
     def set_wakeword(self, wakeword: Any) -> None:
         """Attaches the wakeword listener to pause/resume during active interactions."""
@@ -258,6 +285,7 @@ class MikuPipeline:
         logger.info("Announcing timer: %s", message)
         # Wait for any ongoing conversation instead of talking over it (H-031)
         async with self._pipeline_lock:
+            self.cancel_goodbye()
             self.resources.touch()
             await self.server.broadcast({"type": "show"})
             await self._speak(message, "happy")
@@ -268,6 +296,7 @@ class MikuPipeline:
         Supports instant barge-in: interrupts Miku immediately if she is currently speaking.
         Pre-warms STT and RVC in background concurrently while user speaks.
         """
+        self.cancel_goodbye()
         # Instant Barge-In: if Miku is currently speaking, cut off voice and switch to listening immediately
         if self._is_speaking:
             logger.info("Barge-in: User activated while Miku is speaking. Cutting off speech immediately.")
@@ -315,6 +344,7 @@ class MikuPipeline:
                     await self.server.broadcast({"type": "state", "value": "idle"})
                     if self.wakeword is not None:
                         self.wakeword.resume()
+                    self._arm_goodbye()
                     return
 
                 # 4. Indicate thinking state to UI
@@ -340,19 +370,20 @@ class MikuPipeline:
                     await self.server.broadcast({"type": "state", "value": "idle"})
                     if self.wakeword is not None:
                         self.wakeword.resume()
+                    self._arm_goodbye()
                     return
 
-                # 6. Show transcribed text as user subtitle
+                # 6. One Gemini request hears the audio itself (Whisper's text only gates and drives the fast path)
+                self.resources.touch()
+                emotion, answer, is_farewell = await self.brain.chat(transcribed_text, audio=audio)
+                self._pending_farewell = is_farewell
+
+                # 7. User subtitle: what Gemini understood, which beats Whisper's guess
                 await self.server.broadcast({
                     "type": "subtitle",
                     "who": "user",
-                    "text": transcribed_text,
+                    "text": getattr(self.brain, "last_heard", "") or transcribed_text,
                 })
-
-                # 7. Request LLM completion
-                self.resources.touch()
-                emotion, answer, is_farewell = await self.brain.chat(transcribed_text)
-                self._pending_farewell = is_farewell
 
                 # 8. Synthesize speech (edge-tts -> RVC) and speak
                 await self._speak(answer, emotion, farewell=is_farewell)
@@ -381,6 +412,7 @@ class MikuPipeline:
             logger.info("Pipeline busy. Dropping overlapping text input: '%s'", clean)
             return
 
+        self.cancel_goodbye()
         async with self._pipeline_lock:
             self._last_text = clean
             self._last_text_time = now
@@ -432,6 +464,8 @@ class MikuPipeline:
         self._pending_farewell = False
         if self.wakeword is not None:
             self.wakeword.resume()
+        if not farewell:
+            self._arm_goodbye()
         return farewell
 
     async def check_startup_greeting(self) -> None:

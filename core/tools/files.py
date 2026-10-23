@@ -6,7 +6,8 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Dict, List, Set, Any
+import re
+from typing import Dict, List, Optional, Set, Any
 
 from core.config import load_config
 from core.tools import tool
@@ -26,17 +27,8 @@ _EXECUTABLE_EXTS = {
 DEFAULT_SEARCH_ROOTS = [Path(p).expanduser() for p in load_config().tools.file_search_roots]
 
 
-@tool(
-    name="find_file",
-    description="Busca un archivo por su nombre en las carpetas de usuario (Escritorio, Documentos, Descargas). Máx 10 resultados."
-)
-def find_file(name: str = "", filename: str = "", query: str = "") -> Dict[str, Any]:
-    """Busca archivos con un límite de profundidad de 3 niveles y 3s de timeout."""
-    global _SESSION_FOUND_FILES
-    target_q = name or filename or query
-    if not target_q:
-        return {"ok": False, "result": "Debes especificar qué archivo deseas buscar."}
-    query_str = target_q.strip().lower()
+def _search(query_str: str, limit: int = 10, exts: Optional[Set[str]] = None) -> List[str]:
+    """Files under the search roots whose name contains query_str: depth 3, 3 s budget. Marks them openable."""
     results: List[str] = []
     start_time = time.monotonic()
 
@@ -46,7 +38,7 @@ def find_file(name: str = "", filename: str = "", query: str = "") -> Dict[str, 
 
         try:
             for root, dirs, files in os.walk(root_dir):
-                if time.monotonic() - start_time > 3.0 or len(results) >= 10:
+                if time.monotonic() - start_time > 3.0 or len(results) >= limit:
                     break
 
                 # Limit depth to 3 levels
@@ -59,14 +51,27 @@ def find_file(name: str = "", filename: str = "", query: str = "") -> Dict[str, 
                 dirs[:] = [d for d in dirs if not d.startswith(".")]
 
                 for f in files:
-                    if query_str in f.lower():
+                    if query_str in f.lower() and (exts is None or Path(f).suffix.lower() in exts):
                         full_path = os.path.join(root, f)
                         results.append(full_path)
                         _SESSION_FOUND_FILES.add(os.path.normpath(full_path))
-                        if len(results) >= 10:
+                        if len(results) >= limit:
                             break
         except Exception as e:
             logger.debug("Error traversing %s: %s", root_dir, e)
+    return results
+
+
+@tool(
+    name="find_file",
+    description="Busca un archivo por su nombre en las carpetas de usuario (Escritorio, Documentos, Descargas). Máx 10 resultados."
+)
+def find_file(name: str = "", filename: str = "", query: str = "") -> Dict[str, Any]:
+    """Busca archivos con un límite de profundidad de 3 niveles y 3s de timeout."""
+    target_q = name or filename or query
+    if not target_q:
+        return {"ok": False, "result": "Debes especificar qué archivo deseas buscar."}
+    results = _search(target_q.strip().lower())
 
     if results:
         file_names = [f"• {Path(p).name} ({Path(p).parent.name})" for p in results[:5]]
@@ -143,3 +148,48 @@ def open_folder(name: str = "", folder: str = "", folder_name: str = "") -> Dict
         return {"ok": True, "result": f"He abierto la carpeta {target_name}."}
 
     return {"ok": False, "result": f"No reconozco la carpeta '{target_name}'. Las disponibles son: Escritorio, Descargas, Documentos, Imágenes, Música y Videos."}
+
+
+_TEXT_EXTS = {".txt", ".md", ".csv", ".log"}
+
+
+@tool(
+    name="create_text_file",
+    description="Crea un archivo de texto nuevo en el Escritorio con el contenido indicado (nunca sobrescribe uno existente). name: nombre del archivo."
+)
+def create_text_file(name: str, content: str = "") -> Dict[str, Any]:
+    """Crea un .txt/.md nuevo en el Escritorio."""
+    # Only a bare file name: no folders, no "..", nothing outside the Desktop
+    stem = re.sub(r'[<>:"/\|?*]', "", Path(name.strip()).name).strip(" .")
+    if not stem:
+        return {"ok": False, "result": "Necesito un nombre para el archivo."}
+    if Path(stem).suffix.lower() not in _TEXT_EXTS:
+        stem += ".txt"
+    target = Path.home() / "Desktop" / stem
+    try:
+        with open(target, "x", encoding="utf-8") as f:  # "x": fails instead of overwriting the user's file
+            f.write(content)
+    except FileExistsError:
+        return {"ok": False, "result": f"Ya existe un archivo llamado {stem} en el Escritorio; no lo sobrescribo."}
+    except OSError as e:
+        return {"ok": False, "result": f"No pude crear {stem}: {e}"}
+    _SESSION_FOUND_FILES.add(os.path.normpath(str(target)))
+    return {"ok": True, "result": f"Creé {stem} en el Escritorio."}
+
+
+@tool(
+    name="read_text_file",
+    description="Lee en voz alta el contenido de un archivo de texto (.txt, .md, .csv, .log) de Escritorio, Documentos o Descargas, buscándolo por su nombre."
+)
+def read_text_file(name: str) -> Dict[str, Any]:
+    """Lee los primeros 600 caracteres de un archivo de texto."""
+    found = _search(name.strip().lower(), limit=1, exts=_TEXT_EXTS)
+    if not found:
+        return {"ok": False, "result": f"No encontré ningún archivo de texto llamado '{name}'."}
+    try:
+        text = Path(found[0]).read_text(encoding="utf-8", errors="replace").strip()
+    except OSError as e:
+        return {"ok": False, "result": f"No pude leer {Path(found[0]).name}: {e}"}
+    if not text:
+        return {"ok": True, "result": f"{Path(found[0]).name} está vacío."}
+    return {"ok": True, "result": f"{Path(found[0]).name} dice: " + text[:600] + ("..." if len(text) > 600 else "")}

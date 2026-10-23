@@ -52,17 +52,21 @@ def _run_with_timeout(func: Callable, args: tuple, kwargs: dict) -> Any:
     return box["res"]
 
 
-def note_user_reply(text: str) -> None:
-    """Called with every user message before the LLM sees it: a short 'sí' confirms the pending action."""
+def note_user_reply(text: str) -> Optional[Dict[str, Any]]:
+    """Called with every user message before the LLM sees it: a short 'sí' confirms the pending action.
+
+    Returns the confirmed call, so the caller can run it (calling the tool with no arguments runs exactly it).
+    """
     global _pending_confirmation, _user_confirmed
     pending, _pending_confirmation = _pending_confirmation, None
     _user_confirmed = None
     if not pending or time.monotonic() - pending["time"] > _CONFIRM_WINDOW_S:
-        return
+        return None
     words = set(re.findall(r"\w+", text.lower()))
     if words & _YES_WORDS and not words & _NO_WORDS and len(words) <= 6:
         _user_confirmed = pending
         logger.info("User confirmed pending destructive tool [%s].", pending["name"])
+    return _user_confirmed
 
 
 def _short(value: Any) -> str:
@@ -144,3 +148,5 @@ import core.tools.system
 import core.tools.files
 import core.tools.timers
 import core.tools.notes
+import core.tools.memory
+import core.tools.routines

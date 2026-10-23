@@ -338,6 +338,44 @@ def focus_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
     target_name = name or app_name
     if not target_name:
         return {"ok": False, "result": "Debes indicar el nombre de la ventana a enfocar."}
+    found_hwnd = _find_window(target_name)
+    user32 = ctypes.windll.user32
+
+    if found_hwnd:
+        SW_RESTORE = 9
+        user32.AllowSetForegroundWindow(0xFFFFFFFF)
+        user32.ShowWindow(found_hwnd, SW_RESTORE)
+        user32.SetForegroundWindow(found_hwnd)
+        return {"ok": True, "result": f"He traído {target_name} al frente."}
+
+    return {"ok": False, "result": f"No encontré ninguna ventana abierta que coincida con '{target_name}'."}
+
+
+_SHOW_COMMANDS = {"minimize": 6, "maximize": 3, "restore": 9}
+_ACTION_WORDS = {"minimiza": "minimize", "maximiza": "maximize", "restaura": "restore", "agranda": "maximize", "esconde": "minimize"}
+
+
+@tool(
+    name="window_action",
+    description="Minimiza, maximiza o restaura la ventana de una aplicación abierta por su nombre o título (action: minimize | maximize | restore)."
+)
+def window_action(name: str, action: str = "minimize") -> Dict[str, Any]:
+    """Cambia el estado de una ventana visible."""
+    act = action.strip().lower()
+    act = next((v for k, v in _ACTION_WORDS.items() if act.startswith(k)), act)
+    if act not in _SHOW_COMMANDS:
+        return {"ok": False, "result": f"No sé hacer '{action}' con una ventana (usa minimize, maximize o restore)."}
+    # An empty name matches every title: it would act on whatever window comes first
+    hwnd = _find_window(name) if _clean_query(name) else None
+    if not hwnd:
+        return {"ok": False, "result": f"No encontré ninguna ventana abierta que coincida con '{name}'."}
+    ctypes.windll.user32.ShowWindow(hwnd, _SHOW_COMMANDS[act])
+    done = {"minimize": "minimicé", "maximize": "maximicé", "restore": "restauré"}[act]
+    return {"ok": True, "result": f"Listo, {done} {name}."}
+
+
+def _find_window(target_name: str) -> Optional[int]:
+    """First visible top-level window whose title contains the cleaned name."""
     _attach_user_desktop()
     query = _clean_query(target_name)
     user32 = ctypes.windll.user32
@@ -359,15 +397,7 @@ def focus_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
 
     WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     user32.EnumWindows(WNDENUMPROC(enum_windows_callback), 0)
-
-    if found_hwnd:
-        SW_RESTORE = 9
-        user32.AllowSetForegroundWindow(0xFFFFFFFF)
-        user32.ShowWindow(found_hwnd, SW_RESTORE)
-        user32.SetForegroundWindow(found_hwnd)
-        return {"ok": True, "result": f"He traído {target_name} al frente."}
-
-    return {"ok": False, "result": f"No encontré ninguna ventana abierta que coincida con '{target_name}'."}
+    return found_hwnd
 
 
 @tool(

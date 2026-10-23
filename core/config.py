@@ -104,6 +104,8 @@ class AppConfig:
     live2d: Live2DConfig = field(default_factory=Live2DConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     apps: dict[str, str] = field(default_factory=dict)
+    # name -> steps [{tool, args}], run locally by run_routine / "modo <name>"
+    routines: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 def load_config(
@@ -204,4 +206,5 @@ def load_config(
             file_search_roots=tools_data.get("file_search_roots", ["~/Desktop", "~/Documents", "~/Downloads"]),
         ),
         apps=dict(apps_data),
+        routines={str(k).lower(): list(v or []) for k, v in (raw_data.get("routines") or {}).items()},
     )

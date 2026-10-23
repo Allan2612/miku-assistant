@@ -211,6 +211,8 @@ class MikuServer:
 
                     elif msg_type == "dismiss":
                         logger.info("Client requested dismiss.")
+                        if self.pipeline:
+                            self.pipeline.cancel_goodbye()  # already hidden: no goodbye later
                         await self.broadcast({"type": "hide"})
 
                     elif msg_type == "shutdown":

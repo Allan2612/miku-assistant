@@ -95,3 +95,39 @@ def shutdown_pc(mode: str = "shutdown", confirmed: bool = False) -> Dict[str, An
         return {"ok": True, "result": "El equipo se reiniciará en 30 segundos."}
     ctypes.windll.Powrprof.SetSuspendState(0, 1, 0)
     return {"ok": True, "result": "Equipo suspendido."}
+
+
+def _powershell(script: str, env_text: str = "") -> subprocess.CompletedProcess:
+    # Text goes through an env var, never into the command line: no quoting or injection issues
+    env = dict(os.environ, MIKU_CLIP=env_text)
+    return subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+         "[Console]::OutputEncoding = [Text.Encoding]::UTF8; " + script],
+        env=env, capture_output=True, timeout=8, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+
+@tool(
+    name="copy_to_clipboard",
+    description="Copia un texto al portapapeles de Windows para que el usuario lo pegue con Ctrl+V."
+)
+def copy_to_clipboard(text: str) -> Dict[str, Any]:
+    """Pone texto en el portapapeles."""
+    if not text.strip():
+        return {"ok": False, "result": "No hay nada que copiar."}
+    if _powershell("Set-Clipboard -Value $env:MIKU_CLIP", text).returncode != 0:
+        return {"ok": False, "result": "No pude copiar al portapapeles."}
+    return {"ok": True, "result": "Copiado al portapapeles."}
+
+
+@tool(
+    name="read_clipboard",
+    description="Lee en voz alta el texto que hay en el portapapeles de Windows (lo último que copió el usuario)."
+)
+def read_clipboard() -> Dict[str, Any]:
+    """Devuelve el texto del portapapeles (máx 400 caracteres)."""
+    proc = _powershell("Get-Clipboard -Raw")
+    text = proc.stdout.decode("utf-8", "replace").strip()
+    if proc.returncode != 0 or not text:
+        return {"ok": True, "result": "El portapapeles está vacío o no tiene texto."}
+    return {"ok": True, "result": text[:400] + ("..." if len(text) > 400 else "")}
