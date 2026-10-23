@@ -20,6 +20,6 @@ Estas mediciones necesitan el asistente arrancado y una persona usándolo; queda
 - [ ] VRAM con Miku oculta tras `unload_after_minutes` (`nvidia-smi`): el proceso `pythonw -m core` no debe aparecer y no debe quedar ningún `rvc_worker`.
 - [ ] Latencia desde que el usuario termina de hablar hasta que Miku empieza, 5 mediciones.
 - [ ] CPU en reposo con la wake word activa (objetivo < 1 %, ver H-037).
-- [ ] `cargo audit` y `cargo clippy` en `app/src-tauri/` (no están instalados).
+- [x] `cargo audit` y `cargo clippy` en `app/src-tauri/` (23-oct): clippy sin avisos; audit encontró tokio 1.54.0 (RUSTSEC-2026-0384), actualizado a 1.54.1. Quedan 2 avisos de crates de GTK que solo se usan en Linux.
 
 Las pruebas en vivo de los hallazgos `por-verificar` están listadas en `99-resumen.md`.

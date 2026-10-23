@@ -1,11 +1,11 @@
 # Herramientas de control del PC
 
-Lista **cerrada** (34). Gemini solo puede invocar estas funciones, mediante function calling. Cada una devuelve un dict `{ "ok": bool, "result": str }` corto.
+Lista **cerrada** (35). Gemini solo puede invocar estas funciones, mediante function calling. Cada una devuelve un dict `{ "ok": bool, "result": str }` corto.
 
 **Una petición por turno.** Gemini pide las herramientas y escribe la frase de Miku en la **misma** respuesta. Las herramientas se ejecutan en local y su resultado **no** vuelve a Gemini (AFC desactivado). Por eso Miku lee el `result` tal cual, en lugar de su frase, en tres casos:
 - cuando la herramienta falla;
 - cuando pide confirmación;
-- cuando es una herramienta que devuelve datos (`SPEAK_RESULT_TOOLS` en `llm.py`): `find_file`, `read_notes`, `get_datetime`, `get_system_status`, `list_timers`, `read_clipboard` y `read_text_file`.
+- cuando es una herramienta que devuelve datos (`SPEAK_RESULT_TOOLS` en `llm.py`): `find_file`, `read_notes`, `get_datetime`, `get_system_status`, `list_timers`, `read_clipboard`, `read_text_file` y `list_open_apps`.
 
 Esos resultados se escriben para ser leídos en voz alta: sin viñetas, sin `#` y sin marcas de tiempo.
 
@@ -16,7 +16,7 @@ Leyenda: 🔒 = requiere confirmación del usuario antes de ejecutarse.
 |---|---|---|
 | `open_app` | `name: str` | 1) alias de `config.yaml → apps`; 2) búsqueda difusa en accesos directos del menú Inicio (`%ProgramData%` y `%AppData%\Microsoft\Windows\Start Menu`), cacheada al arrancar; 3) `os.startfile`. Si hay varias coincidencias, devuelve las opciones |
 | `close_app` | `name: str` | `psutil`: solo procesos con el **nombre exacto** (o su alias); nunca procesos del sistema ni el propio Miku. `terminate()` y, si a los 3 s sigue vivo, `kill()`. Sin confirmación (decisión revisable, H-002) |
-| `list_open_apps` | — | **Pendiente: no implementada** |
+| `list_open_apps` | — | Ventanas visibles como en la barra de tareas (con título, sin dueño, ni ocultas ni de herramienta) → nombre del proceso con nombre amigable ("Visual Studio Code", "el Bloc de notas"), sin duplicados y sin la propia Miku. Se lee en voz alta |
 | `focus_app` | `name: str` | Traer ventana al frente |
 | `window_action` | `name: str, action: minimize \| maximize \| restore` | `ShowWindow` sobre la primera ventana visible cuyo título contiene el nombre. Un nombre vacío se rechaza (coincidiría con cualquier ventana) |
 | `show_desktop` | — | Tecla Win+D |
@@ -33,10 +33,10 @@ Leyenda: 🔒 = requiere confirmación del usuario antes de ejecutarse.
 | Función | Parámetros | Implementación |
 |---|---|---|
 | `open_url` | `url: str` | Opera GX si está instalado; si no, el navegador predeterminado. Solo `http`/`https` |
-| `web_search` | `query: str` | Abre Google con la búsqueda |
+| `web_search` | `query: str` | Abre Google con la búsqueda. La descripción le dice al modelo que solo la use si le piden buscar: antes abría Google para "¿cuánto mide la torre Eiffel?" |
 | `youtube_search` | `query: str` | Abre la búsqueda en YouTube |
 
-**Buscar y leer (no son herramientas propias):** con `llm.web_search: true`, cada petición lleva también las herramientas integradas de Gemini `google_search` y `url_context`. Google las ejecuta **dentro de la misma petición** (combinación de herramientas de Gemini 3, `include_server_side_tool_invocations` y modo `VALIDATED`). Así Miku responde preguntas de actualidad o lee una página sin gastar una petición más. Si la API rechaza la combinación (400), se desactiva para esa sesión y se reintenta sin ella; una petición rechazada no gasta cuota.
+**Leer y buscar (no son herramientas propias):** en turnos de **texto**, la petición lleva también la herramienta integrada `url_context`: Google lee la página que le pases dentro de la misma petición (probado: resume python.org). Con `llm.web_search: true` va además `google_search`, pero **el plan gratuito responde 429 a toda petición que la lleve** (probado el 23-oct), así que viene apagada. No van en turnos de voz o con imagen: Gemini respondía 400. Si Google rechaza las integradas (400 o 429), se reintenta sin ellas y solo se apagan para la sesión si el reintento funciona; si también falla, era la cuota del modelo.
 
 ## Sistema — `tools/system.py`
 | Función | Parámetros | Implementación |

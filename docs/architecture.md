@@ -29,7 +29,7 @@ Dos procesos principales que se comunican por WebSocket local, más un subproces
 | Backend | Python 3.11 + `websockets` | Ligero (~50 MB RAM base), sin FastAPI |
 | VAD | **silero-vad** (ONNX, CPU) | Detecta inicio/fin de voz con consumo mínimo |
 | Voz → texto | **faster-whisper** `small`, `cpu`, `int8`, `cpu_threads` de la config, idioma de `language` | 0 MB VRAM, ~1,5 s por frase. Es un **filtro local**: descarta ruido y silencio, y alimenta el atajo local. Gemini oye el audio real. Se descarga tras inactividad |
-| Cerebro | **Gemini API** (`google-genai`), `gemini-3.5-flash-lite` (flash solo da 20 peticiones/día gratis) | **Una petición por turno**: audio + historial + herramientas, con búsqueda de Google integrada. Modelo en `config.yaml` |
+| Cerebro | **Gemini API** (`google-genai`), `gemini-3.5-flash-lite` (flash solo da 20 peticiones/día gratis) | **Una petición por turno**: audio + historial + herramientas. Modelo en `config.yaml` |
 | Texto → voz | **edge-tts** (voz femenina, p. ej. `es-MX-DaliaNeural`) | Gratis, buena calidad, base para RVC |
 | Voz Miku | **RVC** en subproceso aislado (`rvc_worker.py` por `stdio`/`pipe`) | Usa GPU (RTX 3050). Al matar el subproceso tras inactividad, Windows libera el 100 % de la VRAM y RAM de PyTorch |
 | Activación | Atajo global (Tauri `global-shortcut`) + opcional **openWakeWord** (CPU) | Fase 7 |
@@ -43,8 +43,8 @@ Dos procesos principales que se comunican por WebSocket local, más un subproces
 4. Backend graba del mic hasta que el VAD detecta ~0,8 s de silencio (máx. 15 s).
 5. Whisper transcribe en CPU (`int8`). Si no hay texto, o solo es el propio "¿Sí?" de Miku, se descarta: 0 peticiones.
 6. **Sin Gemini (0 peticiones)**: el atajo local resuelve los comandos simples ("abre Spotify", "baja el volumen", "apunta que…", "modo trabajo"), y un "sí" a una confirmación pendiente ejecuta la acción guardada.
-7. **Si no, una sola petición**: Gemini recibe el historial (últimos 10 turnos, en texto), los datos de la memoria, el **audio** (y una captura si se pregunta por la pantalla) y las declaraciones de herramientas, más `google_search` y `url_context`, que Google ejecuta dentro de la misma petición.
-8. Gemini devuelve en una respuesta `{lo que oyó} [emoción] frase` + las herramientas a usar. Las herramientas se ejecutan en local y su resultado **no** vuelve a Gemini: si falla, pide confirmación o devuelve datos, Miku lee el resultado en lugar de la frase. `{lo que oyó}` va al subtítulo del usuario y al historial.
+7. **Si no, una sola petición**: Gemini recibe el historial (últimos 10 turnos, en texto), los datos de la memoria, el **audio** (y una captura si se pregunta por la pantalla) y las declaraciones de herramientas. Solo en turnos de **texto** van también `url_context` (leer una página) y, si `llm.web_search: true`, `google_search`: Google los ejecuta dentro de la misma petición. Con audio Gemini los rechazaba (400), y el plan gratuito rechaza `google_search` (429).
+8. Gemini devuelve en una respuesta `[emoción] frase` + las herramientas a usar. Las herramientas se ejecutan en local y su resultado **no** vuelve a Gemini: si falla, pide confirmación o devuelve datos, Miku lee el resultado en lugar de la frase. Si la frase dice que hizo algo sin pedir herramienta, Miku admite que no lo hizo. El subtítulo del usuario es el texto de Whisper (se probó pedirle a Gemini lo que oyó: nunca lo devolvió).
 9. `edge-tts` genera wav → el subproceso `rvc_worker.py` (ya caliente en VRAM) lo convierte → wav en base64 al frontend con `speak`.
 10. Frontend reproduce con lip sync + expresión + subtítulo.
 11. Tras `hide_after_seconds` sin actividad, el frontend envía `idle_timeout`: Miku se despide ("¡Adiós!", frase cacheada) y el backend envía `hide` (si no llega en 8 s, el frontend se oculta solo). Tras un "adiós" del usuario, igual sin despedida extra → animación **desaparecer** → ventana oculta, render detenido (`app.ticker.stop()`).
@@ -142,7 +142,7 @@ hotkey: "Ctrl+Alt+M"
 language: "es"
 window: { width: 400, height: 600, anchor: "bottom-right", margin: 16, fps_visible: 30 }
 behavior: { hide_after_seconds: 20, max_record_seconds: 15, silence_ms: 800, unload_after_minutes: 10 }
-llm: { model: "gemini-3.5-flash-lite", models_fallback: ["gemini-3.5-flash"], max_history_turns: 10, temperature: 0.35, web_search: true }
+llm: { model: "gemini-3.5-flash-lite", models_fallback: ["gemini-3.5-flash"], max_history_turns: 10, temperature: 0.35, web_search: false }
 stt: { model: "small", device: "cpu", compute_type: "int8", cpu_threads: 4 }
 tts: { voice: "es-MX-DaliaNeural", rate: "+5%", pitch: "+20Hz" }
 rvc: { enabled: true, model: "models/rvc/miku.pth", index: "models/rvc/miku.index", f0_up_key: 6 }

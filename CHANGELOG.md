@@ -14,13 +14,19 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ### Añadido
 - Memoria a largo plazo (`remember` / `forget`), rutinas ("modo trabajo"), ventanas (minimizar, maximizar, restaurar), portapapeles, crear y leer archivos de texto.
-- Preguntas de actualidad y lectura de páginas web con la búsqueda integrada de Gemini, en la misma petición.
+- Leer páginas web que le pases por texto, con `url_context` de Gemini, en la misma petición.
 - "¿Qué ves en mi pantalla?": la captura va en la misma petición que el audio.
 - Temporizadores y recordatorios persistentes: sobreviven a un reinicio.
 - Miku se despide ("¡Adiós!", "¡Chao!"…) antes de ocultarse por inactividad.
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- La búsqueda de Google integrada dejaba a Miku sin responder a nada en el plan gratuito (429): ahora viene apagada (`llm.web_search`) y leer páginas web (`url_context`) va solo en turnos de texto.
+- Atajo local: no reconocía frases con "¡...!", "Hey Miku," al principio, "ábreme" ni el voseo ("bajá el volumen"); abría el Bloc de notas si una frase larga decía "notas". Nuevos atajos: temporizadores ("recuérdame en 10 minutos que..."), "recuerda que...", "busca en Google...", "ponme X en YouTube" y apagar/reiniciar (pide confirmación).
+- `open_app` con 1-2 letras ("abre mi") abría Microsoft Edge: la coincidencia parcial pide 3 letras al inicio de una palabra.
+- Miku ya no promete sin hacer ("¡Hecho! Te avisaré", "Voy a apagar..."): lo admite.
+- `list_open_apps` implementada.
+- Dependencia de Rust `tokio` 1.54.1 (RUSTSEC-2026-0384).
 - `open_url`, `web_search` y `youtube_search` fallaban siempre (`_open_in_browser` borrado en un refactor).
 - Miku decía "¡Anotado!" sin llamar a ninguna herramienta: ahora admite que no lo hizo.
 - H-039: el worker de RVC terminado se espera en segundo plano y cierra sus *pipes*.

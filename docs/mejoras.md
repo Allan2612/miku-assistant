@@ -65,11 +65,12 @@ Hecho así (`core/llm.py`, `core/pipeline.py`):
    Esto además filtra ruido/silencio, en el que Gemini "oía" palabras inventadas.
 2. Fast-path con el texto de Whisper (0 peticiones).
 3. "Sí" a una confirmación pendiente (apagar/reiniciar) → la acción aprobada se ejecuta en local (0).
-4. Resto: **una** petición con el **audio**. Gemini devuelve `{lo que oyó} [emoción] frase` + las
+4. Resto: **una** petición con el **audio**. Gemini devuelve `[emoción] frase` + las
    tools. AFC desactivado: las tools corren en local y su resultado no vuelve a Gemini. Se lee el
    resultado de la tool en vez de la frase del modelo cuando falla, pide confirmación o devuelve
    datos (`find_file`, `read_notes`, `get_datetime`, `get_system_status`, `list_timers`).
-5. Subtítulo e historial usan `{lo que oyó}`. Un modelo que falla (429/503) pasa al siguiente: eso
+5. Subtítulo e historial usan el texto de Whisper: Gemini nunca devolvió `{lo que oyó}` en las pruebas reales,
+   así que se quitó. Un modelo que falla (429/503) pasa al siguiente: eso
    no da respuesta ni gasta cuota.
 
 Descartado: Gemini como transcriptor aparte (probado el mismo día; ~1,2 s y casi exacto, pero +1
@@ -101,13 +102,30 @@ Hecha el 23-oct bajo la regla de **una petición por turno** (ver Fase 2):
       respuesta. Hechos en `cache/memory.json` (máx 50, escritura atómica), inyectados al prompt.
       JSON en vez de SQLite: una lista corta no necesita más. **Sin** resumen de conversaciones:
       resumir exige otra petición.
-- [x] **Más herramientas** (34 en total): `window_action` (minimizar/maximizar/restaurar),
+- [x] **Más herramientas** (35 en total): `window_action` (minimizar/maximizar/restaurar),
       `copy_to_clipboard` / `read_clipboard`, `create_text_file` (solo Escritorio, nunca sobrescribe),
-      `read_text_file` (.txt/.md/.csv/.log, primeros 600 caracteres). Las de lectura se leen tal cual.
-- [x] **Leer páginas web / preguntas de actualidad**: `google_search` + `url_context` en la misma petición
-      (`include_server_side_tool_invocations`, modo `VALIDATED`). **Sin probar con la API.** Si Gemini lo
-      rechaza (400), se desactiva para la sesión y se reintenta sin él (un 400 no gasta cuota).
-      `llm.web_search: false` lo apaga. La búsqueda se cobra por consulta en el plan de pago.
+      `read_text_file` (.txt/.md/.csv/.log, primeros 600 caracteres), `list_open_apps`. Las de lectura
+      se leen tal cual.
+- [x] **Leer páginas web**: `url_context` en la misma petición, solo en turnos de texto (probado en real:
+      resume python.org). `google_search` **no funciona en el plan gratuito**: 429 a toda petición que la
+      lleve, y al principio eso dejó a Miku sin responder a nada. Por eso `llm.web_search: false`. Con
+      audio, Gemini rechazaba las integradas (400). Si las rechaza, se reintenta sin ellas (un rechazo no
+      gasta cuota).
+
+### Pruebas reales con la API (23-oct, herramientas simuladas, archivos en carpeta temporal)
+
+13 casos, 9-10 peticiones: cada turno 1 o 0. Bien: charla, varias tools a la vez, leer una web,
+captura de pantalla, apagar con confirmación (el "sí" en local), ventanas, apps abiertas, preguntas por
+voz (Gemini oyó "torre Eiffel" donde Whisper puso "torre y fel"), atajos locales. Fallos encontrados y
+arreglados:
+- El modelo prometía sin llamar la tool ("¡Hecho! Te avisaré", "Voy a apagar el equipo", "¡Anotado
+  en mi memoria!"). Ahora el temporizador, "recuerda que", "apunta que" y "apaga la computadora" van
+  por el fast-path, y el detector de mentiras reconoce esas promesas.
+- Con 43 frases reales de Whisper del log: el fast-path fallaba con "¡...!" alrededor, con "Hey Miku,",
+  con "ábreme" y con el voseo ("bajá el volumen"); y abría el Bloc de notas si una frase larga decía
+  "notas". Ahora: 15 de 43 en local (antes 11), sin falsos positivos.
+- `open_app("mi")` abría Microsoft Edge en el menú Inicio real (coincidencia parcial de 2 letras).
+- `cargo audit`: tokio 1.54.0 con RUSTSEC-2026-0384, actualizado a 1.54.1. `cargo clippy`: sin avisos.
 - [ ] ~~Canal Telegram~~ — saltado por decisión del usuario.
 - [x] **Rutinas**: `routines:` en `config.yaml` + tool `run_routine`. "modo trabajo" / "activa el
       modo música" van por el fast-path: **0 peticiones**. Las tools destructivas se saltan.
