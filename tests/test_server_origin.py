@@ -38,6 +38,23 @@ async def _run():
         async with connect(f"ws://127.0.0.1:{PORT}", origin="http://tauri.localhost") as ws:
             await ws.send('{"type": "shutdown"}')
             await asyncio.wait_for(stopped.wait(), 2)
+
+        # Auto-hide: the frontend's idle_timeout makes Miku say goodbye; without a pipeline, just hide
+        said = asyncio.Event()
+
+        class Pipeline:
+            async def say_goodbye(self):
+                said.set()
+
+        server.set_pipeline(Pipeline())
+        async with connect(f"ws://127.0.0.1:{PORT}", origin="http://tauri.localhost") as ws:
+            await ws.send('{"type": "idle_timeout"}')
+            await asyncio.wait_for(said.wait(), 2)
+        server.set_pipeline(None)
+        async with connect(f"ws://127.0.0.1:{PORT}", origin="http://tauri.localhost") as ws:
+            await ws.send('{"type": "idle_timeout"}')
+            msg = await asyncio.wait_for(ws.recv(), 2)
+            assert '"hide"' in msg, msg
     finally:
         await server.stop()
 

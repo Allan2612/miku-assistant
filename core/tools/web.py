@@ -54,7 +54,7 @@ def open_url(url: str = "", uri: str = "") -> Dict[str, Any]:
 
 @tool(
     name="web_search",
-    description="Realiza una búsqueda en Google con la consulta indicada y la abre en el navegador."
+    description="Abre en el navegador una búsqueda de Google. Solo si el usuario pide buscar algo; si te hace una pregunta, respóndela tú."
 )
 def web_search(query: str = "", search_query: str = "") -> Dict[str, Any]:
     """Busca en Google y abre los resultados."""

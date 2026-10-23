@@ -361,17 +361,17 @@ class MikuPipeline:
                         self.wakeword.resume()
                     return
 
-                # 6. One Gemini request hears the audio itself (Whisper's text only gates and drives the fast path)
-                self.resources.touch()
-                emotion, answer, is_farewell = await self.brain.chat(transcribed_text, audio=audio)
-                self._pending_farewell = is_farewell
-
-                # 7. User subtitle: what Gemini understood, which beats Whisper's guess
+                # 6. Show transcribed text as user subtitle (Gemini never sent back what it heard, live test)
                 await self.server.broadcast({
                     "type": "subtitle",
                     "who": "user",
-                    "text": getattr(self.brain, "last_heard", "") or transcribed_text,
+                    "text": transcribed_text,
                 })
+
+                # 7. One Gemini request hears the audio itself (Whisper's text only gates and drives the fast path)
+                self.resources.touch()
+                emotion, answer, is_farewell = await self.brain.chat(transcribed_text, audio=audio)
+                self._pending_farewell = is_farewell
 
                 # 8. Synthesize speech (edge-tts -> RVC) and speak
                 await self._speak(answer, emotion, farewell=is_farewell)

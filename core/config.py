@@ -37,7 +37,7 @@ class LLMConfig:
         "gemini-3.7-flash",
     ])
     max_history_turns: int = 10
-    web_search: bool = True  # Google search + URL reading inside the single request
+    web_search: bool = False  # Google search inside the single request; the free tier rejects it (429)
     temperature: float = 0.8
 
 
@@ -169,7 +169,7 @@ def load_config(
             ])),
             max_history_turns=llm_data.get("max_history_turns", 10),
             temperature=float(llm_data.get("temperature", 0.8)),
-            web_search=bool(llm_data.get("web_search", True)),
+            web_search=bool(llm_data.get("web_search", False)),
         ),
 
         stt=STTConfig(

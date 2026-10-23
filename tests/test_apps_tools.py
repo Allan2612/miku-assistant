@@ -57,7 +57,27 @@ def test_close_app_exact_match_only():
     assert res["ok"] and procs[0].terminated and not procs[1].terminated, res
 
 
+def test_open_app_partial_match_needs_a_real_word():
+    # On the user's real Start Menu, "abre mi" opened Microsoft Edge and "abre la" a random app
+    launched = []
+    _with_fakes([], launched)
+    apps._launch_target = lambda t: launched.append(t) or t.endswith(".lnk")
+    apps._SHORTCUTS_CACHE.update({
+        "microsoft edge": r"C:\fake\Microsoft Edge.lnk",
+        "administrative tools": r"C:\fake\Administrative Tools.lnk",
+        "visual studio installer": r"C:\a\Visual Studio Installer.lnk",
+        "visual studio code": r"C:\a\very\long\install\path\Visual Studio Code.lnk",
+    })
+    for name in ("mi", "la", "e", "ra"):
+        assert not apps.open_app(name)["ok"] and not any(t.endswith(".lnk") for t in launched), (name, launched)
+    launched.clear()
+    assert apps.open_app("visual")["ok"] and launched[-1].endswith("Visual Studio Code.lnk"), launched
+    launched.clear()
+    assert apps.open_app("admin")["ok"] and launched == [r"C:\fake\Administrative Tools.lnk"], launched
+
+
 if __name__ == "__main__":
     test_open_app_never_passes_arguments_or_shells()
     test_close_app_exact_match_only()
+    test_open_app_partial_match_needs_a_real_word()
     print("ok")

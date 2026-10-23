@@ -65,13 +65,13 @@ AUDIO = np.zeros(16000, dtype=np.float32)
 
 def test_actions_take_one_request():
     ran.clear()
-    b, models = brain(reply("{abre spotify y pon el volumen al 30} [happy] ¡Listo!",
+    b, models = brain(reply("[happy] ¡Listo!",
                             ("open_app", {"app_name": "spotify"}), ("set_volume", {"level": 30})))
     emotion, text, _ = asyncio.run(b.chat("abre es poti y pon el volumen al 30", audio=AUDIO))
     assert len(models.requests) == 1
     assert models.requests[0][-1].parts[0].inline_data.mime_type == "audio/wav", "Gemini must hear the audio"
     assert ran == [("open_app", {"app_name": "spotify"}), ("set_volume", {"level": 30})], ran
-    assert (emotion, text) == ("happy", "¡Listo!") and b.last_heard == "abre spotify y pon el volumen al 30"
+    assert (emotion, text) == ("happy", "¡Listo!")
 
 
 def test_data_tool_result_is_read_out():
@@ -83,7 +83,7 @@ def test_data_tool_result_is_read_out():
 def test_shutdown_asks_then_yes_runs_locally():
     ran.clear()
     b, models = brain(reply("[happy] ¡Apagando!", ("shutdown_pc", {"mode": "shutdown"})))
-    _, question, _ = asyncio.run(b.chat("apaga el ordenador", audio=AUDIO))
+    _, question, _ = asyncio.run(b.chat("oye, ¿me apagas el ordenador porfa?", audio=AUDIO))
     assert "confirma" in question.lower() and not ran, (question, ran)
     _, text, _ = asyncio.run(b.chat("sí", audio=AUDIO))
     assert len(models.requests) == 1, "the user's 'sí' must not cost a request"
@@ -91,7 +91,7 @@ def test_shutdown_asks_then_yes_runs_locally():
 
 
 def test_claimed_action_without_tool_is_not_a_lie():
-    b, models = brain(reply("{guarda que me gusta el té} [happy] ¡Anotado! Ya lo guardé en tus notas."))
+    b, models = brain(reply("[happy] ¡Anotado! Ya lo guardé en tus notas."))
     emotion, text, _ = asyncio.run(b.chat("guarda que me gusta el té", audio=AUDIO))
     assert len(models.requests) == 1 and emotion == "sad" and "no llegué a hacerlo" in text, text
     b, _ = brain(reply("[happy] ¡Hola! ¿Qué tal tu día?"))
@@ -119,12 +119,28 @@ def test_screenshot_only_when_asked_and_in_the_same_request():
     assert len(shots) == 1 and len(models.requests[1][-1].parts) == 1, "no screenshot unless asked"
 
 
+def _builtins(config):
+    return [n for t in config.tools for n in ("google_search", "url_context") if getattr(t, n, None)]
+
+
 def test_web_tools_rejected_are_dropped_and_retried_once():
-    b, models = brain(RuntimeError("400 INVALID_ARGUMENT: tool combination not supported"), reply("[happy] ¡Hola!"))
-    assert any(t.google_search for t in b._build_config().tools if hasattr(t, "google_search"))
-    _, text, _ = asyncio.run(b.chat("hola miku que tal"))
-    assert text == "¡Hola!" and not b.web_search, text
-    assert not any(getattr(t, "google_search", None) for t in models.configs[-1].tools), "retry is without web tools"
+    # Seen live on the free tier: any request carrying google_search gets 429 RESOURCE_EXHAUSTED
+    for error in ("429 RESOURCE_EXHAUSTED", "400 INVALID_ARGUMENT: tool combination not supported"):
+        b, models = brain(RuntimeError(error), reply("[happy] ¡Hola!"))
+        b.web_search = True
+        assert _builtins(b._build_config()) == ["url_context", "google_search"]
+        _, text, _ = asyncio.run(b.chat("hola miku que tal"))
+        assert text == "¡Hola!" and not b.builtin_tools, (error, text)
+        assert _builtins(models.configs[-1]) == [], "retry is without built-in tools"
+
+
+def test_model_quota_does_not_disable_web_tools():
+    # Fails with and without the built-in tools: the model's own quota, so keep them and fall back
+    b, models = brain(RuntimeError("429 RESOURCE_EXHAUSTED"), RuntimeError("429 RESOURCE_EXHAUSTED"))
+    b.all_models = ["m"]
+    emotion, _, _ = asyncio.run(b.chat("hola miku que tal"))
+    assert b.builtin_tools and len(models.requests) == 2, models.requests
+    assert _builtins(b._build_config()) == ["url_context"], "google_search stays off unless configured"
 
 
 def test_grounded_search_answer_is_not_called_a_lie():
@@ -132,6 +148,15 @@ def test_grounded_search_answer_is_not_called_a_lie():
     r.candidates[0].grounding_metadata = types.GroundingMetadata(web_search_queries=["ganador mundial lol"])
     b, _ = brain(r)
     assert asyncio.run(b.chat("quién ganó el mundial de lol"))[1] == "Busqué y ganó T1 el mundial."
+
+
+def test_spoken_shutdown_asks_then_runs_with_no_request():
+    ran.clear()
+    b, models = brain()
+    _, question, _ = asyncio.run(b.chat("¡Apaga la computadora!"))
+    assert "confirma" in question.lower() and not ran, (question, ran)
+    asyncio.run(b.chat("sí"))
+    assert ran and ran[0][:2] == ["shutdown", "/s"] and not models.requests, (ran, models.requests)
 
 
 def test_fast_path_takes_no_request():
@@ -149,6 +174,8 @@ if __name__ == "__main__":
     test_jot_down_goes_through_fast_path()
     test_screenshot_only_when_asked_and_in_the_same_request()
     test_web_tools_rejected_are_dropped_and_retried_once()
+    test_model_quota_does_not_disable_web_tools()
     test_grounded_search_answer_is_not_called_a_lie()
+    test_spoken_shutdown_asks_then_runs_with_no_request()
     test_fast_path_takes_no_request()
     print("ok")

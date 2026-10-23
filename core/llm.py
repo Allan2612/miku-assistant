@@ -52,9 +52,9 @@ Actualidad: si te preguntan algo reciente o que no sabes con seguridad (noticias
 
 Pantalla: si el mensaje trae una imagen, es una captura de la pantalla del usuario en este momento. Contesta a lo que pregunta sobre ella (qué ves, qué significa un error, qué hacer) en 1 o 2 frases.
 
-Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si te pide que olvides algo, llama a forget.
+Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si dice "acuérdate", "recuerda" o "no lo olvides", SIEMPRE llama a remember con el dato en tercera persona (ej: "Le encanta Frieren"): decir que lo recordarás sin llamarla no guarda nada. Si te pide que olvides algo, llama a forget.
 
-Si el mensaje del usuario llega como audio, empieza tu respuesta escribiendo entre llaves lo que dijo y después la etiqueta de emoción. Ejemplo: "{{abre el bloc de notas}} [happy] ¡Listo, abrí el Bloc de notas!"
+Si el mensaje del usuario llega como audio, escúchalo tú: la transcripción automática se equivoca a menudo.
 
 Si el usuario se despide ("adiós", "gracias, eso es todo", "vete", "chao"), responde con una despedida corta y la etiqueta [happy]; el sistema te ocultará.
 
@@ -64,12 +64,18 @@ Momento del día: {time_of_day}
 
 VALID_EMOTIONS = {"happy", "neutral", "surprised", "sad", "angry", "thinking"}
 
-# "{what the user said}" at the start of an answer to an audio message
-HEARD_RE = re.compile(r"^\s*\{([^}]*)\}\s*")
+# Start of a fast-path command: Whisper often keeps the wake phrase ("Hey Miku, abre...")
+_WAKE = r"^(?:(?:hey|oye|ey)\s+)?(?:miku\s*[,.]?\s*)?"
+_SPOKEN_NUMBERS = {"un": 1, "una": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "diez": 10,
+                   "quince": 15, "veinte": 20, "treinta": 30, "media": 0.5}
 
 # "I did it" in the answer: with no tool call that is a lie (seen: "¡Anotado!" and no take_note)
 CLAIMED_ACTION_RE = re.compile(
-    r"\b(?:abrí|cerré|guardé|anoté|apunté|subí|bajé|silencié|creé|copié|minimicé|maximicé|busqué|puse|anotado|apuntado|guardado)\b",
+    r"\b(?:abrí|cerré|guardé|anoté|apunté|subí|bajé|silencié|creé|copié|minimicé|maximicé|busqué|puse|anotado|apuntado|guardado"
+    # Promises that need a tool too (live test: "¡Hecho! Te avisaré en diez minutos" and no set_timer)
+    r"|hecho|listo(?!\s+para)|te avisaré|te aviso|te recordaré|lo recordaré|no se me olvida"
+    # "¡Entendido! Voy a apagar el equipo ahora mismo" with no shutdown_pc call (live test)
+    r"|voy a (?:apagar|reiniciar|suspender|abrir|cerrar|poner|subir|bajar|guardar|anotar|crear|copiar|minimizar))\b",
     re.IGNORECASE,
 )
 
@@ -82,6 +88,7 @@ SCREEN_RE = re.compile(
 # Tools that return data: the model cannot see results (one request per turn), so they are read out verbatim
 SPEAK_RESULT_TOOLS = {
     "find_file", "read_notes", "get_datetime", "get_system_status", "list_timers", "read_clipboard", "read_text_file",
+    "list_open_apps",
 }
 
 
@@ -118,7 +125,7 @@ class MikuBrain:
         models_fallback: Optional[List[str]] = None,
         max_history: int = 10,
         temperature: float = 0.8,
-        web_search: bool = True,
+        web_search: bool = False,
     ) -> None:
         self.primary_model = model_name
         self.models_fallback = models_fallback or [
@@ -135,6 +142,7 @@ class MikuBrain:
         self.max_history = max_history
         self.temperature = temperature
         self.web_search = web_search
+        self.builtin_tools = True  # url_context (+ google_search if web_search); off for the session if rejected
 
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -144,7 +152,6 @@ class MikuBrain:
         self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=15_000))
         self.tools = get_registered_tools()
         self.total_api_calls = 0
-        self.last_heard = ""
         self._last_query_text = ""
         self._last_query_time = 0.0
         self._last_result: Optional[Tuple[str, str, bool]] = None
@@ -200,15 +207,19 @@ class MikuBrain:
         if screenshot:
             parts.append(types.Part.from_bytes(data=screenshot, mime_type="image/png"))
         contents.append(types.Content(role="user", parts=parts))
-        return contents, self._build_config()
+        # Text-only turns: Gemini answered audio + built-in tools with 400 (live test, 23-oct)
+        return contents, self._build_config(with_builtins=audio is None and not screenshot)
 
-    def _build_config(self) -> types.GenerateContentConfig:
+    def _build_config(self, with_builtins: bool = True) -> types.GenerateContentConfig:
         tools: List[Any] = list(self.tools)
         tool_config = None
-        if self.web_search:
-            # Google runs these inside the same request (Gemini 3 tool combination): current events and web
-            # pages cost no extra request. Docs ask for VALIDATED mode when built-in and custom tools mix.
-            tools += [types.Tool(google_search=types.GoogleSearch()), types.Tool(url_context=types.UrlContext())]
+        if self.builtin_tools and with_builtins:
+            # Google runs these inside the same request (Gemini 3 tool combination): reading a web page costs
+            # no extra request. google_search only on request: the free tier answers every call with it 429.
+            # Docs ask for VALIDATED mode when built-in and custom tools mix.
+            tools.append(types.Tool(url_context=types.UrlContext()))
+            if self.web_search:
+                tools.append(types.Tool(google_search=types.GoogleSearch()))
             tool_config = types.ToolConfig(
                 include_server_side_tool_invocations=True,
                 function_calling_config=types.FunctionCallingConfig(mode="VALIDATED"),
@@ -226,18 +237,27 @@ class MikuBrain:
         )
 
     async def _generate(self, model: str, contents: List[types.Content], config: types.GenerateContentConfig) -> Any:
-        """One generate_content call. If Gemini rejects the web tools, drops them for the session and asks without."""
+        """One generate_content call. If Gemini rejects the built-in web tools, asks again without them."""
         try:
             return await self.client.aio.models.generate_content(model=model, contents=contents, config=config)
         except Exception as e:
             err = str(e).lower()
-            # A rejected request (400) does not use quota, so the retry keeps the one-request rule
+            rejected = any(t in err for t in ("400", "invalid_argument", "429", "resource_exhausted"))
+            had_builtins = any(getattr(t, "url_context", None) for t in config.tools or [])
             # A bad API key is also a 400: that is not the web tools' fault
-            if not (self.web_search and ("400" in err or "invalid_argument" in err)) or "api key" in err:
+            if not (had_builtins and rejected) or "api key" in err:
                 raise
-            logger.warning("Gemini rejected the built-in web tools (%s). Disabling web search for this session.", e)
-            self.web_search = False
-            return await self.client.aio.models.generate_content(model=model, contents=contents, config=self._build_config())
+            # A rejected request does not use quota, so the retry keeps the one-request rule
+            self.builtin_tools = False
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=model, contents=contents, config=self._build_config(with_builtins=False)
+                )
+            except Exception:
+                self.builtin_tools = True  # also fails without them: the model itself is the problem
+                raise
+            logger.warning("Gemini rejected the built-in web tools (%s). Disabled for this session.", e)
+            return response
 
     def _remember(self, user_text: str, model_text: str) -> None:
         """Keeps the turn as text so the next request (on any model) has the context."""
@@ -300,7 +320,8 @@ class MikuBrain:
         Instant local fast-path execution for unambiguous direct PC commands.
         Executes immediately with 0ms cloud latency and 100% resilience against 429 quota exhaustion.
         """
-        low = text.lower().strip()
+        # Whisper wraps phrases in "¡...!" / "¿...?" and ends them with ".": every "^verb" rule missed them
+        low = text.lower().strip().strip("¡!¿?.,;: ")
 
         # 0. Greetings with time-of-day awareness (0ms cloud latency, 0 API quota used)
         if low in (
@@ -323,7 +344,7 @@ class MikuBrain:
             return ("happy", "¡Yatta! Ya te abrí el Bloc de notas.", False)
 
         # Routines: "modo trabajo", "activa el modo música" (0 requests)
-        m_routine = re.match(r"^(?:miku\s*,?\s*)?(?:activa\s+(?:el\s+)?|pon\s+(?:el\s+)?|rutina\s+)?modo\s+(\w+)$", low.strip("¡!¿?., "))
+        m_routine = re.match(rf"{_WAKE}(?:activa\s+(?:el\s+)?|pon\s+(?:el\s+)?|rutina\s+)?modo\s+(\w+)$", low.strip("¡!¿?., "))
         if m_routine:
             from core.tools.routines import find_routine, run_routine
             if find_routine(m_routine.group(1)):
@@ -340,19 +361,30 @@ class MikuBrain:
             open_url("https://www.youtube.com")
             return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
 
-        # 2. Open app / website / notes with verbs ("pon" is left out: "pon la música" means play, H-024)
-        m_open = re.match(r"^(?:miku\s*,?\s*)?(?:abre|abrir|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+)?(.+)$", low)
-        if m_open:
+        # "Ponme More en YouTube", "abre world is mine en youtube": search it there
+        m_yt_play = re.match(rf"{_WAKE}(?:pon|ponme|reproduce|reprod[uú]ceme|abre|[aá]breme)\s+(.+?)\s+en\s+youtube$", low)
+        # Vague ("una canción", "algo") is for Gemini, which can pick something
+        if m_yt_play and m_yt_play.group(1) not in ("el", "la", "algo", "música", "una canción", "un video", "un vídeo"):
+            q = m_yt_play.group(1).strip()
+            from core.tools.web import youtube_search
+            youtube_search(q)
+            return ("happy", f"¡Buscando '{q}' en YouTube!", False)
+
+        # 2. Open app / website / notes with verbs ("pon" is left out: "pon la música" means play, H-024).
+        # Short targets only: "abre los tigres del norte en el ..." once opened the notes because it said "notas"
+        m_open = re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+)?(.+)$", low)
+        if m_open and len(m_open.group(1).split()) <= 4:
             target = m_open.group(1).strip()
-            if "youtube" in target:
+            bare = target.removeprefix("mi ").removeprefix("mis ")
+            if bare == "youtube":
                 from core.tools.web import open_url
                 open_url("https://www.youtube.com")
                 return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
-            elif any(b in target for b in ("opera", "ópera", "navegador", "internet", "web")):
+            elif bare in ("opera", "ópera", "opera gx", "ópera gx", "navegador", "el navegador", "internet"):
                 from core.tools.apps import open_app
                 open_app("opera gx")
                 return ("happy", "¡Listo! Ya abrí Opera GX para ti.", False)
-            elif "nota" in target:
+            elif bare in ("notas", "bloc de notas", "blog de notas", "block de notas"):
                 from core.tools.notes import open_notes
                 open_notes()
                 return ("happy", "¡Yatta! Ya te abrí el Bloc de notas.", False)
@@ -363,7 +395,7 @@ class MikuBrain:
                     return ("happy", f"¡Listo! Ya abrí {target}.", False)
 
         # 3. Close app: only known app aliases; anything else ("apaga el PC", "cierra la ventana") goes to Gemini (H-023)
-        m_close = re.match(r"^(?:miku\s*,?\s*)?(?:cierra|cerrar)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)$", low)
+        m_close = re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)$", low)
         if m_close:
             from core.tools.apps import close_app, DEFAULT_APP_ALIASES, _clean_query
             target = _clean_query(m_close.group(1))
@@ -374,16 +406,18 @@ class MikuBrain:
                 return ("sad", res.get("result", f"No pude cerrar {target}."), False)
 
         # 4. Web Search / YouTube Search
-        m_search_yt = re.match(r"^(?:miku\s*,?\s*)?(?:busca|buscar)\s+en\s+youtube\s+(.+)$", low)
+        m_search_yt = re.match(rf"{_WAKE}(?:busca|buscar)\s+en\s+youtube\s+(.+)$", low)
         if m_search_yt:
             q = m_search_yt.group(1).strip()
             from core.tools.web import youtube_search
             youtube_search(q)
             return ("happy", f"¡Buscando '{q}' en YouTube!", False)
 
-        m_search_goog = re.match(r"^(?:miku\s*,?\s*)?(?:busca|buscar)\s+(?:en\s+google\s+)?(.+)$", low)
-        # "busca el archivo X" is a file search for Gemini (find_file), not a Google search
-        if (m_search_goog and "youtube" not in low and not low.startswith("busca en")
+        m_search_goog = re.match(rf"{_WAKE}(?:busca|buscar)\s+(?:en\s+google\s+)?(.+)$", low)
+        # "busca el archivo X" is a file search for Gemini (find_file), not a Google search. "busca en mis
+        # documentos" too; but "busca en google X" is: the regex already ate "en google", so only another
+        # "en ..." is left out (startswith("busca en") also dropped "busca en google")
+        if (m_search_goog and "youtube" not in low and not m_search_goog.group(1).startswith("en ")
                 and not re.match(r"^(?:el |la |mi |mis |un |una )?(?:archivo|documento|carpeta)", m_search_goog.group(1))):
             q = m_search_goog.group(1).strip()
             from core.tools.web import web_search
@@ -399,10 +433,11 @@ class MikuBrain:
                 return ("happy", ok_text, False)
             return ("sad", res.get("result", "No pude hacerlo."), False)
 
-        if has_word("sube el volumen", "subir volumen", "más volumen", "aumenta el volumen"):
+        # Also voseo and enclitics, common in Costa Rica: "bajá el volumen", "subile", "bájale el volumen"
+        if re.search(r"\b(?:s[uú]b[eií](?:le|me)?|subir|aumenta(?:le)?|m[aá]s)\s+(?:el\s+)?volumen\b", low):
             from core.tools.media import change_volume
             return confirm(change_volume(15), "¡Subí el volumen!")
-        if has_word("baja el volumen", "bajar volumen", "menos volumen", "disminuye el volumen"):
+        if re.search(r"\b(?:b[aá]j[aeá](?:le|me)?|bajar|disminu(?:ye|í)(?:le)?|menos)\s+(?:el\s+)?volumen\b", low):
             from core.tools.media import change_volume
             return confirm(change_volume(-15), "¡Listo, bajé el volumen!")
         # "quita el silencio" asks for the opposite: leave unmuting to Gemini
@@ -423,9 +458,46 @@ class MikuBrain:
             return ("neutral", f"Son las {now_dt.strftime('%H:%M')}.", False)
 
         # 6. Notes
-        m_note = re.match(r"^(?:miku\s*,?\s*)?(?:toma|guarda|anota)\s+(?:una\s+)?nota(?:\s+que\s+diga)?[:\s]+(.+)$", low)
+        m_note = re.match(rf"{_WAKE}(?:toma|guarda|anota)\s+(?:una\s+)?nota(?:\s+que\s+diga)?[:\s]+(.+)$", low)
+        # "Recuérdame en 10 minutos que saque la ropa": the model once promised it and never called set_timer
+        m_timer = re.match(
+            rf"{_WAKE}(?:(?:recu[eé]rdame|av[ií]same)\s+en|(?:pon|ponme)\s+un\s+temporizador\s+de)\s+"
+            r"(\d+(?:[.,]\d+)?|un|una|uno|dos|tres|cuatro|cinco|diez|quince|veinte|treinta|media)\s+"
+            r"(minutos?|horas?)(?:\s+(?:que|para|de)\s+(.+))?$",
+            low,
+        )
+        if m_timer:
+            from core.tools.timers import set_timer
+            amount = _SPOKEN_NUMBERS.get(m_timer.group(1)) or float(m_timer.group(1).replace(",", "."))
+            minutes = amount * (60 if m_timer.group(2).startswith("hora") else 1)
+            what = (m_timer.group(3) or "").strip()
+            res = set_timer(minutes, f"Recordatorio: {what}" if what else "Temporizador")
+            if res.get("ok"):
+                return ("happy", f"¡Listo! Te aviso en {minutes:g} minutos.", False)
+            return ("sad", res.get("result", "No pude poner el temporizador."), False)
+
+        # "Apaga la computadora": shutdown_pc only asks for confirmation here (the "sí" is local too). The model
+        # once answered "Voy a apagar el equipo ahora mismo" without calling it
+        m_power = re.match(
+            rf"{_WAKE}(apaga|reinicia|suspende)\s+(?:el\s+|la\s+|mi\s+)?(?:pc|computadora|compu|ordenador|equipo|laptop)$", low
+        )
+        if m_power:
+            from core.tools.system import shutdown_pc
+            res = shutdown_pc(mode={"apaga": "shutdown", "reinicia": "restart", "suspende": "sleep"}[m_power.group(1)])
+            return ("neutral", res.get("result", ""), False)
+
+        # "Recuerda que mi gato se llama Mochi": live tests saw the model say "¡Anotado en mi memoria!" and not call
+        # remember. "...acuérdate de eso" (no fact after it) still goes to Gemini
+        m_fact = re.match(rf"{_WAKE}(?:recuerda|acu[eé]rdate\s+de|no\s+olvides)\s+que\s+(.+)$", text.strip(" ¡!.¿?"),
+                          re.IGNORECASE)
+        if m_fact:
+            from core.tools.memory import remember
+            res = remember(m_fact.group(1).strip())
+            if res.get("ok"):
+                return ("happy", "¡Lo recordaré!", False)
+
         # "Apunta que tengo pendiente X": Gemini once answered "¡Anotado!" without calling take_note
-        m_jot = re.match(r"^(?:miku\s*,?\s*)?(?:ap[uú]nta(?:me)?|an[oó]ta(?:me)?)(?:\s+que)?\s+(.+)$", text.strip(" ¡!.¿?"), re.IGNORECASE)
+        m_jot = re.match(rf"{_WAKE}(?:ap[uú]nta(?:me)?|an[oó]ta(?:me)?)(?:\s+que)?\s+(.+)$", text.strip(" ¡!.¿?"), re.IGNORECASE)
         if m_note or m_jot:
             text_note = (m_note or m_jot).group(1).strip(" .")
             from core.tools.notes import take_note
@@ -452,10 +524,9 @@ class MikuBrain:
         """
         Answers one user turn with at most ONE Gemini request and returns (emotion, response_text, is_farewell).
         user_text is the local Whisper transcription (or typed text); audio, when given, is what Gemini hears.
-        Local paths (confirmation, dedup, fast-path) cost 0 requests. What Gemini heard ends in self.last_heard.
+        Local paths (confirmation, dedup, fast-path) cost 0 requests.
         """
         clean_input = user_text.strip()
-        self.last_heard = clean_input
         if not clean_input:
             return "neutral", "¿Sí? Dime qué necesitas.", False
 
@@ -560,10 +631,6 @@ class MikuBrain:
         raw_answer = "".join(p.text for p in parts if p.text and not p.thought).strip()
         calls = [p.function_call for p in parts if p.function_call]
 
-        heard = HEARD_RE.match(raw_answer)
-        if heard:
-            raw_answer = raw_answer[heard.end():]
-            self.last_heard = heard.group(1).strip() or clean_input
         if not raw_answer and not calls:
             logger.warning(
                 "Gemini returned an empty answer (finish_reason=%s).",
@@ -584,8 +651,8 @@ class MikuBrain:
         if not clean_text:
             emotion, clean_text = "thinking", "Perdona, no te entendí bien. ¿Me lo repites?"
 
-        self._remember(self.last_heard, f"[{emotion}] {clean_text}")
-        result = (emotion, clean_text, self.is_farewell(self.last_heard))
+        self._remember(clean_input, f"[{emotion}] {clean_text}")
+        result = (emotion, clean_text, self.is_farewell(clean_input))
         self._last_query_text = clean_input
         self._last_query_time = time.monotonic()
         self._last_result = result

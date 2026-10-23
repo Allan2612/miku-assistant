@@ -223,7 +223,9 @@ def open_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
             ctypes.windll.user32.AllowSetForegroundWindow(0xFFFFFFFF)
             return {"ok": True, "result": f"He abierto {target_name}."}
 
-    # 2. Check exact or substring shortcut match
+    # 2. Check exact or partial shortcut match. Partial: 3+ letters at the start of a word, or "abre mi"
+    # opened Microsoft Edge and "abre la" a random app (seen on the real Start Menu)
+    partial = re.compile(rf"\b{re.escape(query)}") if len(query) >= 3 else None
     matches: List[str] = []
     for sc_name, sc_path in _SHORTCUTS_CACHE.items():
         if _is_shell(sc_name):
@@ -231,7 +233,7 @@ def open_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
         if query == sc_name:
             matches = [sc_path]
             break
-        elif query in sc_name:
+        elif partial and partial.search(sc_name):
             matches.append(sc_path)
 
     if len(matches) == 1:
@@ -241,7 +243,8 @@ def open_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
             ctypes.windll.user32.AllowSetForegroundWindow(0xFFFFFFFF)
             return {"ok": True, "result": f"He abierto {target_name}."}
     elif len(matches) > 1:
-        best_match = min(matches, key=len)
+        # Shortest shortcut name, not path: the path length depends on the install folder
+        best_match = min(matches, key=lambda p: len(Path(p).stem))
         if _launch_target(best_match):
             time.sleep(0.3)
             _attach_user_desktop()
@@ -431,3 +434,72 @@ def type_text(text: str) -> Dict[str, Any]:
         time.sleep(0.01)
 
     return {"ok": True, "result": f"Texto escrito ({len(text)} caracteres)."}
+
+
+# Spoken names for common executables; anything else is read as its exe name
+_FRIENDLY_NAMES = {
+    "msedge": "Edge", "chrome": "Chrome", "opera": "Opera", "firefox": "Firefox", "brave": "Brave",
+    "code": "Visual Studio Code", "winword": "Word", "excel": "Excel", "powerpnt": "PowerPoint",
+    "explorer": "el Explorador de archivos", "notepad": "el Bloc de notas", "spotify": "Spotify",
+    "discord": "Discord", "steam": "Steam", "steamwebhelper": "Steam", "windowsterminal": "la Terminal",
+    "obs64": "OBS", "vlc": "VLC", "whatsapp": "WhatsApp", "telegram": "Telegram",
+}
+# Hosts and shell parts that own visible windows but are not "apps" to the user
+_NOT_APPS = {"applicationframehost", "textinputhost", "shellexperiencehost", "searchhost", "startmenuexperiencehost",
+             "systemsettings", "lockapp", "app", "pythonw", "python"}  # app / pythonw: Miku herself
+
+
+def _spoken_app_list(exe_stems: List[str]) -> str:
+    """'opera', 'Spotify', 'opera' -> 'Opera y Spotify': friendly names, no duplicates, order kept."""
+    names: List[str] = []
+    for stem in exe_stems:
+        key = stem.lower()
+        if key in _NOT_APPS:
+            continue
+        name = _FRIENDLY_NAMES.get(key, stem[:1].upper() + stem[1:])
+        if name not in names:
+            names.append(name)
+    if not names:
+        return ""
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " y " + names[-1]
+
+
+def _visible_window_processes() -> List[str]:
+    """Exe stems of the top-level windows the user sees (taskbar-like: titled, unowned, not cloaked or tool)."""
+    _attach_user_desktop()
+    user32, dwmapi = ctypes.windll.user32, ctypes.windll.dwmapi
+    GW_OWNER, GWL_EXSTYLE, WS_EX_TOOLWINDOW, DWMWA_CLOAKED = 4, -20, 0x00000080, 14
+    stems: List[str] = []
+
+    def callback(hwnd, _):
+        if not user32.IsWindowVisible(hwnd) or user32.GetWindowTextLengthW(hwnd) == 0:
+            return True
+        if user32.GetWindow(hwnd, GW_OWNER) or user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW:
+            return True
+        cloaked = wintypes.DWORD(0)  # suspended UWP apps and windows on other virtual desktops
+        dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
+        if cloaked.value:
+            return True
+        pid = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        try:
+            stems.append(Path(psutil.Process(pid.value).name()).stem)
+        except (psutil.Error, OSError):
+            pass
+        return True
+
+    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows(WNDENUMPROC(callback), 0)
+    return stems
+
+
+@tool(
+    name="list_open_apps",
+    description="Dice qué aplicaciones tiene abiertas el usuario ahora mismo (las ventanas visibles)."
+)
+def list_open_apps() -> Dict[str, Any]:
+    """Lista las apps con ventanas visibles."""
+    spoken = _spoken_app_list(_visible_window_processes())
+    if not spoken:
+        return {"ok": True, "result": "No veo ninguna aplicación abierta."}
+    return {"ok": True, "result": f"Tienes abiertos: {spoken}."}
