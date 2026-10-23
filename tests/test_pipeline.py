@@ -146,25 +146,23 @@ def test_pipeline_flows():
 
 
 async def _goodbye():
-    # Idle after an answer: Miku says a goodbye, then hides, and does not schedule another one
+    # Frontend auto-hide fired: Miku says a goodbye, and its speak_done hides her
     p, server = _pipeline(FakeBrain())
-    p.goodbye_after_s = 0.05
-    p.handle_speak_done()
-    await asyncio.sleep(0.2)
+    await p.say_goodbye()
     assert server.sent.count("speak") == 1, server.sent
     assert p.handle_speak_done() is True, "the goodbye must end in a hide"
-    await asyncio.sleep(0.2)
-    assert server.sent.count("speak") == 1, "no goodbye after the goodbye"
 
-    # Any new activity cancels it
+    # Barge-in on the goodbye: the user's answer must not hide Miku afterwards
     p, server = _pipeline(FakeBrain())
-    p.goodbye_after_s = 0.05
-    p.handle_speak_done()
+    await p.say_goodbye()
     await p.handle_text_input("hola")
-    sent_before = server.sent.count("speak")
-    p.cancel_goodbye()  # the answer's own speak_done would re-arm; drop it for this check
-    await asyncio.sleep(0.2)
-    assert server.sent.count("speak") == sent_before == 1, server.sent
+    assert p.handle_speak_done() is False
+
+    # Busy: no goodbye (the frontend hides on its own fallback)
+    p, server = _pipeline(FakeBrain())
+    async with p._pipeline_lock:
+        await p.say_goodbye()
+    assert "speak" not in server.sent, server.sent
 
 
 def test_goodbye_on_inactivity():

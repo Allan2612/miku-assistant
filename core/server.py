@@ -211,9 +211,14 @@ class MikuServer:
 
                     elif msg_type == "dismiss":
                         logger.info("Client requested dismiss.")
-                        if self.pipeline:
-                            self.pipeline.cancel_goodbye()  # already hidden: no goodbye later
                         await self.broadcast({"type": "hide"})
+
+                    elif msg_type == "idle_timeout":
+                        # Frontend auto-hide: Miku says goodbye, then hides on its speak_done
+                        if self.pipeline:
+                            self._spawn(self.pipeline.say_goodbye())
+                        else:
+                            await self.broadcast({"type": "hide"})
 
                     elif msg_type == "shutdown":
                         logger.info("Client requested backend shutdown.")

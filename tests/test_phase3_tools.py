@@ -57,7 +57,17 @@ def test_text_files_stay_on_desktop_and_never_overwrite():
     assert files.read_text_file("compras")["result"] == "compras.txt dice: leche y pan"
 
 
+def test_read_notes_speaks_without_timestamps():
+    import core.tools.notes as notes
+    notes.NOTES_FILE = tmp / "notes.md"
+    notes.NOTES_FILE.write_text("# Notas de Miku\n\n- [2026-10-20 02:58] comprar pan\n- [2026-10-23 14:14] subir el PR.\n",
+                                encoding="utf-8")
+    assert notes.read_notes()["result"] == "Tus últimas 2 notas: comprar pan. subir el PR."
+    assert notes.read_notes(1)["result"] == "Tu última nota: subir el PR."
+
+
 if __name__ == "__main__":
+    test_read_notes_speaks_without_timestamps()
     test_memory_remember_forget_and_prompt()
     test_routine_runs_steps_locally_via_fast_path()
     test_text_files_stay_on_desktop_and_never_overwrite()

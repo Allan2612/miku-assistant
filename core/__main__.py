@@ -21,6 +21,7 @@ from .audio_in import AudioInput
 from .resources import ResourceManager
 from .pipeline import MikuPipeline
 from .wakeword import WakeWordListener
+from .tools.timers import restore_timers
 
 logger = logging.getLogger("miku.core")
 
@@ -70,6 +71,7 @@ async def async_main() -> None:
         models_fallback=config.llm.models_fallback,
         max_history=config.llm.max_history_turns,
         temperature=config.llm.temperature,
+        web_search=config.llm.web_search,
     )
 
     tts = TTSManager(
@@ -107,10 +109,9 @@ async def async_main() -> None:
         rvc=rvc,
         silence_ms=config.behavior.silence_ms,
         max_record_seconds=config.behavior.max_record_seconds,
-        # 4 s before the frontend's auto-hide: room to say goodbye before the window goes away
-        goodbye_after_s=max(0, config.behavior.hide_after_seconds - 4),
     )
     server.set_pipeline(pipeline)
+    restore_timers()  # after the pipeline registered itself as the timer notifier
 
     await server.start()
 

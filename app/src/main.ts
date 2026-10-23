@@ -49,6 +49,8 @@ const MARGIN = windowCfg.margin ?? 12;
 const FPS_VISIBLE = windowCfg.fps_visible || 30;
 const HOTKEY = config.hotkey || "Ctrl+Alt+M";
 const HIDE_AFTER_SECONDS = behaviorCfg.hide_after_seconds || 20;
+// Max wait for the backend's goodbye + "hide" after "idle_timeout" (busy, or the voice failed)
+const GOODBYE_FALLBACK_MS = 8000;
 
 let isVisible = false;
 let autoHideTimer: number | null = null;
@@ -109,7 +111,13 @@ export function resetAutoHideTimer(): void {
   }
   autoHideTimer = window.setTimeout(() => {
     console.log(`[Auto-hide] ${HIDE_AFTER_SECONDS}s of inactivity reached. Auto-hiding Miku.`);
-    hideMiku();
+    if (!ws.isConnected) {
+      hideMiku();
+      return;
+    }
+    // The backend says goodbye ("¡Adiós!") and then sends "hide"; hide anyway if that never comes
+    ws.send({ type: "idle_timeout" });
+    autoHideTimer = window.setTimeout(() => hideMiku(), GOODBYE_FALLBACK_MS);
   }, HIDE_AFTER_SECONDS * 1000);
 }
 

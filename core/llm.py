@@ -23,6 +23,7 @@ from google import genai
 from google.genai import types
 
 from core.tools import get_registered_tools, get_tool_metadata, note_user_reply
+from core.screen import capture_screen_png
 from core.tools.memory import memory_facts
 
 load_dotenv()
@@ -43,9 +44,13 @@ Empieza SIEMPRE tu respuesta con una etiqueta de emoción entre corchetes, una d
 REGLA CRÍTICA DE CONTROL DEL PC:
 Tienes herramientas disponibles para controlar el ordenador en tiempo real (abrir aplicaciones, cerrar aplicaciones, ajustar o cambiar volumen, pausar/reanudar música, buscar en Google/YouTube, ver estado del sistema, fecha/hora, temporizadores, notas, etc.).
 Cuando el usuario pida realizar cualquier acción en el PC, ES OBLIGATORIO LLAMAR A LA HERRAMIENTA CORRESPONDIENTE. NUNCA respondas que hiciste la acción sin haber ejecutado la herramienta, porque si no la ejecutas, la acción no ocurre físicamente en el ordenador.
-Si necesitas varias acciones, pide todas las herramientas a la vez. En la MISMA respuesta escribe también la frase alegre y corta que dirás, como si ya estuviera hecho: no verás el resultado de las herramientas ni tendrás otro turno para hablar.
+Escribir que lo hiciste NO lo hace: si dices "guardé", "abrí" o "anotado", tienes que haber pedido la herramienta en esa misma respuesta. Si necesitas varias acciones, pide todas las herramientas a la vez y añade una frase alegre y corta para el usuario: no verás el resultado de las herramientas ni tendrás otro turno para hablar.
 
 Confirmaciones de seguridad: para apagar, reiniciar o suspender el equipo llama a shutdown_pc; el sistema le pedirá confirmación al usuario por su cuenta. Las demás acciones (como cerrar aplicaciones, cambiar volumen o abrir programas) se ejecutan directamente cuando el usuario lo pide.
+
+Actualidad: si te preguntan algo reciente o que no sabes con seguridad (noticias, resultados, precios, el clima), usa la búsqueda de Google si la tienes. Si te dan una dirección web, puedes leerla. Resume lo encontrado en 1 o 2 frases.
+
+Pantalla: si el mensaje trae una imagen, es una captura de la pantalla del usuario en este momento. Contesta a lo que pregunta sobre ella (qué ves, qué significa un error, qué hacer) en 1 o 2 frases.
 
 Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si te pide que olvides algo, llama a forget.
 
@@ -61,6 +66,18 @@ VALID_EMOTIONS = {"happy", "neutral", "surprised", "sad", "angry", "thinking"}
 
 # "{what the user said}" at the start of an answer to an audio message
 HEARD_RE = re.compile(r"^\s*\{([^}]*)\}\s*")
+
+# "I did it" in the answer: with no tool call that is a lie (seen: "¡Anotado!" and no take_note)
+CLAIMED_ACTION_RE = re.compile(
+    r"\b(?:abrí|cerré|guardé|anoté|apunté|subí|bajé|silencié|creé|copié|minimicé|maximicé|busqué|puse|anotado|apuntado|guardado)\b",
+    re.IGNORECASE,
+)
+
+# The user asks about the screen: a screenshot rides in the same single request (never taken otherwise)
+SCREEN_RE = re.compile(
+    r"\b(?:(?:mi |la |esta |en )?pantalla|qu[eé] ves|mira (?:esto|esta|este|aqu[ií])|este error|esta ventana)\b",
+    re.IGNORECASE,
+)
 
 # Tools that return data: the model cannot see results (one request per turn), so they are read out verbatim
 SPEAK_RESULT_TOOLS = {
@@ -101,6 +118,7 @@ class MikuBrain:
         models_fallback: Optional[List[str]] = None,
         max_history: int = 10,
         temperature: float = 0.8,
+        web_search: bool = True,
     ) -> None:
         self.primary_model = model_name
         self.models_fallback = models_fallback or [
@@ -116,6 +134,7 @@ class MikuBrain:
         self.current_model = self.primary_model
         self.max_history = max_history
         self.temperature = temperature
+        self.web_search = web_search
 
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -165,18 +184,10 @@ class MikuBrain:
             prompt += "\nLo que recuerdas del usuario:\n" + "\n".join(f"- {f}" for f in facts) + "\n"
         return prompt
 
-    def _build_request(self, clean_input: str, audio: Optional[np.ndarray]) -> Tuple[List[types.Content], types.GenerateContentConfig]:
+    def _build_request(
+        self, clean_input: str, audio: Optional[np.ndarray], screenshot: Optional[bytes] = None
+    ) -> Tuple[List[types.Content], types.GenerateContentConfig]:
         """One request per turn: text history + the user's audio (or text). Tools are declared, never auto-called."""
-        config = types.GenerateContentConfig(
-            system_instruction=self._build_system_instruction(),
-            tools=self.tools,
-            temperature=self.temperature,
-            max_output_tokens=300,
-            # Thinking tokens count against max_output_tokens: left on, they ate the 300 and the answer came back empty
-            thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
-            # The user's quota allows ONE request per turn: we run the tools locally and never send results back
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-        )
         contents = [
             types.Content(role=turn["role"], parts=[types.Part.from_text(text=turn["text"])])
             for turn in self._history_turns[-(self.max_history * 2):]
@@ -185,8 +196,48 @@ class MikuBrain:
             user_part = types.Part.from_bytes(data=_to_wav(audio), mime_type="audio/wav")
         else:
             user_part = types.Part.from_text(text=clean_input)
-        contents.append(types.Content(role="user", parts=[user_part]))
-        return contents, config
+        parts = [user_part]
+        if screenshot:
+            parts.append(types.Part.from_bytes(data=screenshot, mime_type="image/png"))
+        contents.append(types.Content(role="user", parts=parts))
+        return contents, self._build_config()
+
+    def _build_config(self) -> types.GenerateContentConfig:
+        tools: List[Any] = list(self.tools)
+        tool_config = None
+        if self.web_search:
+            # Google runs these inside the same request (Gemini 3 tool combination): current events and web
+            # pages cost no extra request. Docs ask for VALIDATED mode when built-in and custom tools mix.
+            tools += [types.Tool(google_search=types.GoogleSearch()), types.Tool(url_context=types.UrlContext())]
+            tool_config = types.ToolConfig(
+                include_server_side_tool_invocations=True,
+                function_calling_config=types.FunctionCallingConfig(mode="VALIDATED"),
+            )
+        return types.GenerateContentConfig(
+            system_instruction=self._build_system_instruction(),
+            tools=tools,
+            tool_config=tool_config,
+            temperature=self.temperature,
+            max_output_tokens=300,
+            # Thinking tokens count against max_output_tokens: left on, they ate the 300 and the answer came back empty
+            thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
+            # The user's quota allows ONE request per turn: we run the tools locally and never send results back
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        )
+
+    async def _generate(self, model: str, contents: List[types.Content], config: types.GenerateContentConfig) -> Any:
+        """One generate_content call. If Gemini rejects the web tools, drops them for the session and asks without."""
+        try:
+            return await self.client.aio.models.generate_content(model=model, contents=contents, config=config)
+        except Exception as e:
+            err = str(e).lower()
+            # A rejected request (400) does not use quota, so the retry keeps the one-request rule
+            # A bad API key is also a 400: that is not the web tools' fault
+            if not (self.web_search and ("400" in err or "invalid_argument" in err)) or "api key" in err:
+                raise
+            logger.warning("Gemini rejected the built-in web tools (%s). Disabling web search for this session.", e)
+            self.web_search = False
+            return await self.client.aio.models.generate_content(model=model, contents=contents, config=self._build_config())
 
     def _remember(self, user_text: str, model_text: str) -> None:
         """Keeps the turn as text so the next request (on any model) has the context."""
@@ -373,13 +424,18 @@ class MikuBrain:
 
         # 6. Notes
         m_note = re.match(r"^(?:miku\s*,?\s*)?(?:toma|guarda|anota)\s+(?:una\s+)?nota(?:\s+que\s+diga)?[:\s]+(.+)$", low)
-        if m_note:
-            text_note = m_note.group(1).strip()
+        # "Apunta que tengo pendiente X": Gemini once answered "¡Anotado!" without calling take_note
+        m_jot = re.match(r"^(?:miku\s*,?\s*)?(?:ap[uú]nta(?:me)?|an[oó]ta(?:me)?)(?:\s+que)?\s+(.+)$", text.strip(" ¡!.¿?"), re.IGNORECASE)
+        if m_note or m_jot:
+            text_note = (m_note or m_jot).group(1).strip(" .")
             from core.tools.notes import take_note
-            take_note(text_note)
-            return ("happy", "¡Apuntado! Ya guardé tu nota.", False)
+            res = take_note(text_note)
+            if res.get("ok"):
+                return ("happy", "¡Apuntado! Ya guardé tu nota.", False)
+            return ("sad", res.get("result", "No pude guardar la nota."), False)
 
-        if any(w in low for w in ["lee mis notas", "leer notas", "cuáles son mis notas", "que notas tengo", "qué notas tengo"]):
+        if any(w in low for w in ["lee mis notas", "leer notas", "cuáles son mis notas", "que notas tengo", "qué notas tengo",
+                                  "qué pendientes tengo", "que pendientes tengo", "mis pendientes"]):
             from core.tools.notes import read_notes
             notes_res = read_notes()
             return ("neutral", notes_res.get("result", "No tienes notas."), False)
@@ -446,7 +502,14 @@ class MikuBrain:
             models_to_try.insert(0, self.current_model)
 
         last_error = None
-        contents, config = self._build_request(clean_input, audio)
+        screenshot = None
+        if SCREEN_RE.search(clean_input):
+            try:
+                screenshot = await asyncio.to_thread(capture_screen_png)
+                logger.info("Attaching a screenshot (%.0f KB) to the request.", len(screenshot) / 1024)
+            except Exception as e:
+                logger.warning("Screen capture failed (%s). Asking without it.", e)
+        contents, config = self._build_request(clean_input, audio, screenshot)
         response = None
 
         # Only a failed request (error, 429, 503: no answer, no quota spent) moves on to the next model
@@ -461,7 +524,7 @@ class MikuBrain:
                     clean_input,
                     " (+audio)" if audio is not None else "",
                 )
-                response = await self.client.aio.models.generate_content(model=model, contents=contents, config=config)
+                response = await self._generate(model, contents, config)
                 # Clear any previous cooldown for this healthy model
                 self._model_cooldown.pop(model, None)
                 break
@@ -513,6 +576,11 @@ class MikuBrain:
             tool_emotion, tool_text = await self._run_tool_calls(calls, clean_text)
             if tool_text:
                 emotion, clean_text = tool_emotion, tool_text
+        elif CLAIMED_ACTION_RE.search(clean_text) and not (response.candidates and response.candidates[0].grounding_metadata):
+            # Retrying would be a second request: say so honestly instead of claiming it was done.
+            # A grounded answer ("busqué y...") really did search, server side.
+            logger.warning("Gemini claimed an action without calling a tool: '%s'", clean_text)
+            emotion, clean_text = "sad", "Uy, me distraje y no llegué a hacerlo. ¿Me lo pides otra vez?"
         if not clean_text:
             emotion, clean_text = "thinking", "Perdona, no te entendí bien. ¿Me lo repites?"
 

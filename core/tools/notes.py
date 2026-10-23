@@ -4,6 +4,7 @@ Miku Assistant - Notes Tools (tools/notes.py)
 
 import datetime
 import logging
+import re
 from pathlib import Path
 from typing import Dict, Any
 
@@ -39,9 +40,9 @@ def take_note(text: str = "", note: str = "", content: str = "") -> Dict[str, An
 
 @tool(
     name="read_notes",
-    description="Lee las últimas notas guardadas en tu archivo de notas (notes.md en Documentos). Por defecto muestra las últimas 5."
+    description="Lee las últimas notas guardadas en tu archivo de notas (notes.md en Documentos). Por defecto lee las últimas 3."
 )
-def read_notes(last_n: int = 5) -> Dict[str, Any]:
+def read_notes(last_n: int = 3) -> Dict[str, Any]:
     """Lee las últimas notas de ~/Documents/notes.md."""
     if not NOTES_FILE.exists():
         return {"ok": True, "result": "Aún no tienes ninguna nota guardada."}
@@ -54,9 +55,12 @@ def read_notes(last_n: int = 5) -> Dict[str, Any]:
             return {"ok": True, "result": "Tu archivo de notas está vacío."}
 
         count = max(1, min(20, int(last_n)))
-        recent = lines[-count:]
-        result_text = f"Tus últimas {len(recent)} nota(s):\n" + "\n".join(recent)
-        return {"ok": True, "result": result_text}
+        # Read aloud: drop the "- [2026-10-20 02:58] " prefix, TTS spelled it out symbol by symbol
+        recent = [re.sub(r"^-\s*\[[^\]]*\]\s*", "", line).rstrip(".") for line in lines[-count:] if not line.startswith("#")]
+        if not recent:
+            return {"ok": True, "result": "Tu archivo de notas está vacío."}
+        head = "Tu última nota" if len(recent) == 1 else f"Tus últimas {len(recent)} notas"
+        return {"ok": True, "result": f"{head}: " + ". ".join(recent) + "."}
     except Exception as e:
         return {"ok": False, "result": f"Error al leer las notas: {e}"}
 

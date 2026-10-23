@@ -46,7 +46,11 @@ class FakeModels:
     async def generate_content(self, model, contents, config):
         assert config.automatic_function_calling.disable, "AFC would send tool results back: a 2nd request"
         self.requests.append(contents)
-        return self.replies.pop(0)
+        self.configs = getattr(self, "configs", []) + [config]
+        nxt = self.replies.pop(0)
+        if isinstance(nxt, Exception):
+            raise nxt
+        return nxt
 
 
 def brain(*replies):
@@ -86,6 +90,50 @@ def test_shutdown_asks_then_yes_runs_locally():
     assert ran and ran[0][1] == "/s" and "30 segundos" in text, (ran, text)
 
 
+def test_claimed_action_without_tool_is_not_a_lie():
+    b, models = brain(reply("{guarda que me gusta el té} [happy] ¡Anotado! Ya lo guardé en tus notas."))
+    emotion, text, _ = asyncio.run(b.chat("guarda que me gusta el té", audio=AUDIO))
+    assert len(models.requests) == 1 and emotion == "sad" and "no llegué a hacerlo" in text, text
+    b, _ = brain(reply("[happy] ¡Hola! ¿Qué tal tu día?"))
+    assert asyncio.run(b.chat("hola miku que tal"))[1] == "¡Hola! ¿Qué tal tu día?", "plain chat is untouched"
+
+
+def test_jot_down_goes_through_fast_path():
+    import core.tools.notes as notes
+    saved = []
+    notes.take_note = lambda text: saved.append(text) or {"ok": True, "result": ""}
+    b, models = brain()
+    _, text, _ = asyncio.run(b.chat("¡Apunta que tengo pendiente subir el PR!", audio=AUDIO))
+    assert saved == ["tengo pendiente subir el PR"] and not models.requests and "Apuntado" in text, saved
+
+
+def test_screenshot_only_when_asked_and_in_the_same_request():
+    import core.llm as llm
+    shots = []
+    llm.capture_screen_png = lambda: shots.append(1) or b"\x89PNG fake"
+    b, models = brain(reply("[thinking] Veo un error de Python."), reply("[happy] ¡Hola!"))
+    asyncio.run(b.chat("qué ves en mi pantalla", audio=AUDIO))
+    parts = models.requests[0][-1].parts
+    assert len(models.requests) == 1 and [p.inline_data.mime_type for p in parts] == ["audio/wav", "image/png"]
+    asyncio.run(b.chat("cuéntame un chiste"))
+    assert len(shots) == 1 and len(models.requests[1][-1].parts) == 1, "no screenshot unless asked"
+
+
+def test_web_tools_rejected_are_dropped_and_retried_once():
+    b, models = brain(RuntimeError("400 INVALID_ARGUMENT: tool combination not supported"), reply("[happy] ¡Hola!"))
+    assert any(t.google_search for t in b._build_config().tools if hasattr(t, "google_search"))
+    _, text, _ = asyncio.run(b.chat("hola miku que tal"))
+    assert text == "¡Hola!" and not b.web_search, text
+    assert not any(getattr(t, "google_search", None) for t in models.configs[-1].tools), "retry is without web tools"
+
+
+def test_grounded_search_answer_is_not_called_a_lie():
+    r = reply("[happy] Busqué y ganó T1 el mundial.")
+    r.candidates[0].grounding_metadata = types.GroundingMetadata(web_search_queries=["ganador mundial lol"])
+    b, _ = brain(r)
+    assert asyncio.run(b.chat("quién ganó el mundial de lol"))[1] == "Busqué y ganó T1 el mundial."
+
+
 def test_fast_path_takes_no_request():
     b, models = brain()
     b._try_fast_path_tool = lambda text: ("happy", "Son las 12:00.", False)
@@ -97,5 +145,10 @@ if __name__ == "__main__":
     test_actions_take_one_request()
     test_data_tool_result_is_read_out()
     test_shutdown_asks_then_yes_runs_locally()
+    test_claimed_action_without_tool_is_not_a_lie()
+    test_jot_down_goes_through_fast_path()
+    test_screenshot_only_when_asked_and_in_the_same_request()
+    test_web_tools_rejected_are_dropped_and_retried_once()
+    test_grounded_search_answer_is_not_called_a_lie()
     test_fast_path_takes_no_request()
     print("ok")
