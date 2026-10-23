@@ -44,6 +44,7 @@ class RVCManager:
         self.index_rate: float = getattr(config, "index_rate", 0.2)
 
         self._proc: Optional[asyncio.subprocess.Process] = None
+        self._reaping: set = set()  # strong refs to proc.wait() tasks of terminated workers
         self._lock = asyncio.Lock()
         self._is_warming_up: bool = False
 
@@ -226,15 +227,23 @@ class RVCManager:
         Invoked by ResourceManager after inactivity timeout to ensure 0 MB VRAM at rest.
         """
         if self._proc is not None:
-            pid = self._proc.pid
+            proc, self._proc = self._proc, None
+            pid = proc.pid
             logger.info("Terminating RVC worker subprocess (PID: %d)...", pid)
             try:
-                self._proc.terminate()
+                proc.terminate()
             except ProcessLookupError:
                 pass
             except Exception as e:
                 logger.warning("Error terminating RVC worker (PID %d): %s", pid, e)
-
-            # Ensure cleanup
-            self._proc = None
+            if proc.stdin is not None:
+                proc.stdin.close()
+            # Reap it in the background: once it exits asyncio closes its pipes, so no "unclosed transport"
+            # warnings (H-039). No running loop means the backend is exiting and the process goes with it.
+            try:
+                task = asyncio.get_running_loop().create_task(proc.wait())
+                self._reaping.add(task)
+                task.add_done_callback(self._reaping.discard)
+            except RuntimeError:
+                pass
             logger.info("RVC worker terminated. GPU VRAM reclaimed by OS (0 MB idle).")
