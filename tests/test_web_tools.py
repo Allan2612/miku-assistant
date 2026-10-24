@@ -21,6 +21,37 @@ def test_web_tools_open_browser():
     ], opened
 
 
+
+
+def test_youtube_play_reuses_her_tab_and_never_types_elsewhere():
+    # A second song used to open a second tab while the first kept playing (user, 24-oct)
+    import types as _t
+    import core.tools.apps as apps
+    keys, opened = [], []
+    fg = [42]
+    web._first_youtube_video = lambda q: ("abcdefghijk", "K/DA - MORE (Video oficial)")
+    web._open_in_browser = opened.append
+    web.ctypes = _t.SimpleNamespace(windll=_t.SimpleNamespace(user32=_t.SimpleNamespace(GetForegroundWindow=lambda: fg[0])))
+    apps._find_window = lambda name, exe=None: 42 if (name, exe) == ("youtube", "opera") else None
+    apps._bring_to_front = lambda hwnd: fg[0] == hwnd
+    apps._press = lambda *vks: keys.append(vks)
+    apps._type_into_foreground = lambda text: keys.append(text)
+    url = "https://www.youtube.com/watch?v=abcdefghijk"
+
+    web._last_youtube_open = float("-inf")  # she never opened one: a new tab, no keys
+    assert web.youtube_play("more")["result"] == "¡Poniendo K/DA - MORE en YouTube!"
+    assert opened == [url] and keys == []
+
+    opened.clear()  # she did: same tab, Ctrl+L, URL, Delete (autocomplete), Enter
+    web.youtube_play("firestarter")
+    assert opened == [] and keys == [(0x11, ord("L")), url, (0x2E,), (0x0D,)], keys
+
+    keys.clear()  # another app keeps the focus: no typing at all, new tab instead
+    fg[0] = 7
+    web.youtube_play("pop/stars")
+    assert keys == [] and opened == [url]
+
 if __name__ == "__main__":
     test_web_tools_open_browser()
+    test_youtube_play_reuses_her_tab_and_never_types_elsewhere()
     print("ok")

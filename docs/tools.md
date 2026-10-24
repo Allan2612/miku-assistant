@@ -14,7 +14,7 @@ Leyenda: 🔒 = requiere confirmación del usuario antes de ejecutarse.
 ## Apps y ventanas — `tools/apps.py`
 | Función | Parámetros | Implementación |
 |---|---|---|
-| `open_app` | `name: str` | 1) alias de `config.yaml → apps`; 2) búsqueda difusa en accesos directos del menú Inicio (`%ProgramData%` y `%AppData%\Microsoft\Windows\Start Menu`), cacheada al arrancar; 3) `os.startfile`. Si hay varias coincidencias, devuelve las opciones |
+| `open_app` | `name: str` | 0) Opera ya abierto: trae su ventana al frente (lanzarlo de nuevo abría otra ventana); 1) alias de `config.yaml → apps`; 2) búsqueda difusa en accesos directos del menú Inicio (`%ProgramData%` y `%AppData%\Microsoft\Windows\Start Menu`), cacheada al arrancar; 3) `os.startfile`. Si hay varias coincidencias, devuelve las opciones |
 | `close_app` | `name: str` | `psutil`: solo procesos con el **nombre exacto** (o su alias); nunca procesos del sistema ni el propio Miku. `terminate()` y, si a los 3 s sigue vivo, `kill()`. Sin confirmación (decisión revisable, H-002) |
 | `list_open_apps` | — | Ventanas visibles como en la barra de tareas (con título, sin dueño, ni ocultas ni de herramienta) → nombre del proceso con nombre amigable ("Visual Studio Code", "el Bloc de notas"), sin duplicados y sin la propia Miku. Se lee en voz alta |
 | `focus_app` | `name: str` | Traer ventana al frente |
@@ -35,7 +35,7 @@ Leyenda: 🔒 = requiere confirmación del usuario antes de ejecutarse.
 | `open_url` | `url: str` | Opera GX si está instalado; si no, el navegador predeterminado. Solo `http`/`https` |
 | `web_search` | `query: str` | Abre Google con la búsqueda. La descripción le dice al modelo que solo la use si le piden buscar: antes abría Google para "¿cuánto mide la torre Eiffel?" |
 | `youtube_search` | `query: str` | Abre la página de resultados en YouTube (no reproduce) |
-| `youtube_play` | `query: str` | **Reproduce** el primer resultado: lee el `videoId` de la página de resultados (sin API key, ~1 s) y abre `watch?v=`. Sin internet o sin resultado, abre la búsqueda. Dice el título corto (o lo pedido, si el título no es legible en español). "Ponme X en YouTube" y "pon la canción X" van por el atajo local |
+| `youtube_play` | `query: str` | **Reproduce** el primer resultado: lee el `videoId` de la página de resultados (sin API key, ~1 s) y abre `watch?v=`. Sin internet o sin resultado, abre la búsqueda. **Reutiliza la pestaña:** si Miku abrió un vídeo en la última hora y esa pestaña sigue activa en una ventana de Opera (título con "YouTube"), la trae al frente y navega ahí (Ctrl+L, URL, Supr para quitar el autocompletado, Enter), así la canción anterior deja de sonar. Antes de teclear comprueba que Opera quedó al frente; si no, abre pestaña nueva y no teclea nada. Dice el título corto (o lo pedido, si el título no es legible en español). "Ponme X en YouTube" y "pon la canción X" van por el atajo local |
 
 **Leer y buscar (no son herramientas propias):** en turnos de **texto**, la petición lleva también la herramienta integrada `url_context`: Google lee la página que le pases dentro de la misma petición (probado: resume python.org). Con `llm.web_search: true` va además `google_search`, pero **el plan gratuito responde 429 a toda petición que la lleve** (probado el 23-oct), así que viene apagada. No van en turnos de voz o con imagen: Gemini respondía 400. Si Google rechaza las integradas (400 o 429), se reintenta sin ellas y solo se apagan para la sesión si el reintento funciona; si también falla, era la cuota del modelo.
 

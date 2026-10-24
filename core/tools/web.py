@@ -2,11 +2,13 @@
 Miku Assistant - Web and Search Tools (tools/web.py)
 """
 
+import ctypes
 import json
 import logging
 import os
 import re
 import subprocess
+import time
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -93,6 +95,36 @@ _YT_HEADERS = {
 }
 
 
+# When Miku last opened a YouTube video: only then is a YouTube tab "hers" to reuse
+_last_youtube_open = float("-inf")
+YT_TAB_REUSE_S = 3600.0
+VK_CONTROL, VK_DELETE, VK_RETURN = 0x11, 0x2E, 0x0D
+
+
+def _reuse_youtube_tab(url: str) -> bool:
+    """Plays url in the YouTube tab Miku opened before, if it is still Opera's active tab: a new song used to
+    open a second tab and the first one kept playing (user, 24-oct). False means: open a new tab instead."""
+    if time.monotonic() - _last_youtube_open > YT_TAB_REUSE_S:
+        return False
+    from core.tools.apps import _bring_to_front, _find_window, _press, _type_into_foreground
+    hwnd = _find_window("youtube", exe="opera")  # the window title is the active tab's: "... - YouTube - Opera"
+    if not hwnd or not _bring_to_front(hwnd):
+        return False
+    _press(VK_CONTROL, ord("L"))  # address bar
+    time.sleep(0.15)
+    user32 = ctypes.windll.user32
+    # Typing goes to whatever has the focus: if Opera lost it, stop rather than type a URL into another app
+    if user32.GetForegroundWindow() != hwnd:
+        return False
+    _type_into_foreground(url)
+    if user32.GetForegroundWindow() != hwnd:
+        return False
+    _press(VK_DELETE)  # drop the address bar's inline autocomplete, or Enter could open a URL from history
+    _press(VK_RETURN)
+    logger.info("Reused the YouTube tab for %s", url)
+    return True
+
+
 def _first_youtube_video(query: str) -> Optional[Tuple[str, str]]:
     """(videoId, title) of the first result, read from the search page: no API key needed (~1 s)."""
     url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(query)
@@ -122,7 +154,11 @@ def youtube_play(query: str = "", search_query: str = "") -> Dict[str, Any]:
         _open_in_browser("https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(target_q))
         return {"ok": True, "result": f"No pude ponerla directamente; te abrí la búsqueda de '{target_q}' en YouTube."}
     video_id, title = found
-    _open_in_browser(f"https://www.youtube.com/watch?v={video_id}")
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    global _last_youtube_open
+    if not _reuse_youtube_tab(url):
+        _open_in_browser(url)
+    _last_youtube_open = time.monotonic()
     try:
         title = json.loads(f'"{title}"')  # the title comes JSON-escaped ("&")
     except ValueError:

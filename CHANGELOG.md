@@ -26,6 +26,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- Pedir otra canción abría una pestaña más y la anterior seguía sonando: `youtube_play` reutiliza la pestaña de YouTube que abrió. "Abre Opera" con Opera ya abierto trae su ventana en lugar de abrir otra.
 - Si no hablabas en los primeros segundos, la burbuja seguía diciendo "Escuchando..." con el micrófono ya cerrado y lo que dijeras después se perdía: ahora desaparece al volver a reposo, y la espera inicial pasa de 5,5 a 8 s.
 - Whisper ya no se descarga tras 10 min sin uso (solo ocupa RAM): recargarlo retrasaba ~1,5-2 s la primera frase después de una pausa. RVC sí se descarga (VRAM).
 - El log registra cuánto tarda la ventana en aparecer (`Frontend timing [show]`): ~270 ms medidos, oculta 1 o 5 min.

@@ -76,8 +76,19 @@ def test_open_app_partial_match_needs_a_real_word():
     assert apps.open_app("admin")["ok"] and launched == [r"C:\fake\Administrative Tools.lnk"], launched
 
 
+
+
+def test_open_opera_when_running_brings_it_up_instead_of_a_new_window():
+    launched = []
+    _with_fakes([], launched)
+    apps._find_window = lambda name, exe=None: 99 if exe == "opera" else None
+    apps._bring_to_front = lambda hwnd: hwnd == 99
+    res = apps.open_app("opera")
+    assert res["ok"] and "ya estaba abierto" in res["result"] and launched == [], (res, launched)
+
 if __name__ == "__main__":
     test_open_app_never_passes_arguments_or_shells()
     test_close_app_exact_match_only()
     test_open_app_partial_match_needs_a_real_word()
+    test_open_opera_when_running_brings_it_up_instead_of_a_new_window()
     print("ok")

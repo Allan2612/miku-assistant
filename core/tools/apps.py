@@ -207,6 +207,10 @@ def open_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
 
     # 0. Check Opera GX specifically
     if query in ("opera", "opera gx", "operagx", "navegador", "browser", "internet"):
+        # Already open: launching it again opened a SECOND window (user, 24-oct); bring the one there is
+        running = _find_window("", exe="opera")
+        if running and _bring_to_front(running):
+            return {"ok": True, "result": "Opera ya estaba abierto; te lo traje al frente."}
         opera_path = _find_opera_gx_path()
         if opera_path and _launch_target(opera_path):
             time.sleep(0.3)
@@ -342,13 +346,8 @@ def focus_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
     if not target_name:
         return {"ok": False, "result": "Debes indicar el nombre de la ventana a enfocar."}
     found_hwnd = _find_window(target_name)
-    user32 = ctypes.windll.user32
-
     if found_hwnd:
-        SW_RESTORE = 9
-        user32.AllowSetForegroundWindow(0xFFFFFFFF)
-        user32.ShowWindow(found_hwnd, SW_RESTORE)
-        user32.SetForegroundWindow(found_hwnd)
+        _bring_to_front(found_hwnd)
         return {"ok": True, "result": f"He traído {target_name} al frente."}
 
     return {"ok": False, "result": f"No encontré ninguna ventana abierta que coincida con '{target_name}'."}
@@ -377,11 +376,13 @@ def window_action(name: str, action: str = "minimize") -> Dict[str, Any]:
     return {"ok": True, "result": f"Listo, {done} {name}."}
 
 
-def _find_window(target_name: str) -> Optional[int]:
-    """First visible top-level window whose title contains the cleaned name."""
+def _find_window(target_name: str, exe: Optional[str] = None) -> Optional[int]:
+    """First visible top-level window whose title contains the cleaned name; with exe, only that process's
+    main windows (unowned, not tool windows), e.g. exe="opera" for Opera's browser windows."""
     _attach_user_desktop()
     query = _clean_query(target_name)
     user32 = ctypes.windll.user32
+    GW_OWNER, GWL_EXSTYLE, WS_EX_TOOLWINDOW = 4, -20, 0x00000080
     found_hwnd = None
 
     def enum_windows_callback(hwnd, extra):
@@ -393,14 +394,75 @@ def _find_window(target_name: str) -> Optional[int]:
             buff = ctypes.create_unicode_buffer(length + 1)
             user32.GetWindowTextW(hwnd, buff, length + 1)
             title = buff.value.lower()
-            if query in title:
+            if query in title and (exe is None or _is_main_window_of(hwnd, exe)):
                 found_hwnd = hwnd
                 return False
         return True
 
+    def _is_main_window_of(hwnd, stem: str) -> bool:
+        if user32.GetWindow(hwnd, GW_OWNER) or user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW:
+            return False
+        pid = wintypes.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        try:
+            return Path(psutil.Process(pid.value).name()).stem.lower() == stem
+        except (psutil.Error, OSError):
+            return False
+
     WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     user32.EnumWindows(WNDENUMPROC(enum_windows_callback), 0)
     return found_hwnd
+
+
+def _bring_to_front(hwnd: int) -> bool:
+    """Makes hwnd the foreground window and says whether it really is (Windows refuses background processes)."""
+    _attach_user_desktop()
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE only when minimized: it would un-maximize a maximized window
+    # Joining the input of the current foreground thread lifts the foreground lock for this call
+    fg_thread = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
+    own_thread = kernel32.GetCurrentThreadId()
+    attached = fg_thread and fg_thread != own_thread and user32.AttachThreadInput(own_thread, fg_thread, True)
+    try:
+        # Two tries: a browser busy loading a page sometimes ignored the first one (live test)
+        for _ in range(2):
+            user32.AllowSetForegroundWindow(0xFFFFFFFF)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            time.sleep(0.15)
+            if user32.GetForegroundWindow() == hwnd:
+                return True
+    finally:
+        if attached:
+            user32.AttachThreadInput(own_thread, fg_thread, False)
+    return False
+
+
+def _press(*vks: int) -> None:
+    """Presses a key chord, e.g. _press(0x11, ord("L")) for Ctrl+L, into the foreground window."""
+    user32 = ctypes.windll.user32
+    for vk in vks:
+        user32.keybd_event(vk, 0, 0, 0)
+    for vk in reversed(vks):
+        user32.keybd_event(vk, 0, 2, 0)
+
+
+def _type_into_foreground(text: str) -> None:
+    """Types text key by key into the foreground window (callers check which window that is)."""
+    user32 = ctypes.windll.user32
+    for char in text:
+        vk = user32.VkKeyScanW(ord(char))
+        if vk != -1:
+            shift = (vk >> 8) & 1
+            code = vk & 0xFF
+            if shift:
+                user32.keybd_event(0x10, 0, 0, 0)
+            user32.keybd_event(code, 0, 0, 0)
+            user32.keybd_event(code, 0, 2, 0)
+            if shift:
+                user32.keybd_event(0x10, 0, 2, 0)
+        time.sleep(0.01)
 
 
 @tool(
@@ -420,18 +482,7 @@ def type_text(text: str) -> Dict[str, Any]:
 
     # No line breaks: Enter would submit forms or commands
     text = " ".join(text.splitlines())[:500]
-    for char in text:
-        vk = user32.VkKeyScanW(ord(char))
-        if vk != -1:
-            shift = (vk >> 8) & 1
-            code = vk & 0xFF
-            if shift:
-                user32.keybd_event(0x10, 0, 0, 0)
-            user32.keybd_event(code, 0, 0, 0)
-            user32.keybd_event(code, 0, 2, 0)
-            if shift:
-                user32.keybd_event(0x10, 0, 2, 0)
-        time.sleep(0.01)
+    _type_into_foreground(text)
 
     return {"ok": True, "result": f"Texto escrito ({len(text)} caracteres)."}
 
