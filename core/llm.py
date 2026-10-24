@@ -44,7 +44,7 @@ Empieza SIEMPRE tu respuesta con una etiqueta de emoción entre corchetes, una d
 REGLA CRÍTICA DE CONTROL DEL PC:
 Tienes herramientas disponibles para controlar el ordenador en tiempo real (abrir aplicaciones, cerrar aplicaciones, ajustar o cambiar volumen, pausar/reanudar música, buscar en Google/YouTube, ver estado del sistema, fecha/hora, temporizadores, notas, etc.).
 Cuando el usuario pida realizar cualquier acción en el PC, ES OBLIGATORIO LLAMAR A LA HERRAMIENTA CORRESPONDIENTE. NUNCA respondas que hiciste la acción sin haber ejecutado la herramienta, porque si no la ejecutas, la acción no ocurre físicamente en el ordenador.
-Escribir que lo hiciste NO lo hace: si dices "guardé", "abrí" o "anotado", tienes que haber pedido la herramienta en esa misma respuesta. Si necesitas varias acciones, pide todas las herramientas a la vez y añade una frase alegre y corta para el usuario: no verás el resultado de las herramientas ni tendrás otro turno para hablar.
+Escribir que lo hiciste NO lo hace: primero llama la herramienta. Después recibirás su resultado: responde según lo que de verdad pasó (si falló, dilo; si devolvió datos, resúmelos en 1 o 2 frases). Si una tarea tiene pasos, puedes llamar más herramientas tras ver un resultado.
 
 Confirmaciones de seguridad: para apagar, reiniciar o suspender el equipo llama a shutdown_pc; el sistema le pedirá confirmación al usuario por su cuenta. Las demás acciones (como cerrar aplicaciones, cambiar volumen o abrir programas) se ejecutan directamente cuando el usuario lo pide.
 
@@ -108,11 +108,6 @@ SCREEN_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Tools that return data: the model cannot see results (one request per turn), so they are read out verbatim
-SPEAK_RESULT_TOOLS = {
-    "find_file", "read_notes", "get_datetime", "get_system_status", "list_timers", "read_clipboard", "read_text_file",
-    "list_open_apps",
-}
 
 
 def _to_wav(audio: np.ndarray, sample_rate: int = 16000) -> bytes:
@@ -143,9 +138,13 @@ _ORDER_HINT = re.compile(
 )
 # The user asks whether the last action happened: answering "sí, lo apunté" is then not a claim
 _ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
+# Follow-up requests after the first one: tool results back to the model, a nudge, or a second tool step
+MAX_TOOL_ROUNDS = 3
+NUDGE_TEXT = (
+    "(Aviso del sistema) Dijiste que hiciste una acción, pero no llamaste ninguna herramienta, así que no ocurrió. "
+    "Si el usuario pidió una acción, llama ahora la herramienta adecuada. Si no, responde sin decir que la hiciste."
+)
 _DOMAIN_RE = re.compile(r"^(?:https?://)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?$")
-# What Gemini says it is playing when it forgot to call youtube_play: "Reproduciendo 'Heart Steel' en YouTube"
-_CLAIMED_YT_RE = re.compile(r"(?:reproduciendo|poniendo|te pongo|pongo)\s+['\"«]?(.+?)['\"»]?\s+en\s+youtube", re.IGNORECASE)
 _CHAINED_ORDER = re.compile(
     r"(?:\by\b|,|\bluego\b|\bdespu[eé]s\b|\btambi[eé]n\b)\s*(?:me\s+)?"
     r"(?:abre|[aá]breme|cierra|pon|ponme|sube|s[uú]bele|baja|b[aá]jale|busca|reproduce|minimiza|anota|apunta"
@@ -338,28 +337,75 @@ class MikuBrain:
         if len(self._history_turns) > self.max_history * 4:
             self._history_turns = self._history_turns[-(self.max_history * 2):]
 
-    async def _run_tool_calls(self, calls: List[Any], answer: str) -> Tuple[Optional[str], Optional[str]]:
-        """Runs the model's tool calls locally. Returns (emotion, text) to say instead of the model's answer, if any."""
-        must_say: List[str] = []
-        failed = False
-        results: List[str] = []
+    async def _run_tool_calls(self, calls: List[Any]) -> List[Dict[str, Any]]:
+        """Runs the model's tool calls locally, in order, and returns their result dicts."""
+        results: List[Dict[str, Any]] = []
         for call in calls:
             meta = get_tool_metadata(call.name or "")
             if meta is None:
-                res: Dict[str, Any] = {"ok": False, "result": f"No sé hacer {call.name}."}
+                results.append({"ok": False, "result": f"No existe la herramienta {call.name}."})
+                continue
+            # Tools block (sleeps, process scans): run them off the event loop (H-025)
+            results.append(await asyncio.to_thread(meta["function"], **dict(call.args or {})))
+        self._acted_last_turn = True
+        return results
+
+    async def _agent_loop(
+        self, model: str, contents: List[types.Content], config: types.GenerateContentConfig, response: Any,
+        clean_input: str, acted_before: bool,
+    ) -> Tuple[str, str]:
+        """Tool calls -> run them -> send the results back -> answer, up to MAX_TOOL_ROUNDS requests more.
+
+        The model SEES what its tools did, so it answers from facts. With one blind request it claimed actions it
+        never ran ("¡Anotado!", "Reproduciendo...", "Voy a apagar..."), and the regex patches meant to catch that
+        ended up calling a true "lo apunté" a lie (log, 24-oct). If it still claims an action without a tool call,
+        it gets one nudge.
+        """
+        contents = list(contents)
+        last_results: List[Dict[str, Any]] = []
+        nudged = False
+        follow_ups_left = MAX_TOOL_ROUNDS
+        while True:
+            content = response.candidates[0].content if response.candidates else None
+            parts = (content.parts if content else None) or []
+            raw_answer = "".join(p.text for p in parts if p.text and not p.thought).strip()
+            calls = [p.function_call for p in parts if p.function_call]
+            if calls:
+                logger.info("Gemini asked for tools: %s", [f"{c.name}({dict(c.args or {})})" for c in calls])
+                last_results = await self._run_tool_calls(calls)
+                # The model's own content goes back as is: Gemini 3 needs its thought signatures with the results
+                follow_up = [content, types.Content(role="user", parts=[
+                    types.Part(function_response=types.FunctionResponse(id=c.id, name=c.name, response=r))
+                    for c, r in zip(calls, last_results)
+                ])]
+            # The claim only matters when nothing ran this turn: after tool results it describes what happened
+            elif (not nudged and not last_results and CLAIMED_ACTION_RE.search(raw_answer)
+                  and not (response.candidates and response.candidates[0].grounding_metadata)
+                  # "¿Estás segura que la guardaste?" right after saving it: "lo apunté" is the truth (log 06:16)
+                  and not (acted_before and _ASKS_ABOUT_IT.search(clean_input))):
+                logger.warning("Gemini claimed an action without calling a tool: '%s'. Nudging it once.", raw_answer)
+                nudged = True
+                follow_up = [content, types.Content(role="user", parts=[types.Part.from_text(text=NUDGE_TEXT)])]
             else:
-                # Tools block (sleeps, process scans): run them off the event loop (H-025)
-                res = await asyncio.to_thread(meta["function"], **dict(call.args or {}))
-            results.append(str(res.get("result", "")))
-            # The model never sees results: failures, confirmation questions and data must be read out as-is
-            if not res.get("ok") or call.name in SPEAK_RESULT_TOOLS:
-                must_say.append(str(res.get("result", "")))
-                failed = failed or (not res.get("ok") and not res.get("requires_confirmation"))
-        if must_say:
-            return ("sad" if failed else "neutral"), self._sanitize_for_speech(" ".join(must_say))
-        if not answer:
-            return "happy", self._sanitize_for_speech(" ".join(results)) or "¡Listo!"
-        return None, None
+                if not raw_answer and not calls:
+                    logger.warning("Gemini returned an empty answer (finish_reason=%s).",
+                                   response.candidates[0].finish_reason if response.candidates else None)
+                return self._parse_emotion(raw_answer)
+            if follow_ups_left == 0:
+                break
+            follow_ups_left -= 1
+            contents += follow_up
+            try:
+                self.total_api_calls += 1
+                logger.info("--> [GEMINI REQ #%d] Model: %s | follow-up (tool results or nudge)", self.total_api_calls, model)
+                response = await self._generate(model, contents, config)
+            except Exception as e:
+                # Quota or overload on the follow-up: the actions are done, so read their results out as they are
+                logger.warning("Follow-up request failed (%s). Reading the tool results instead.", e)
+                break
+        said = " ".join(str(r.get("result", "")) for r in last_results)
+        failed = any(not r.get("ok") and not r.get("requires_confirmation") for r in last_results)
+        return ("sad" if failed else "happy"), self._sanitize_for_speech(said)
 
     @staticmethod
     def _sanitize_for_speech(text: str) -> str:
@@ -769,7 +815,8 @@ class MikuBrain:
                     clean_input,
                     " (+audio)" if audio is not None else "",
                 )
-                response = await self._generate(model, *self._for_model(model, contents, config, clean_input))
+                contents, config = self._for_model(model, contents, config, clean_input)
+                response = await self._generate(model, contents, config)
                 # Clear any previous cooldown for this healthy model
                 self._model_cooldown.pop(model, None)
                 break
@@ -801,48 +848,10 @@ class MikuBrain:
             fallback_emotion, fallback_text = random.choice(OUT_OF_ENERGY_RESPONSES)
             return fallback_emotion, fallback_text, False
 
-        content = response.candidates[0].content if response.candidates else None
-        parts = (content.parts if content else None) or []
-        raw_answer = "".join(p.text for p in parts if p.text and not p.thought).strip()
-        calls = [p.function_call for p in parts if p.function_call]
-
-        if not raw_answer and not calls:
-            logger.warning(
-                "Gemini returned an empty answer (finish_reason=%s).",
-                response.candidates[0].finish_reason if response.candidates else None,
-            )
-        emotion, clean_text = self._parse_emotion(raw_answer)
-
-        if calls:
-            logger.info("Gemini asked for tools: %s", [f"{c.name}({dict(c.args or {})})" for c in calls])
-            tool_emotion, tool_text = await self._run_tool_calls(calls, clean_text)
-            if tool_text:
-                emotion, clean_text = tool_emotion, tool_text
-        elif (CLAIMED_ACTION_RE.search(clean_text) and not (response.candidates and response.candidates[0].grounding_metadata)
-              # "¿Estás segura que la guardaste?" after a turn that DID save it: "lo apunté" is the truth, and
-              # calling it a lie made the user ask again and the note got saved twice (log 06:16)
-              and not (acted_before and _ASKS_ABOUT_IT.search(clean_input))):
-            # Retrying would be a second request: say so honestly instead of claiming it was done.
-            # A grounded answer ("busqué y...") really did search, server side.
-            logger.warning("Gemini claimed an action without calling a tool: '%s'", clean_text)
-            # It heard the audio, Whisper often did not ("¡Suscríbete!" -> "¡Listo, volumen al máximo!"): if the
-            # fast path recognizes what it claimed, do that (the fast path has no destructive actions)
-            repaired = await asyncio.to_thread(self._try_fast_path_tool, clean_text)
-            yt = _CLAIMED_YT_RE.search(clean_text)
-            if repaired is None and yt:
-                from core.tools.web import youtube_play
-                res = await asyncio.to_thread(youtube_play, yt.group(1).strip())
-                repaired = ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
-            if repaired is not None:
-                logger.info("Did locally what Gemini only claimed: %s", repaired[1])
-                self._acted_last_turn = True
-                emotion, clean_text = repaired[0], repaired[1]
-            else:
-                emotion, clean_text = "sad", "Uy, me distraje y no llegué a hacerlo. ¿Me lo pides otra vez?"
+        emotion, clean_text = await self._agent_loop(model, contents, config, response, clean_input, acted_before)
         if not clean_text:
             emotion, clean_text = "thinking", "Perdona, no te entendí bien. ¿Me lo repites?"
 
-        self._acted_last_turn = self._acted_last_turn or bool(calls)  # (a repaired claim also set it)
         self._remember(clean_input, f"[{emotion}] {clean_text}")
         result = (emotion, clean_text, self.is_farewell(clean_input))
         self._last_query_text = clean_input

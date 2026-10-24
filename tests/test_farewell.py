@@ -29,12 +29,12 @@ def test_done_phrases_are_goodbyes_only_when_alone():
 
 def test_goodbye_is_local_unless_it_carries_an_order():
     import asyncio
-    from tests.test_one_request import brain, reply
-    b, models = brain(reply("[happy] Listo, cerré Spotify. ¡Adiós!", ("close_app", {"name": "spotify"})))
+    from tests.test_agent import brain, reply
+    b, models = brain(reply("", ("close_app", {"name": "spotify"})), reply("[happy] Listo, cerré Spotify. ¡Adiós!"))
     _, text, farewell = asyncio.run(b.chat("ya está, gracias"))
     assert farewell and not models.requests and text, "a plain goodbye costs no request"
     _, _, farewell = asyncio.run(b.chat("adiós, cierra spotify"))
-    assert farewell and len(models.requests) == 1, "the order still goes to Gemini, then she hides"
+    assert farewell and len(models.requests) == 2, "the order still goes to Gemini, then she hides"
 
 
 if __name__ == "__main__":
