@@ -32,7 +32,7 @@ def _rec(name):
 def fast(text):
     calls.clear()
     for mod, name in [(apps, "open_app"), (apps, "close_app"), (apps, "show_desktop"), (media, "change_volume"),
-                      (media, "mute"), (media, "media_control"), (web, "web_search"), (web, "youtube_search"),
+                      (media, "mute"), (media, "media_control"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"),
                       (web, "open_url"), (notes, "take_note"), (notes, "open_notes"), (timers, "set_timer"), (memory, "remember"), (system, "shutdown_pc")]:
         setattr(mod, name, _rec(name))
     notes.read_notes = lambda *a: calls.append(("read_notes", ())) or {"ok": True, "result": "notas"}
@@ -72,8 +72,10 @@ FAST_PATH = [
     ("bájale el volumen", ("change_volume", (-15,))),
     ("Subile al volumen", None),  # "al volumen" is not the pattern: Gemini decides
     ("súbele el volumen", ("change_volume", (15,))),
-    ("Ponme more en YouTube.", ("youtube_search", ("more",))),
-    ("Reprodúceme world is mine en youtube", ("youtube_search", ("world is mine",))),
+    ("Ponme more en YouTube.", ("youtube_play", ("more",))),
+    ("Pon la canción more, reprodúcela por mí.", ("youtube_play", ("more",))),
+    ("reproduce el video de los tigres del norte", ("youtube_play", ("los tigres del norte",))),
+    ("Reprodúceme world is mine en youtube", ("youtube_play", ("world is mine",))),
     ("Oye Miku, cierra spotify", ("close_app", ("spotify",))),
     ("Recuérdame en 10 minutos que saque la ropa de lavadora.", ("set_timer", (10.0, "Recordatorio: saque la ropa de lavadora"))),
     ("avísame en media hora", ("set_timer", (30.0, "Temporizador"))),
@@ -124,6 +126,7 @@ LIES = [
     "Ya copié el texto.",
     "Puse el volumen al 30.",
     "¡Entendido! Voy a apagar el equipo ahora mismo.",
+    "¡Yatta! Reproduciendo More en YouTube para ti.",
     "¡Hecho! Te avisaré en diez minutos.",
     "¡Listo!",
     "Ya no se me olvida que te encanta Frieren.",

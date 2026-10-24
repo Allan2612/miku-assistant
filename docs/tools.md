@@ -1,6 +1,6 @@
 # Herramientas de control del PC
 
-Lista **cerrada** (35). Gemini solo puede invocar estas funciones, mediante function calling. Cada una devuelve un dict `{ "ok": bool, "result": str }` corto.
+Lista **cerrada** (36). Gemini solo puede invocar estas funciones, mediante function calling. Cada una devuelve un dict `{ "ok": bool, "result": str }` corto.
 
 **Una petición por turno.** Gemini pide las herramientas y escribe la frase de Miku en la **misma** respuesta. Las herramientas se ejecutan en local y su resultado **no** vuelve a Gemini (AFC desactivado). Por eso Miku lee el `result` tal cual, en lugar de su frase, en tres casos:
 - cuando la herramienta falla;
@@ -34,7 +34,8 @@ Leyenda: 🔒 = requiere confirmación del usuario antes de ejecutarse.
 |---|---|---|
 | `open_url` | `url: str` | Opera GX si está instalado; si no, el navegador predeterminado. Solo `http`/`https` |
 | `web_search` | `query: str` | Abre Google con la búsqueda. La descripción le dice al modelo que solo la use si le piden buscar: antes abría Google para "¿cuánto mide la torre Eiffel?" |
-| `youtube_search` | `query: str` | Abre la búsqueda en YouTube |
+| `youtube_search` | `query: str` | Abre la página de resultados en YouTube (no reproduce) |
+| `youtube_play` | `query: str` | **Reproduce** el primer resultado: lee el `videoId` de la página de resultados (sin API key, ~1 s) y abre `watch?v=`. Sin internet o sin resultado, abre la búsqueda. Dice el título corto (o lo pedido, si el título no es legible en español). "Ponme X en YouTube" y "pon la canción X" van por el atajo local |
 
 **Leer y buscar (no son herramientas propias):** en turnos de **texto**, la petición lleva también la herramienta integrada `url_context`: Google lee la página que le pases dentro de la misma petición (probado: resume python.org). Con `llm.web_search: true` va además `google_search`, pero **el plan gratuito responde 429 a toda petición que la lleve** (probado el 23-oct), así que viene apagada. No van en turnos de voz o con imagen: Gemini respondía 400. Si Google rechaza las integradas (400 o 429), se reintenta sin ellas y solo se apagan para la sesión si el reintento funciona; si también falla, era la cuota del modelo.
 

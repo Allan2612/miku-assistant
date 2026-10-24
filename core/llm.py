@@ -87,7 +87,9 @@ CLAIMED_ACTION_RE = re.compile(
     # Promises that need a tool too (live test: "¡Hecho! Te avisaré en diez minutos" and no set_timer)
     r"|hecho|listo(?!\s+para)|te avisaré|te aviso|te recordaré|lo recordaré|no se me olvida"
     # "¡Entendido! Voy a apagar el equipo ahora mismo" with no shutdown_pc call (live test)
-    r"|voy a (?:apagar|reiniciar|suspender|abrir|cerrar|poner|subir|bajar|guardar|anotar|crear|copiar|minimizar))\b",
+    r"|voy a (?:apagar|reiniciar|suspender|abrir|cerrar|poner|subir|bajar|guardar|anotar|crear|copiar|minimizar)"
+    # "¡Yatta! Reproduciendo More en YouTube" with no tool call (live, 24-oct)
+    r"|reproduciendo|poniendo|abriendo|buscando|te pongo)\b",
     re.IGNORECASE,
 )
 
@@ -115,10 +117,23 @@ def _to_wav(audio: np.ndarray, sample_rate: int = 16000) -> bytes:
     return buf.getvalue()
 
 FAREWELL_KEYWORDS = [
-    "adios", "adiós", "chao", "hasta luego", "nos vemos",
-    "gracias, eso es todo", "eso es todo", "vete", "duérmete", "duermete",
-    "ocúltate", "ocultate", "desaparece", "bye", "goodbye"
+    "adios", "adiós", "chao", "chau", "hasta luego", "nos vemos",
+    "gracias, eso es todo", "eso es todo", "eso sería todo", "nada más", "vete", "duérmete", "duermete",
+    "ocúltate", "ocultate", "desaparece", "bye", "goodbye",
+    "no te necesito", "ya no te necesito", "ya terminé", "ya termine", "puedes irte", "te puedes ir",
 ]
+# Goodbyes only when they are the WHOLE phrase: "¿ya está abierto Spotify?" or "gracias por abrirlo, ahora..."
+# are not (punctuation and "Miku" are ignored)
+FAREWELL_EXACT = {
+    "ya está", "ya esta", "listo", "ya", "nada", "no nada", "gracias", "muchas gracias", "gracias miku",
+    "listo gracias", "ok gracias", "vale gracias", "no gracias", "nada gracias", "ya está gracias", "ya esta gracias",
+    "así está bien", "asi esta bien", "está bien gracias", "esta bien gracias",
+}
+_ORDER_HINT = re.compile(
+    r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
+)
+GOODBYE_ANSWERS = ("¡Vale! Aquí estaré si me necesitas.", "¡Hasta luego!", "¡Nos vemos!", "¡Chao, chao!",
+                   "¡De nada! Llámame cuando quieras.")
 
 OUT_OF_ENERGY_RESPONSES: List[Tuple[str, str]] = [
     ("sad", "¡Ehh~ me quedé sin batería digital! Dame unos minutitos para recargar energía y vuelvo contigo, ¿sí?"),
@@ -182,6 +197,9 @@ class MikuBrain:
         norm = user_text.lower().strip()
         if len(norm.split()) > 6:
             return False
+        bare = " ".join(w for w in re.findall(r"[\wáéíóúñü]+", norm) if w != "miku")
+        if bare in FAREWELL_EXACT:
+            return True
         return any(re.search(r"\b" + re.escape(kw) + r"\b", norm) for kw in FAREWELL_KEYWORDS)
 
     def _build_system_instruction(self) -> str:
@@ -396,13 +414,20 @@ class MikuBrain:
             return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
 
         # "Ponme More en YouTube", "abre world is mine en youtube": search it there
-        m_yt_play = re.match(rf"{_WAKE}(?:pon|ponme|reproduce|reprod[uú]ceme|abre|[aá]breme)\s+(.+?)\s+en\s+youtube$", low)
+        # "Pon la canción More, reprodúcela por mí": the model once said "Reproduciendo More" with no tool call.
+        # Only what is before a comma is the song ("pon" alone stays out: "pon la música" is play, H-024)
+        m_yt_play = (
+            re.match(rf"{_WAKE}(?:pon|ponme|reproduce|reprod[uú]ceme|abre|[aá]breme)\s+(.+?)\s+en\s+youtube$", low)
+            or re.match(rf"{_WAKE}(?:pon|ponme|reproduce|reprod[uú]ceme)\s+(?:la\s+canci[oó]n|el\s+v[ií]deo)\s+(?:de\s+)?([^,]+?)"
+                        r"(?:\s+en\s+youtube)?(?:,.*)?$", low)
+        )
         # Vague ("una canción", "algo") is for Gemini, which can pick something
-        if m_yt_play and m_yt_play.group(1) not in ("el", "la", "algo", "música", "una canción", "un video", "un vídeo"):
-            q = m_yt_play.group(1).strip()
-            from core.tools.web import youtube_search
-            youtube_search(q)
-            return ("happy", f"¡Buscando '{q}' en YouTube!", False)
+        # ...and so is "la canción que estoy escuchando" (a description, not a title)
+        if (m_yt_play and m_yt_play.group(1) not in ("el", "la", "algo", "música", "una canción", "un video", "un vídeo")
+                and not m_yt_play.group(1).startswith(("que ", "qué "))):
+            from core.tools.web import youtube_play
+            res = youtube_play(m_yt_play.group(1).strip())
+            return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
 
         # 2. Open app / website / notes with verbs ("pon" is left out: "pon la música" means play, H-024).
         # Short targets only: "abre los tigres del norte en el ..." once opened the notes because it said "notas"
@@ -578,6 +603,13 @@ class MikuBrain:
         if clean_input == self._last_query_text and (now - self._last_query_time) < 2.0 and self._last_result:
             logger.warning("Duplicate Gemini request within 2.0s: '%s'. Reusing cached result (0 API calls).", clean_input)
             return self._last_result
+
+        # A plain goodbye ("ya está", "eso es todo", "gracias") hides her at once and costs no request; with an order
+        # in it ("adiós, cierra Spotify") Gemini still handles the order and the farewell flag hides her after
+        if self.is_farewell(clean_input) and not _ORDER_HINT.search(clean_input.lower()):
+            answer = random.choice(GOODBYE_ANSWERS)
+            self._remember(clean_input, f"[happy] {answer}")
+            return "happy", answer, True
 
         # Instant local fast-path for direct PC commands (0ms cloud latency, 100% immune to 429)
         # Tools block (sleeps, process scans): run them off the event loop (H-025)

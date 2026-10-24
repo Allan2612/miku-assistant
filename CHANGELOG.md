@@ -14,6 +14,8 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 
 ### Añadido
+- `youtube_play`: pone y reproduce en YouTube lo que pidas ("ponme More en YouTube", "pon la canción..."); antes solo abría la búsqueda.
+- Despedidas sin petición e instantáneas, con más frases: "ya está", "no te necesito", "eso es todo", "gracias", "nada" (las ambiguas solo si son toda la frase).
 - **Modo conversación**: tras cada respuesta el micrófono sigue abierto 6 s (`behavior.follow_up_seconds`) para seguir hablando sin "Hey Miku". Si capta el final de la propia voz de Miku, lo descarta.
 - Tonos de estado: uno ascendente al abrir el micrófono y uno descendente al cerrarlo sin haber oído nada (además de la burbuja "Escuchando...").
 - Memoria a largo plazo (`remember` / `forget`), rutinas ("modo trabajo"), ventanas (minimizar, maximizar, restaurar), portapapeles, crear y leer archivos de texto.
