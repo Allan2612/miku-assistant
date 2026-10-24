@@ -194,6 +194,14 @@ def test_screenshot_trigger():
         assert not SCREEN_RE.search(text), text
 
 
+def test_screen_references_take_a_screenshot():
+    # Log 06:13: "ármeme la segunda opción" repeated the search: she could not see the results
+    for text in ("Muy bien, ábreme la segunda opción.", "abre el primer resultado", "dale a ese enlace", "la tercera opción"):
+        assert SCREEN_RE.search(text), text
+    for text in ("primero abre spotify", "esta es mi opinión", "segundo plano"):
+        assert not SCREEN_RE.search(text), text
+
+
 def test_answer_parsing():
     b = MikuBrain.__new__(MikuBrain)
     cases = [
@@ -219,6 +227,7 @@ if __name__ == "__main__":
     test_greeting_answers_locally()
     test_claimed_action_detector()
     test_screenshot_trigger()
+    test_screen_references_take_a_screenshot()
     test_answer_parsing()
     test_spoken_app_list()
     print("ok")

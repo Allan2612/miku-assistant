@@ -6,13 +6,25 @@ import datetime
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, Optional, Tuple
 
 from core.tools import tool
 
 logger = logging.getLogger("miku.tools.notes")
 
 NOTES_FILE = Path.home() / "Documents" / "notes.md"
+
+
+DUPLICATE_WINDOW = datetime.timedelta(minutes=30)
+
+
+def _last_note() -> Optional[Tuple[datetime.datetime, str]]:
+    """(time, text) of the last note in the file, if it has the usual "- [YYYY-MM-DD HH:MM] text" shape."""
+    if not NOTES_FILE.exists():
+        return None
+    lines = [l.strip() for l in NOTES_FILE.read_text(encoding="utf-8").splitlines() if l.strip()]
+    m = re.match(r"^-\s*\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s*(.+)$", lines[-1]) if lines else None
+    return (datetime.datetime.strptime(m.group(1), "%Y-%m-%d %H:%M"), m.group(2).strip()) if m else None
 
 
 @tool(
@@ -26,10 +38,14 @@ def take_note(text: str = "", note: str = "", content: str = "") -> Dict[str, An
     if not clean_text:
         return {"ok": False, "result": "La nota no puede estar vacía."}
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    entry = f"- [{timestamp}] {clean_text}\n"
+    now = datetime.datetime.now()
+    entry = f"- [{now.strftime('%Y-%m-%d %H:%M')}] {clean_text}\n"
 
     try:
+        # Asked "¿la guardaste?", the model saved the same note again (log 06:16): one copy is enough
+        last = _last_note()
+        if last and last[1].lower() == clean_text.lower() and now - last[0] < DUPLICATE_WINDOW:
+            return {"ok": True, "result": f"Esa nota ya estaba guardada: '{clean_text}'."}
         NOTES_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(NOTES_FILE, "a", encoding="utf-8") as f:
             f.write(entry)

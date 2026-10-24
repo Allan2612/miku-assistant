@@ -224,6 +224,18 @@ def test_open_website_says_where_it_went():
     assert "búsqueda en Google" in web.open_website("algo raro", replace=True)["result"] and opened[-1][1] is True
 
 
+def test_tab_search_is_loose_but_not_blind():
+    # Log 06:15: "t-soluciones", "tytsoluciones" and "T y T" all missed the tab; a clear match only
+    from core.tools.web import _closeness, _norm_title, MIN_TAB_CLOSENESS
+    def best(q, titles):
+        return max((_closeness(_norm_title(q), _norm_title(t)), t) for t in titles)
+    titles = ["TyT Soluciones | Inicio - Opera", "T&T Tecnología - Buscar con Google - Opera", "Disney+ | Iniciar sesión - Opera"]
+    for q, expected in (("t-soluciones", 0), ("tytsoluciones", 0), ("T y T tecnología", 1), ("disney plus", 2)):
+        score, title = best(q, titles)
+        assert title == titles[expected] and score >= MIN_TAB_CLOSENESS, (q, title, score)
+    assert best("twitch", titles)[0] < MIN_TAB_CLOSENESS
+
+
 if __name__ == "__main__":
     test_web_tools_open_browser()
     test_youtube_play_reuses_her_tab_and_never_types_elsewhere()
@@ -233,4 +245,5 @@ if __name__ == "__main__":
     test_close_window_tab_by_tab_and_never_beyond_it()
     test_close_other_tabs_also_closes_other_windows()
     test_open_website_says_where_it_went()
+    test_tab_search_is_loose_but_not_blind()
     print("ok")

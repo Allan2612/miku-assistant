@@ -3,6 +3,7 @@ Miku Assistant - Web and Search Tools (tools/web.py)
 """
 
 import ctypes
+import difflib
 import json
 import logging
 import os
@@ -11,6 +12,7 @@ import socket
 import subprocess
 import threading
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -309,18 +311,51 @@ def _keys_to(hwnd: int, *vks: int) -> bool:
 
 
 def _go_to_tab(hwnd: int, name: str) -> bool:
-    """Ctrl+PgDn through the window's tabs until the active one's title (= window title) contains name."""
-    name = name.lower()
+    """Ctrl+PgDn through the window's tabs until the active one's title (= window title) matches name, loosely:
+    "T y T", "T&T", "TyT" and "t-soluciones" all failed against a "TyT Soluciones" tab (log 06:15)."""
+    want = _norm_title(name)
     first = _window_title(hwnd)
+    titles: List[str] = []
     for _ in range(MAX_TABS_TO_CYCLE):
-        if name in _window_title(hwnd).lower():
+        title = _window_title(hwnd)
+        if want and want in _norm_title(title):
             return True
+        titles.append(title)
         if not _keys_to(hwnd, VK_CONTROL, VK_NEXT):
             return False
         time.sleep(0.25)  # the window title follows the active tab with a small delay
         if _window_title(hwnd) == first:  # went all the way round
-            return name in first.lower()
+            break
+    # No tab contains it: the clearly closest title, if any (it may be closed around, so only a clear match)
+    scored = [(_closeness(want, _norm_title(t)), t) for t in titles]
+    score, best = max(scored, default=(0.0, ""))
+    if score < MIN_TAB_CLOSENESS:
+        return False
+    for _ in range(len(titles) + 1):
+        if _window_title(hwnd) == best:
+            return True
+        if not _keys_to(hwnd, VK_CONTROL, VK_NEXT):
+            return False
+        time.sleep(0.25)
     return False
+
+
+MIN_TAB_CLOSENESS = 0.75
+
+
+def _norm_title(text: str) -> str:
+    """'TyT Soluciones | Inicio - Opera' -> 'tytsolucionesinicio': no case, accents, spaces or symbols."""
+    t = unicodedata.normalize("NFKD", text.lower().replace("+", "plus")).encode("ascii", "ignore").decode()
+    t = re.sub(r"\s*-\s*opera$", "", t)  # Opera appends its name to the window title
+    return re.sub(r"[^a-z0-9]", "", t)
+
+
+def _closeness(want: str, title: str) -> float:
+    """Share of `want` found as one piece in `title` ("tsoluciones" in "tytsoluciones..." -> 11/11)."""
+    if not want or not title:
+        return 0.0
+    match = difflib.SequenceMatcher(None, want, title).find_longest_match(0, len(want), 0, len(title))
+    return match.size / len(want)
 
 
 def _close_window_tabs(hwnd: int) -> bool:

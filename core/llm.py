@@ -50,7 +50,7 @@ Confirmaciones de seguridad: para apagar, reiniciar o suspender el equipo llama 
 
 Actualidad: si te preguntan algo reciente o que no sabes con seguridad (noticias, resultados, precios, el clima), usa la búsqueda de Google si la tienes. Si te dan una dirección web, puedes leerla. Resume lo encontrado en 1 o 2 frases.
 
-Pantalla: si el mensaje trae una imagen, es una captura de la pantalla del usuario en este momento. Contesta a lo que pregunta sobre ella (qué ves, qué significa un error, qué hacer) en 1 o 2 frases.
+Pantalla: si el mensaje trae una imagen, es una captura de la pantalla del usuario en este momento. Contesta a lo que pregunta sobre ella (qué ves, qué significa un error, qué hacer) en 1 o 2 frases. Si te pide abrir algo que se ve en ella ("la segunda opción", "ese enlace"), lee en la captura la dirección de ese resultado (en Google aparece bajo el título, como "tytsoluciones.net › ...") y llama a open_url con ella; si no se ve la dirección, usa open_website con el título.
 
 Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si dice "acuérdate", "recuerda" o "no lo olvides", SIEMPRE llama a remember con el dato en tercera persona (ej: "Le encanta Frieren"): decir que lo recordarás sin llamarla no guarda nada. Si te pide que olvides algo, llama a forget.
 
@@ -101,7 +101,10 @@ CLAIMED_ACTION_RE = re.compile(
 
 # The user asks about the screen: a screenshot rides in the same single request (never taken otherwise)
 SCREEN_RE = re.compile(
-    r"\b(?:(?:mi |la |esta |en )?pantalla|qu[eé] ves|mira (?:esto|esta|este|aqu[ií])|este error|esta ventana)\b",
+    r"\b(?:(?:mi |la |esta |en )?pantalla|qu[eé] ves|mira (?:esto|esta|este|aqu[ií])|este error|esta ventana"
+    # Something on screen by position: "ábreme la segunda opción" (log 06:13: it searched again, blind)
+    r"|(?:primer|segund|tercer|cuart|quint|últim|ultim)[oa]?\s+(?:opci[oó]n|resultado|enlace|link|v[ií]deo)"
+    r"|(?:ese|esa|este|esta)\s+(?:enlace|link|resultado|opci[oó]n|bot[oó]n))\b",
     re.IGNORECASE,
 )
 
@@ -138,6 +141,8 @@ FAREWELL_EXACT = {
 _ORDER_HINT = re.compile(
     r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
 )
+# The user asks whether the last action happened: answering "sí, lo apunté" is then not a claim
+_ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
 _DOMAIN_RE = re.compile(r"^(?:https?://)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?$")
 # What Gemini says it is playing when it forgot to call youtube_play: "Reproduciendo 'Heart Steel' en YouTube"
 _CLAIMED_YT_RE = re.compile(r"(?:reproduciendo|poniendo|te pongo|pongo)\s+['\"«]?(.+?)['\"»]?\s+en\s+youtube", re.IGNORECASE)
@@ -146,8 +151,8 @@ _CHAINED_ORDER = re.compile(
     r"(?:abre|[aá]breme|cierra|pon|ponme|sube|s[uú]bele|baja|b[aá]jale|busca|reproduce|minimiza|anota|apunta"
     r"|recu[eé]rdame|copia|silencia|pausa|apaga|quita)\b"
 )
-GOODBYE_ANSWERS = ("¡Vale! Aquí estaré si me necesitas.", "¡Hasta luego!", "¡Nos vemos!", "¡Chao, chao!",
-                   "¡De nada! Llámame cuando quieras.")
+GOODBYE_ANSWERS = ("¡Vale! Aquí estaré si me necesitas.", "¡Hasta luego!", "¡Nos vemos!", "¡Chao, chao!")
+THANKS_ANSWERS = ("¡De nada! Llámame cuando quieras.", "¡Con gusto! Aquí estaré.")
 
 OUT_OF_ENERGY_RESPONSES: List[Tuple[str, str]] = [
     ("sad", "¡Ehh~ me quedé sin batería digital! Dame unos minutitos para recargar energía y vuelvo contigo, ¿sí?"),
@@ -198,6 +203,7 @@ class MikuBrain:
         self._model_cooldown: Dict[str, float] = {}
         # In-memory history turns for model transfer: [{"role": "user"|"model", "text": str}]
         self._history_turns: List[Dict[str, str]] = []
+        self._acted_last_turn = False  # the previous turn ran a tool (local or Gemini's)
 
         logger.info(
             "MikuBrain initialized with %d PC tools. Primary: %s | Fallbacks: %s",
@@ -674,6 +680,8 @@ class MikuBrain:
         clean_input = user_text.strip()
         if not clean_input:
             return "neutral", "¿Sí? Dime qué necesitas.", False
+        acted_before = self._acted_last_turn
+        self._acted_last_turn = False
 
         # Only the user's own reply can confirm a pending destructive tool (H-001); the approved action
         # runs here, locally, so confirming costs no request
@@ -682,6 +690,7 @@ class MikuBrain:
             res = await asyncio.to_thread(get_tool_metadata(confirmed["name"])["function"])
             answer = self._sanitize_for_speech(str(res.get("result", "")))
             self._remember(clean_input, answer)
+            self._acted_last_turn = True
             return ("happy" if res.get("ok") else "sad"), answer, False
 
         # In-memory deduplication: if exact same query arrives within 2.0s, reuse response with 0 extra API calls
@@ -693,7 +702,8 @@ class MikuBrain:
         # A plain goodbye ("ya está", "eso es todo", "gracias") hides her at once and costs no request; with an order
         # in it ("adiós, cierra Spotify") Gemini still handles the order and the farewell flag hides her after
         if self.is_farewell(clean_input) and not _ORDER_HINT.search(clean_input.lower()):
-            answer = random.choice(GOODBYE_ANSWERS)
+            # "¡De nada!" answers a thanks, not an "Adiós" (log 06:17)
+            answer = random.choice(THANKS_ANSWERS if "gracias" in clean_input.lower() else GOODBYE_ANSWERS)
             self._remember(clean_input, f"[happy] {answer}")
             return "happy", answer, True
 
@@ -705,6 +715,7 @@ class MikuBrain:
             # In the history too: "no, era tytsoluciones.net" after a local search got "¡Entendido! Dejo
             # constancia..." because Gemini never knew what had been done (log, 24-oct)
             self._remember(clean_input, f"[{fast_res[0]}] {fast_res[1]}")
+            self._acted_last_turn = True
             self._last_query_text = clean_input
             self._last_query_time = now
             self._last_result = fast_res
@@ -807,7 +818,10 @@ class MikuBrain:
             tool_emotion, tool_text = await self._run_tool_calls(calls, clean_text)
             if tool_text:
                 emotion, clean_text = tool_emotion, tool_text
-        elif CLAIMED_ACTION_RE.search(clean_text) and not (response.candidates and response.candidates[0].grounding_metadata):
+        elif (CLAIMED_ACTION_RE.search(clean_text) and not (response.candidates and response.candidates[0].grounding_metadata)
+              # "¿Estás segura que la guardaste?" after a turn that DID save it: "lo apunté" is the truth, and
+              # calling it a lie made the user ask again and the note got saved twice (log 06:16)
+              and not (acted_before and _ASKS_ABOUT_IT.search(clean_input))):
             # Retrying would be a second request: say so honestly instead of claiming it was done.
             # A grounded answer ("busqué y...") really did search, server side.
             logger.warning("Gemini claimed an action without calling a tool: '%s'", clean_text)
@@ -821,12 +835,14 @@ class MikuBrain:
                 repaired = ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
             if repaired is not None:
                 logger.info("Did locally what Gemini only claimed: %s", repaired[1])
+                self._acted_last_turn = True
                 emotion, clean_text = repaired[0], repaired[1]
             else:
                 emotion, clean_text = "sad", "Uy, me distraje y no llegué a hacerlo. ¿Me lo pides otra vez?"
         if not clean_text:
             emotion, clean_text = "thinking", "Perdona, no te entendí bien. ¿Me lo repites?"
 
+        self._acted_last_turn = self._acted_last_turn or bool(calls)  # (a repaired claim also set it)
         self._remember(clean_input, f"[{emotion}] {clean_text}")
         result = (emotion, clean_text, self.is_farewell(clean_input))
         self._last_query_text = clean_input

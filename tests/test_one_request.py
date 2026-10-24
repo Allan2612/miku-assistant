@@ -119,6 +119,33 @@ def test_claimed_youtube_play_is_done():
     assert played == ["Heart Steel"] and "HEARTSTEEL" in text, (played, text)
 
 
+def test_saying_the_last_action_happened_is_not_a_lie():
+    # Log 06:16: "¿Estás segura que la guardaste?" -> "Lo apunté" was TRUE (the turn before saved it), yet the
+    # detector made her say "no llegué a hacerlo", and the user's repeat saved the note twice
+    import core.tools.notes as notes
+    saved = []
+    notes.take_note = lambda *a, **kw: saved.append(a or kw) or {"ok": True, "result": "Nota guardada."}
+    tools._TOOL_METADATA["take_note"]["function"] = notes.take_note
+    b, _ = brain(reply("[happy] ¡Anotado!", ("take_note", {"content": "abrir un PR"})),
+                 reply("[happy] ¡Claro que sí! Lo apunté en tus notas."))
+    asyncio.run(b.chat("oye amiga guarda en mis notas lo del PR de mañana"))
+    _, text, _ = asyncio.run(b.chat("¿Estás segura que la guardaste?"))
+    assert text == "¡Claro que sí! Lo apunté en tus notas." and len(saved) == 1, (text, saved)
+    # Without an action in the turn before, the same claim is still caught
+    b, _ = brain(reply("[happy] ¡Claro! Lo apunté en tus notas."))
+    assert "no llegué" in asyncio.run(b.chat("cuéntame algo bonito"))[1]
+
+
+def test_goodbye_answer_fits_what_was_said():
+    from core.llm import GOODBYE_ANSWERS, THANKS_ANSWERS
+    b, _ = brain()
+    for _ in range(5):
+        assert asyncio.run(b.chat("Adiós."))[1] in GOODBYE_ANSWERS
+        b._last_query_text = ""
+        assert asyncio.run(b.chat("Gracias."))[1] in THANKS_ANSWERS
+        b._last_query_text = ""
+
+
 def test_jot_down_goes_through_fast_path():
     import core.tools.notes as notes
     saved = []
@@ -231,6 +258,8 @@ if __name__ == "__main__":
     test_claimed_action_without_tool_is_not_a_lie()
     test_claimed_action_is_done_locally_when_recognizable()
     test_claimed_youtube_play_is_done()
+    test_saying_the_last_action_happened_is_not_a_lie()
+    test_goodbye_answer_fits_what_was_said()
     test_jot_down_goes_through_fast_path()
     test_screenshot_only_when_asked_and_in_the_same_request()
     test_web_tools_rejected_are_dropped_and_retried_once()

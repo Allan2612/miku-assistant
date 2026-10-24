@@ -66,8 +66,20 @@ def test_read_notes_speaks_without_timestamps():
     assert notes.read_notes(1)["result"] == "Tu última nota: subir el PR."
 
 
+def test_same_note_is_not_saved_twice():
+    import core.tools.notes as notes
+    notes.NOTES_FILE = tmp / "dup_notes.md"
+    assert notes.take_note("Tengo que abrir un PR mañana")["ok"]
+    res = notes.take_note("tengo que abrir un PR mañana")
+    assert "ya estaba guardada" in res["result"]
+    assert notes.NOTES_FILE.read_text(encoding="utf-8").count("PR") == 1
+    notes.take_note("otra cosa")
+    assert len(notes.NOTES_FILE.read_text(encoding="utf-8").splitlines()) == 2
+
+
 if __name__ == "__main__":
     test_read_notes_speaks_without_timestamps()
+    test_same_note_is_not_saved_twice()
     test_memory_remember_forget_and_prompt()
     test_routine_runs_steps_locally_via_fast_path()
     test_text_files_stay_on_desktop_and_never_overwrite()

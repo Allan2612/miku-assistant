@@ -82,7 +82,8 @@ def media_control(action: str) -> Dict[str, Any]:
         return {"ok": True, "result": "Reproducción detenida."}
     elif any(k in act for k in ("play", "pause", "reproduc", "paus", "alternar", "continuar", "cancion", "canción", "musica", "música")):
         _press_key(VK_MEDIA_PLAY_PAUSE)
-        return {"ok": True, "result": "Reproducción alternada (play/pause)."}
+        # Read aloud when the model adds no text: "Reproducción alternada (play/pause)" sounded like a manual
+        return {"ok": True, "result": "¡Listo!"}
     return {"ok": False, "result": f"No reconozco la acción '{action}' (usa play_pause, next, previous o stop)."}
 
 

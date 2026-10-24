@@ -28,6 +28,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- "¿Estás segura que la guardaste?" hacía que Miku dijera "no llegué a hacerlo" aunque sí la había guardado (y la nota se duplicaba): hablar de la acción del turno anterior ya no cuenta como promesa falsa, y la misma nota no se guarda dos veces en 30 min.
+- "Ábreme la segunda opción" / "ese enlace": Miku mira la pantalla (captura en la misma petición) y abre ese resultado.
+- Buscar una pestaña por nombre tolera "T y T", "T&T", "TyT", "t-soluciones" o "Disney plus" (sin mayúsculas, tildes ni símbolos; o el título claramente más parecido).
+- "Adiós" ya no responde "¡De nada!"; pausar la música dice "¡Listo!" en vez de "Reproducción alternada (play/pause)".
 - "Cierra todas menos X" dejaba pestañas abiertas: al cerrar una pestaña Opera activa la siguiente y se la saltaba; también cuenta ahora las otras ventanas de Opera y salta las pestañas fijadas (la "GX Corner" de Opera GX contaba como 78 cierres).
 - Corregir una web abría otra pestaña: Opera no pasa al frente al abrir una web desde Miku, así que no se sabía en qué ventana estaba. Ahora Miku la trae al frente y la recuerda.
 - "Busca www.direccion-mal-transcrita.net" ya no la googlea tal cual: pasa a Gemini, que oye el audio. "Reproduciendo X en YouTube" sin herramienta se reproduce de verdad.
