@@ -98,6 +98,17 @@ def test_claimed_action_without_tool_is_not_a_lie():
     assert asyncio.run(b.chat("hola miku que tal"))[1] == "¡Hola! ¿Qué tal tu día?", "plain chat is untouched"
 
 
+def test_claimed_action_is_done_locally_when_recognizable():
+    # Live, log 05:13: Whisper heard "¡Suscríbete!", Gemini heard the audio and answered "¡Listo, volumen al
+    # máximo!" without calling set_volume. The fast path knows that phrase: do it instead of apologizing
+    import core.tools.media as media
+    levels = []
+    media.set_volume = lambda level: levels.append(level) or {"ok": True, "result": ""}
+    b, models = brain(reply("[happy] ¡Listo, volumen al máximo!"))
+    emotion, text, _ = asyncio.run(b.chat("¡Suscríbete!", audio=AUDIO))
+    assert levels == [100] and emotion == "happy" and "100" in text, (levels, text)
+
+
 def test_jot_down_goes_through_fast_path():
     import core.tools.notes as notes
     saved = []
@@ -208,6 +219,7 @@ if __name__ == "__main__":
     test_data_tool_result_is_read_out()
     test_shutdown_asks_then_yes_runs_locally()
     test_claimed_action_without_tool_is_not_a_lie()
+    test_claimed_action_is_done_locally_when_recognizable()
     test_jot_down_goes_through_fast_path()
     test_screenshot_only_when_asked_and_in_the_same_request()
     test_web_tools_rejected_are_dropped_and_retried_once()

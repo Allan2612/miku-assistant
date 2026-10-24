@@ -14,6 +14,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 
 ### Añadido
+- `browser_action`: controla Opera (pestañas nuevas con una web, cerrar, cambiar, ir a la pestaña de X, reabrir, ventanas, atrás, recargar).
 - `youtube_play`: pone y reproduce en YouTube lo que pidas ("ponme More en YouTube", "pon la canción..."); antes solo abría la búsqueda.
 - Despedidas sin petición e instantáneas, con más frases: "ya está", "no te necesito", "eso es todo", "gracias", "nada" (las ambiguas solo si son toda la frase).
 - **Modo conversación**: tras cada respuesta el micrófono sigue abierto 6 s (`behavior.follow_up_seconds`) para seguir hablando sin "Hey Miku". Si capta el final de la propia voz de Miku, lo descarta.
@@ -26,6 +27,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- "Súbele el volumen a 100%" solo subía 15: el atajo entiende niveles ("al 30", "al máximo", "a tope", "al mínimo"). Una frase con varias órdenes ("abre Spotify y sube el volumen") ya no la resuelve a medias el atajo: va a Gemini. Si Gemini dice que hizo algo sin hacerlo y el atajo lo reconoce ("¡volumen al máximo!"), se hace en local en vez de disculparse.
 - Pedir otra canción abría una pestaña más y la anterior seguía sonando: `youtube_play` reutiliza la pestaña de YouTube que abrió. "Abre Opera" con Opera ya abierto trae su ventana en lugar de abrir otra.
 - Si no hablabas en los primeros segundos, la burbuja seguía diciendo "Escuchando..." con el micrófono ya cerrado y lo que dijeras después se perdía: ahora desaparece al volver a reposo, y la espera inicial pasa de 5,5 a 8 s.
 - Whisper ya no se descarga tras 10 min sin uso (solo ocupa RAM): recargarlo retrasaba ~1,5-2 s la primera frase después de una pausa. RVC sí se descarga (VRAM).

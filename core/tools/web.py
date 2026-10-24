@@ -168,3 +168,118 @@ def youtube_play(query: str = "", search_query: str = "") -> Dict[str, Any]:
     if any(ord(c) > 0x24F for c in short):  # Japanese etc.: the Spanish voice cannot read it, say the request
         short = target_q
     return {"ok": True, "result": f"¡Poniendo {short} en YouTube!"}
+
+
+VK_SHIFT, VK_MENU, VK_TAB, VK_LEFT, VK_RIGHT, VK_F5 = 0x10, 0x12, 0x09, 0x25, 0x27, 0x74
+# Opera's own shortcuts (same as Chrome's)
+_BROWSER_KEYS = {
+    "new_tab": (VK_CONTROL, ord("T")), "close_tab": (VK_CONTROL, ord("W")),
+    "next_tab": (VK_CONTROL, VK_TAB), "previous_tab": (VK_CONTROL, VK_SHIFT, VK_TAB),
+    "reopen_tab": (VK_CONTROL, VK_SHIFT, ord("T")), "new_window": (VK_CONTROL, ord("N")),
+    "close_window": (VK_CONTROL, VK_SHIFT, ord("W")), "back": (VK_MENU, VK_LEFT),
+    "forward": (VK_MENU, VK_RIGHT), "reload": (VK_F5,),
+}
+_BROWSER_DONE = {
+    "new_tab": "Abrí una pestaña nueva", "close_tab": "Cerré la pestaña", "next_tab": "Pasé a la siguiente pestaña",
+    "previous_tab": "Volví a la pestaña anterior", "reopen_tab": "Reabrí la última pestaña cerrada",
+    "new_window": "Abrí una ventana nueva", "close_window": "Cerré la ventana", "back": "Volví atrás",
+    "forward": "Fui hacia adelante", "reload": "Recargué la página", "go_to_tab": "Ya estás en la pestaña",
+}
+MAX_TABS_TO_CYCLE = 40
+
+
+def _window_title(hwnd: int) -> str:
+    user32 = ctypes.windll.user32
+    buf = ctypes.create_unicode_buffer(512)
+    user32.GetWindowTextW(hwnd, buf, 512)
+    return buf.value
+
+
+def _is_opera(hwnd: int) -> bool:
+    import psutil
+    pid = ctypes.c_ulong(0)
+    ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    try:
+        return psutil.Process(pid.value).name().lower().startswith("opera")
+    except (psutil.Error, OSError):
+        return False
+
+
+def _keys_to(hwnd: int, *vks: int) -> bool:
+    """Presses a chord only if hwnd still has the focus: keys must never land in another app."""
+    from core.tools.apps import _press
+    if ctypes.windll.user32.GetForegroundWindow() != hwnd:
+        return False
+    _press(*vks)
+    time.sleep(0.12)
+    return True
+
+
+def _go_to_tab(hwnd: int, name: str) -> bool:
+    """Ctrl+Tab through the window's tabs until the active one's title (= window title) contains name."""
+    name = name.lower()
+    first = _window_title(hwnd)
+    for _ in range(MAX_TABS_TO_CYCLE):
+        if name in _window_title(hwnd).lower():
+            return True
+        if not _keys_to(hwnd, VK_CONTROL, VK_TAB):
+            return False
+        time.sleep(0.25)  # the window title follows the active tab with a small delay
+        if _window_title(hwnd) == first:  # went all the way round
+            return name in first.lower()
+    return False
+
+
+@tool(
+    name="browser_action",
+    description=(
+        "Controla Opera con sus atajos: action = new_tab | close_tab | next_tab | previous_tab | reopen_tab | "
+        "go_to_tab | new_window | close_window | back | forward | reload. target: para new_tab, una web o lo que "
+        "buscar; para go_to_tab y close_tab, parte del título de la pestaña (ej: 'youtube'); vacío = la actual."
+    ),
+)
+def browser_action(action: str, target: str = "") -> Dict[str, Any]:
+    """Acciones de pestañas y ventanas en Opera, solo si su ventana queda al frente."""
+    from core.tools.apps import _bring_to_front, _find_window, _type_into_foreground
+    act = action.strip().lower().replace(" ", "_")
+    target = target.strip()
+    if act not in _BROWSER_KEYS and act != "go_to_tab":
+        return {"ok": False, "result": f"No sé hacer '{action}' en el navegador."}
+
+    user32 = ctypes.windll.user32
+    # The Opera window to act on: one whose active tab matches the target, else the one in front, else any
+    hwnd = (_find_window(target, exe="opera") if target and act in ("go_to_tab", "close_tab") else None)
+    fg = user32.GetForegroundWindow()
+    if not hwnd:
+        hwnd = fg if fg and _is_opera(fg) else _find_window("", exe="opera")
+    if not hwnd:
+        if act in ("new_tab", "new_window"):
+            _open_in_browser(_as_url(target) if target else "about:blank")
+            return {"ok": True, "result": "Abrí Opera."}
+        return {"ok": False, "result": "Opera no está abierto."}
+    if not _bring_to_front(hwnd):
+        return {"ok": False, "result": "No pude traer Opera al frente, así que no toqué nada."}
+
+    if act in ("go_to_tab", "close_tab") and target and not _go_to_tab(hwnd, target):
+        return {"ok": False, "result": f"No encontré ninguna pestaña con '{target}'."}
+    if act != "go_to_tab" and not _keys_to(hwnd, *_BROWSER_KEYS[act]):
+        return {"ok": False, "result": "Opera perdió el foco, así que me detuve."}
+    if act == "new_tab" and target:
+        # Opera GX animates the new tab and the address bar gets the focus late: typed letters were lost
+        # (live test). Wait, then put the focus there ourselves
+        time.sleep(0.5)
+        if not _keys_to(hwnd, VK_CONTROL, ord("L")):
+            return {"ok": False, "result": "Opera perdió el foco, así que no escribí nada."}
+        _type_into_foreground(_as_url(target))
+        if not (_keys_to(hwnd, VK_DELETE) and _keys_to(hwnd, VK_RETURN)):
+            return {"ok": False, "result": "Opera perdió el foco, así que me detuve."}
+    done = _BROWSER_DONE[act]
+    return {"ok": True, "result": f"{done}{' con ' + target if act == 'new_tab' and target else ''}."}
+
+
+def _as_url(target: str) -> str:
+    """A web address as is (https added), anything else as a Google search."""
+    t = target.strip()
+    if re.match(r"^(https?://)?[\w-]+(\.[\w-]+)+(/\S*)?$", t):
+        return t if t.startswith("http") else f"https://{t}"
+    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(t)

@@ -132,6 +132,11 @@ FAREWELL_EXACT = {
 _ORDER_HINT = re.compile(
     r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
 )
+_CHAINED_ORDER = re.compile(
+    r"(?:\by\b|,|\bluego\b|\bdespu[eé]s\b|\btambi[eé]n\b)\s*(?:me\s+)?"
+    r"(?:abre|[aá]breme|cierra|pon|ponme|sube|s[uú]bele|baja|b[aá]jale|busca|reproduce|minimiza|anota|apunta"
+    r"|recu[eé]rdame|copia|silencia|pausa|apaga|quita)\b"
+)
 GOODBYE_ANSWERS = ("¡Vale! Aquí estaré si me necesitas.", "¡Hasta luego!", "¡Nos vemos!", "¡Chao, chao!",
                    "¡De nada! Llámame cuando quieras.")
 
@@ -375,6 +380,12 @@ class MikuBrain:
         # Whisper wraps phrases in "¡...!" / "¿...?" and ends them with ".": every "^verb" rule missed them
         low = text.lower().strip().strip("¡!¿?.,;: ")
 
+        # Several orders in one phrase ("abre Spotify y pon el volumen al 30"): the unanchored rules (volume,
+        # music) would do only one of them. Gemini does all of them in its single request
+        # (minus the wake phrase: the comma in "Hey Miku, abre..." is not a second order)
+        if _CHAINED_ORDER.search(re.sub(_WAKE, "", low)):
+            return None
+
         # 0. Greetings with time-of-day awareness (0ms cloud latency, 0 API quota used)
         if low in (
             "hola", "hola miku", "hey miku", "buenos dias", "buenos días",
@@ -414,6 +425,26 @@ class MikuBrain:
             return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
 
         # "Ponme More en YouTube", "abre world is mine en youtube": search it there
+        # Opera tabs and windows (browser_action presses Opera's shortcuts, only while Opera has the focus)
+        browser = None
+        if m := re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:la|esta|esa)\s+pesta[ñn]a(?:\s+de\s+(.+))?$", low):
+            browser = ("close_tab", m.group(1) or "")
+        elif m := re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|pon)\s+(?:una\s+)?(?:nueva\s+pesta[ñn]a|pesta[ñn]a\s+nueva)"
+                           r"(?:\s+(?:con|de|en)\s+(.+))?$", low):
+            browser = ("new_tab", m.group(1) or "")
+        elif m := re.match(rf"{_WAKE}(?:ve|ir|vete|cambia|pasa|cámbiate|cambiate)\s+a\s+la\s+pesta[ñn]a\s+(?:de\s+)?(.+)$", low):
+            browser = ("go_to_tab", m.group(1))
+        elif re.match(rf"{_WAKE}(?:recarga|actualiza|refresca)\s+(?:la\s+)?p[aá]gina$", low):
+            browser = ("reload", "")
+        elif re.match(rf"{_WAKE}(?:vuelve|regresa|ve)\s+(?:atr[aá]s|a\s+la\s+p[aá]gina\s+anterior)$", low):
+            browser = ("back", "")
+        elif re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:la|esta|esa)\s+ventana\s+de(?:l)?\s+(?:opera|navegador)$", low):
+            browser = ("close_window", "")
+        if browser:
+            from core.tools.web import browser_action
+            res = browser_action(*browser)
+            return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
+
         # "Pon la canción More, reprodúcela por mí": the model once said "Reproduciendo More" with no tool call.
         # Only what is before a comma is the song ("pon" alone stays out: "pon la música" is play, H-024)
         m_yt_play = (
@@ -491,6 +522,19 @@ class MikuBrain:
             if res.get("ok"):
                 return ("happy", ok_text, False)
             return ("sad", res.get("result", "No pude hacerlo."), False)
+
+        # An exact level first: "súbele el volumen a 100%" used to just add 15 (log 05:13). Also "al máximo",
+        # "súbelo a tope", "volumen al mínimo"
+        m_level = re.search(
+            r"\b(?:volumen|sonido|s[uú]belo|s[uú]bele|b[aá]jalo|b[aá]jale)\b.*?\b(?:a|al|en)\s+"
+            r"(\d{1,3})\s*(?:%|por\s*ciento)?(?!\w)|\b(?:volumen|sonido|s[uú]belo|s[uú]bele)\b.*?\b(al\s+m[aá]ximo|a\s+tope|a\s+full)\b"
+            r"|\b(?:volumen|sonido|b[aá]jalo|b[aá]jale)\b.*?\b(al\s+m[ií]nimo)\b",
+            low,
+        )
+        if m_level:
+            from core.tools.media import set_volume
+            level = int(m_level.group(1)) if m_level.group(1) else 100 if m_level.group(2) else 0
+            return confirm(set_volume(level), f"¡Listo, volumen al {min(level, 100)}%!")
 
         # Also voseo and enclitics, common in Costa Rica: "bajá el volumen", "subile", "bájale el volumen"
         if re.search(r"\b(?:s[uú]b[eií](?:le|me)?|subir|aumenta(?:le)?|m[aá]s)\s+(?:el\s+)?volumen\b", low):
@@ -722,7 +766,14 @@ class MikuBrain:
             # Retrying would be a second request: say so honestly instead of claiming it was done.
             # A grounded answer ("busqué y...") really did search, server side.
             logger.warning("Gemini claimed an action without calling a tool: '%s'", clean_text)
-            emotion, clean_text = "sad", "Uy, me distraje y no llegué a hacerlo. ¿Me lo pides otra vez?"
+            # It heard the audio, Whisper often did not ("¡Suscríbete!" -> "¡Listo, volumen al máximo!"): if the
+            # fast path recognizes what it claimed, do that (the fast path has no destructive actions)
+            repaired = await asyncio.to_thread(self._try_fast_path_tool, clean_text)
+            if repaired is not None:
+                logger.info("Did locally what Gemini only claimed: %s", repaired[1])
+                emotion, clean_text = repaired[0], repaired[1]
+            else:
+                emotion, clean_text = "sad", "Uy, me distraje y no llegué a hacerlo. ¿Me lo pides otra vez?"
         if not clean_text:
             emotion, clean_text = "thinking", "Perdona, no te entendí bien. ¿Me lo repites?"
 

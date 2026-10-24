@@ -32,7 +32,7 @@ def _rec(name):
 def fast(text):
     calls.clear()
     for mod, name in [(apps, "open_app"), (apps, "close_app"), (apps, "show_desktop"), (media, "change_volume"),
-                      (media, "mute"), (media, "media_control"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"),
+                      (media, "mute"), (media, "media_control"), (media, "set_volume"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"), (web, "browser_action"),
                       (web, "open_url"), (notes, "take_note"), (notes, "open_notes"), (timers, "set_timer"), (memory, "remember"), (system, "shutdown_pc")]:
         setattr(mod, name, _rec(name))
     notes.read_notes = lambda *a: calls.append(("read_notes", ())) or {"ok": True, "result": "notas"}
@@ -69,6 +69,13 @@ FAST_PATH = [
     ("Ábreme Opera.", ("open_app", ("opera gx",))),
     ("¡Abreme el blog de notas!", ("open_notes", ())),
     ("¡Bajá el volumen!", ("change_volume", (-15,))),
+    ("Subele el volumen a 100%.", ("set_volume", (100,))),  # log 05:13: used to add 15
+    ("pon el volumen al 30", ("set_volume", (30,))),
+    ("volumen al 50 por ciento", ("set_volume", (50,))),
+    ("súbelo al máximo", ("set_volume", (100,))),
+    ("sube el volumen a tope", ("set_volume", (100,))),
+    ("baja el volumen al mínimo", ("set_volume", (0,))),
+    ("¡Listo, volumen al máximo!", ("set_volume", (100,))),  # what Gemini claimed: repaired locally
     ("bájale el volumen", ("change_volume", (-15,))),
     ("Subile al volumen", None),  # "al volumen" is not the pattern: Gemini decides
     ("súbele el volumen", ("change_volume", (15,))),
@@ -83,8 +90,20 @@ FAST_PATH = [
     ("Hey Miku, recuérdame en una hora que llame a mamá", ("set_timer", (60.0, "Recordatorio: llame a mamá"))),
     ("Recuerda que mi gato se llama Mochi.", ("remember", ("mi gato se llama Mochi",))),
     ("acuérdate de que mi cumple es el 3 de mayo", ("remember", ("mi cumple es el 3 de mayo",))),
+    ("Cierra esta pestaña.", ("browser_action", ("close_tab", ""))),
+    ("cierra la pestaña de youtube", ("browser_action", ("close_tab", "youtube"))),
+    ("abre una nueva pestaña con wikipedia.org", ("browser_action", ("new_tab", "wikipedia.org"))),
+    ("Pestaña nueva", None),  # no verb: Gemini
+    ("ve a la pestaña de discord", ("browser_action", ("go_to_tab", "discord"))),
+    ("Recarga la página.", ("browser_action", ("reload", ""))),
+    ("vuelve atrás", ("browser_action", ("back", ""))),
+    ("cierra la ventana de opera", ("browser_action", ("close_window", ""))),
     # Must go to Gemini (ambiguous, or not a simple command)
+    ("cierra la ventana", None),  # which window? (H-023)
     ("me encanta Frieren, acuérdate de eso", None),  # the fact is before: Gemini writes it
+    ("abre spotify y sube el volumen", None),  # two orders: the volume rule alone dropped the first
+    ("pon el volumen al 30, luego abre discord", None),
+    ("Abre mi ópera y pon YouTube con la canción More.", None),
     ("recuérdame mañana a las 8 que tengo cita", None),  # a clock time: set_reminder, Gemini's job
     ("Abre los sigres de notas en el recopo, y a ver, me lluta", None),  # once opened the notes
     ("abre la página web del banco", ("open_app", ("página web del banco",))),  # real open_app finds nothing -> Gemini
