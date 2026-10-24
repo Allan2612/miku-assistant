@@ -2,7 +2,7 @@
 Miku Assistant - Resource Manager
 Strict adherence to GEMINI.md:
 - Monitors inactivity timer (default 10 minutes).
-- Unloads CPU STT model when inactive to reclaim RAM.
+- Keeps the CPU STT model loaded (RAM is cheap for this user; reloading it delayed the next answer).
 - (Phase 6 hook) Kills RVC GPU worker subprocess to guarantee 0 MB VRAM at rest.
 """
 
@@ -57,16 +57,10 @@ class ResourceManager:
                 if idle_duration >= self.unload_after_seconds:
                     unloaded_anything = False
 
-                    # 1. Unload faster-whisper STT from CPU RAM
-                    if self._stt is not None and getattr(self._stt, "is_loaded", False):
-                        logger.info(
-                            "Inactivity timeout reached (%.1f min idle). Unloading STT model.",
-                            idle_duration / 60.0,
-                        )
-                        self._stt.unload()
-                        unloaded_anything = True
+                    # Whisper stays loaded: it only takes RAM, which the user is fine spending, and reloading it
+                    # cost ~1.5 s on the first phrase after a pause. VRAM is what matters: the RVC worker goes.
 
-                    # 2. Kill RVC worker subprocess if running (Phase 6)
+                    # Kill RVC worker subprocess if running (Phase 6)
                     if self._rvc is not None and getattr(self._rvc, "is_running", False):
                         logger.info(
                             "Inactivity timeout reached (%.1f min idle). Terminating RVC worker.",

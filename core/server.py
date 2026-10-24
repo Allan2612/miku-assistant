@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Callable, Set, Dict, Any, Optional
 import websockets
 from websockets.asyncio.server import ServerConnection
@@ -71,6 +72,8 @@ class MikuServer:
         """Broadcasts a JSON message to all connected frontend clients."""
         if not self.clients:
             return
+        if message.get("type") == "show":
+            message = {**message, "sent_at": time.time()}  # the frontend reports back how long showing took
         payload = json.dumps(message, ensure_ascii=False)
         disconnected = set()
         # Copy: handle_client may add/remove clients while we await send()
@@ -212,6 +215,10 @@ class MikuServer:
                     elif msg_type == "dismiss":
                         logger.info("Client requested dismiss.")
                         await self.broadcast({"type": "hide"})
+
+                    elif msg_type == "timing":
+                        logger.info("Frontend timing [%s]: %s", data.get("what"),
+                                    {k: v for k, v in data.items() if k not in ("type", "what")})
 
                     elif msg_type == "idle_timeout":
                         # Frontend auto-hide: Miku says goodbye, then hides on its speak_done

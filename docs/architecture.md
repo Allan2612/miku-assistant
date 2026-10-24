@@ -48,7 +48,7 @@ Dos procesos principales que se comunican por WebSocket local, más un subproces
 9. `edge-tts` genera wav → el subproceso `rvc_worker.py` (ya caliente en VRAM) lo convierte → wav en base64 al frontend con `speak`.
 10. Frontend reproduce con lip sync + expresión + subtítulo.
 11. Tras `hide_after_seconds` sin actividad, el frontend envía `idle_timeout`: Miku se despide ("¡Adiós!", frase cacheada) y el backend envía `hide` (si no llega en 8 s, el frontend se oculta solo). Tras un "adiós" del usuario, igual sin despedida extra → animación **desaparecer** → ventana oculta, render detenido (`app.ticker.stop()`).
-12. Tras `unload_after_minutes` sin uso → se termina el subproceso `rvc_worker.py` y se libera el objeto Whisper + `gc.collect()`, volviendo a **0 MB de VRAM**.
+12. Tras `unload_after_minutes` sin uso → se termina el subproceso `rvc_worker.py`, volviendo a **0 MB de VRAM**. Whisper se queda cargado: solo ocupa RAM (~0,5 GB), que al usuario no le importa, y recargarlo retrasaba ~1,5 s la primera frase tras una pausa.
 
 Si TTS o RVC fallan, Miku responde solo con subtítulo o con la voz base de `edge-tts` (degradación elegante, nunca se cuelga).
 
@@ -129,7 +129,7 @@ miku-assistant/
    ├─ rvc.py               # gestor del subproceso de voz (start/warmup/convert/kill)
    ├─ rvc_worker.py        # script aislado que carga PyTorch/RVC en GPU
    ├─ wakeword.py          # openWakeWord (opcional)
-   ├─ resources.py         # temporizador de inactividad para matar rvc_worker y descargar STT
+   ├─ resources.py         # temporizador de inactividad para matar rvc_worker (VRAM); Whisper se queda
    └─ tools/
       ├─ __init__.py       # registro + declaraciones para Gemini
       ├─ apps.py  media.py  system.py  files.py  web.py  timers.py  notes.py  memory.py  routines.py

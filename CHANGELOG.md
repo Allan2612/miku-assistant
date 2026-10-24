@@ -22,6 +22,9 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- Si no hablabas en los primeros segundos, la burbuja seguía diciendo "Escuchando..." con el micrófono ya cerrado y lo que dijeras después se perdía: ahora desaparece al volver a reposo, y la espera inicial pasa de 5,5 a 8 s.
+- Whisper ya no se descarga tras 10 min sin uso (solo ocupa RAM): recargarlo retrasaba ~1,5-2 s la primera frase después de una pausa. RVC sí se descarga (VRAM).
+- El log registra cuánto tarda la ventana en aparecer (`Frontend timing [show]`): ~270 ms medidos, oculta 1 o 5 min.
 - La búsqueda de Google integrada dejaba a Miku sin responder a nada en el plan gratuito (429): ahora viene apagada (`llm.web_search`) y leer páginas web (`url_context`) va solo en turnos de texto.
 - Atajo local: no reconocía frases con "¡...!", "Hey Miku," al principio, "ábreme" ni el voseo ("bajá el volumen"); abría el Bloc de notas si una frase larga decía "notas". Nuevos atajos: temporizadores ("recuérdame en 10 minutos que..."), "recuerda que...", "busca en Google...", "ponme X en YouTube" y apagar/reiniciar (pide confirmación).
 - `open_app` con 1-2 letras ("abre mi") abría Microsoft Edge: la coincidencia parcial pide 3 letras al inicio de una palabra.

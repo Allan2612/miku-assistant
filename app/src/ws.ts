@@ -4,7 +4,7 @@
  */
 
 export type ServerMessage =
-  | { type: "show" }
+  | { type: "show"; sent_at?: number }
   | { type: "hide" }
   | { type: "state"; value: "idle" | "listening" | "thinking" | "speaking" }
   | { type: "subtitle"; who: "user" | "miku"; text: string }

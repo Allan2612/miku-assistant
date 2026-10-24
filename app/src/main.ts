@@ -130,9 +130,18 @@ export function clearAutoHideTimer(): void {
 
 function handleServerMessage(msg: ServerMessage): void {
   switch (msg.type) {
-    case "show":
-      showMiku();
+    case "show": {
+      // Timing to the backend log: a hidden WebView can be slow to get the message and to show itself
+      const wasHidden = !isVisible;
+      const receiveMs = msg.sent_at ? Math.round(Date.now() - msg.sent_at * 1000) : -1;
+      const t0 = performance.now();
+      showMiku().then(() => {
+        if (wasHidden) {
+          ws.send({ type: "timing", what: "show", receive_ms: receiveMs, show_ms: Math.round(performance.now() - t0) });
+        }
+      });
       break;
+    }
     case "hide":
       hideMiku();
       break;
@@ -148,6 +157,8 @@ function handleServerMessage(msg: ServerMessage): void {
         clearAutoHideTimer();
         ui.showThinking();
       } else if (msg.value === "idle") {
+        // After a listen timeout the bubble kept saying "Escuchando..." with the mic already closed
+        ui.clearStatus();
         resetAutoHideTimer();
       }
       break;

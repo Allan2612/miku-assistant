@@ -339,7 +339,8 @@ class MikuPipeline:
                 audio: Optional[np.ndarray] = await self.audio_in.record_phrase(
                     silence_ms=self.silence_ms,
                     max_seconds=self.max_record_seconds,
-                    initial_timeout=5.5,
+                    # 8 s: at 5.5 s the user often started late, and what they said went nowhere
+                    initial_timeout=8.0,
                 )
 
                 if audio is None:

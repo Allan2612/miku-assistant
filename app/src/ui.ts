@@ -9,6 +9,7 @@ export interface UIManager {
   showSubtitle(who: "user" | "miku", text: string, durationMs?: number): void;
   showThinking(): void;
   showListening(): void;
+  clearStatus(): void;
   clearSubtitle(): void;
 }
 
@@ -113,6 +114,13 @@ class UIManagerImpl implements UIManager {
 
     this.bubbleEl.classList.remove("hidden", "user", "thinking");
     this.bubbleEl.classList.add("visible", "miku", "listening");
+  }
+
+  /** Back to idle: drop "Escuchando..." / "Pensando..." (the mic is closed), but keep an answer's subtitle. */
+  public clearStatus(): void {
+    if (this.bubbleEl?.classList.contains("listening") || this.bubbleEl?.classList.contains("thinking")) {
+      this.clearSubtitle();
+    }
   }
 
   public clearSubtitle(): void {
