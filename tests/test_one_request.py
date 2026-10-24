@@ -159,6 +159,43 @@ def test_spoken_shutdown_asks_then_runs_with_no_request():
     assert ran and ran[0][:2] == ["shutdown", "/s"] and not models.requests, (ran, models.requests)
 
 
+def test_fallback_chain_tells_the_user_once():
+    # Free tier: per-minute limits run out fast, so each failing model hands over to the next one
+    b, models = brain(RuntimeError("429 RESOURCE_EXHAUSTED"), RuntimeError("503 UNAVAILABLE"), reply("[happy] ¡Aquí!"))
+    b.all_models = ["m1", "m2", "m3", "m4"]
+    cues = []
+
+    async def cue():
+        cues.append(1)
+
+    b.on_model_switch = cue
+    _, text, _ = asyncio.run(b.chat("cuéntame algo bonito", audio=AUDIO))
+    assert text == "¡Aquí!" and len(models.requests) == 3 and cues == [1], (text, len(models.requests), cues)
+    assert set(b._model_cooldown) == {"m1", "m2"}, "failed models wait before being tried again"
+
+    # Healthy first model: no cue
+    b, _ = brain(reply("[happy] ¡Hola!"))
+    b.on_model_switch = cue
+    cues.clear()
+    asyncio.run(b.chat("cuéntame algo bonito"))
+    assert cues == []
+
+
+def test_requests_adapted_per_model():
+    b, _ = brain()
+    contents, config = b._build_request("abre spotify", AUDIO)
+    # Gemma: no audio (gets Whisper's text), no thinking config, no built-in tools
+    c, cfg = MikuBrain._for_model("gemma-4-26b-a4b-it", contents, config, "abre spotify")
+    assert [p.text for p in c[-1].parts] == ["abre spotify"] and cfg.thinking_config is None
+    assert not any(isinstance(t, types.Tool) for t in cfg.tools) and len(cfg.tools) == len(b.tools)
+    # 3.8-flash rejects MINIMAL thinking
+    _, cfg = MikuBrain._for_model("gemini-3.8-flash", contents, config, "abre spotify")
+    assert cfg.thinking_config.thinking_level == "LOW" and cfg.max_output_tokens == 800
+    # Everyone else: untouched (and the original config is not modified)
+    assert MikuBrain._for_model("gemini-3.1-flash-lite", contents, config, "x") == (contents, config)
+    assert config.thinking_config.thinking_level == "MINIMAL"
+
+
 def test_fast_path_takes_no_request():
     b, models = brain()
     b._try_fast_path_tool = lambda text: ("happy", "Son las 12:00.", False)
@@ -177,5 +214,7 @@ if __name__ == "__main__":
     test_model_quota_does_not_disable_web_tools()
     test_grounded_search_answer_is_not_called_a_lie()
     test_spoken_shutdown_asks_then_runs_with_no_request()
+    test_fallback_chain_tells_the_user_once()
+    test_requests_adapted_per_model()
     test_fast_path_takes_no_request()
     print("ok")

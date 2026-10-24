@@ -29,7 +29,7 @@ Dos procesos principales que se comunican por WebSocket local, más un subproces
 | Backend | Python 3.11 + `websockets` | Ligero (~50 MB RAM base), sin FastAPI |
 | VAD | **silero-vad** (ONNX, CPU) | Detecta inicio/fin de voz con consumo mínimo |
 | Voz → texto | **faster-whisper** `small`, `cpu`, `int8`, `cpu_threads` de la config, idioma de `language` | 0 MB VRAM, ~1,5 s por frase. Es un **filtro local**: descarta ruido y silencio, y alimenta el atajo local. Gemini oye el audio real. Se descarga tras inactividad |
-| Cerebro | **Gemini API** (`google-genai`), `gemini-3.5-flash-lite` (flash solo da 20 peticiones/día gratis) | **Una petición por turno**: audio + historial + herramientas. Modelo en `config.yaml` |
+| Cerebro | **Gemini API** (`google-genai`), `gemini-3.5-flash-lite` (flash solo da 20 peticiones/día gratis) | **Una petición por turno**: audio + historial + herramientas. Si un modelo falla (cuota por minuto, 503), Miku dice "Un momento..." y prueba el siguiente de una cadena de 6 (`llm.models_fallback`); Gemma, el último, recibe el texto de Whisper |
 | Texto → voz | **edge-tts** (voz femenina, p. ej. `es-MX-DaliaNeural`) | Gratis, buena calidad, base para RVC |
 | Voz Miku | **RVC** en subproceso aislado (`rvc_worker.py` por `stdio`/`pipe`) | Usa GPU (RTX 3050). Al matar el subproceso tras inactividad, Windows libera el 100 % de la VRAM y RAM de PyTorch |
 | Activación | Atajo global (Tauri `global-shortcut`) + opcional **openWakeWord** (CPU) | Fase 7 |

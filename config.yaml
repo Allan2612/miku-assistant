@@ -4,7 +4,15 @@ window: { width: 420, height: 620, anchor: "bottom-right", margin: 12, fps_visib
 behavior: { hide_after_seconds: 20, max_record_seconds: 10, silence_ms: 700, unload_after_minutes: 10 }
 llm: {
   model: "gemini-3.5-flash-lite",
-  models_fallback: ["gemini-3.5-flash", "gemini-flash-lite-latest"],  # 3.5-flash: only 20 requests/day on the free tier (counted as 3.6-flash); 3.7/3.8-flash time out, 23-oct
+  # Free tier, requests per minute / per day (24-oct). Each model has its own bucket, so when one runs out
+  # Miku says "Un momento..." and tries the next. Gemma takes no audio: it gets Whisper's text
+  models_fallback: [
+    "gemini-3.1-flash-lite",   # 15 / 500
+    "gemini-3-flash-preview",  # 5 / 20
+    "gemini-3.5-flash",        # 5 / 20
+    "gemini-3.8-flash",        # 5 / 20
+    "gemma-4-26b-a4b-it"       # 30 / 14400, slower (3-6 s)
+  ],
   max_history_turns: 10,
   temperature: 0.35,
   web_search: false  # Google search inside the single request: the free tier answers it with 429 (23-oct). Reading a web page (url_context) is always on

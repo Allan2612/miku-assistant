@@ -6,6 +6,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ## [Unreleased]
 ### Cambiado (plan de mejoras, ver `docs/mejoras.md`)
+- Cadena de respaldo de 6 modelos ordenada por cuota gratuita (cada modelo tiene su propio límite por minuto): `3.5-flash-lite` → `3.1-flash-lite` → `3-flash-preview` → `3.5-flash` → `3.8-flash` → `gemma-4-26b`. Al pasar al siguiente, Miku dice "Un momento...", "Mmm..." o similar (una vez por turno, voz cacheada). Gemma no acepta audio: recibe el texto de Whisper. Un modelo retirado (404) espera 1 h antes de reintentarse.
 - **Como máximo una petición a Gemini por turno** (plan gratuito). Whisper filtra ruido y alimenta el atajo local (0 peticiones); lo demás va en una sola petición con el audio, y Gemini responde y pide herramientas a la vez. Las herramientas se ejecutan en local y su resultado no vuelve a Gemini.
 - El "sí" para apagar o reiniciar se ejecuta en local, sin petición.
 - Modelo principal `gemini-3.5-flash-lite`, con el pensamiento al mínimo: los tokens de pensamiento agotaban el límite y dejaban respuestas vacías.

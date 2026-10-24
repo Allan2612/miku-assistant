@@ -15,7 +15,7 @@ import re
 import time
 import wave
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from dotenv import load_dotenv
@@ -63,6 +63,18 @@ Momento del día: {time_of_day}
 """
 
 VALID_EMOTIONS = {"happy", "neutral", "surprised", "sad", "angry", "thinking"}
+
+# Ordered by free-tier capacity (requests per minute / per day, 24-oct): each model has its own bucket.
+# All probed live with Miku's real voice request. Gemini 2.5 is gone for new users (404).
+DEFAULT_FALLBACKS = (
+    "gemini-3.1-flash-lite",   # 15 / 500
+    "gemini-3-flash-preview",  # 5 / 20
+    "gemini-3.5-flash",        # 5 / 20
+    "gemini-3.8-flash",        # 5 / 20, often 503
+    "gemma-4-26b-a4b-it",      # 30 / 14.4K, but no audio and 3-6 s: the last safety net
+)
+# Rejects thinking_level MINIMAL (400)
+THINKING_LOW_MODELS = {"gemini-3.8-flash"}
 
 # Start of a fast-path command: Whisper often keeps the wake phrase ("Hey Miku, abre...")
 _WAKE = r"^(?:(?:hey|oye|ey)\s+)?(?:miku\s*[,.]?\s*)?"
@@ -128,12 +140,9 @@ class MikuBrain:
         web_search: bool = False,
     ) -> None:
         self.primary_model = model_name
-        self.models_fallback = models_fallback or [
-            "gemini-3.1-flash-lite",
-            "gemini-3.5-flash",
-            "gemini-3.6-flash",
-            "gemini-3.7-flash",
-        ]
+        self.models_fallback = models_fallback or list(DEFAULT_FALLBACKS)
+        # Async callback (the pipeline's "Un momento...") played once per turn before trying the next model
+        self.on_model_switch: Optional[Callable[[], Awaitable[None]]] = None
         # Full prioritized candidate pool
         self.all_models: List[str] = [self.primary_model] + [
             m for m in self.models_fallback if m != self.primary_model
@@ -236,6 +245,29 @@ class MikuBrain:
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
 
+    @staticmethod
+    def _for_model(
+        model: str, contents: List[types.Content], config: types.GenerateContentConfig, clean_input: str
+    ) -> Tuple[List[types.Content], types.GenerateContentConfig]:
+        """Adapts the turn's request to what a fallback model accepts (probed live, 24-oct)."""
+        if model.startswith("gemma"):
+            # Gemma: "Audio input modality is not enabled", no thinking config, no built-in tools. It gets
+            # Whisper's text, which is worse than the audio but beats no answer
+            parts = [
+                types.Part.from_text(text=clean_input)
+                if p.inline_data and (p.inline_data.mime_type or "").startswith("audio") else p
+                for p in contents[-1].parts
+            ]
+            contents = contents[:-1] + [types.Content(role="user", parts=parts)]
+            tools = [t for t in (config.tools or []) if not isinstance(t, types.Tool)]
+            return contents, config.model_copy(update={"thinking_config": None, "tools": tools, "tool_config": None})
+        if model in THINKING_LOW_MODELS:
+            # LOW thinks a little: more room so the thoughts do not eat the answer (the empty-answer bug)
+            return contents, config.model_copy(update={
+                "thinking_config": types.ThinkingConfig(thinking_level="LOW"), "max_output_tokens": 800,
+            })
+        return contents, config
+
     async def _generate(self, model: str, contents: List[types.Content], config: types.GenerateContentConfig) -> Any:
         """One generate_content call. If Gemini rejects the built-in web tools, asks again without them."""
         try:
@@ -250,9 +282,11 @@ class MikuBrain:
             # A rejected request does not use quota, so the retry keeps the one-request rule
             self.builtin_tools = False
             try:
-                response = await self.client.aio.models.generate_content(
-                    model=model, contents=contents, config=self._build_config(with_builtins=False)
-                )
+                # Same config minus the built-ins (keeps the per-model adaptation of _for_model)
+                plain = config.model_copy(update={
+                    "tools": [t for t in config.tools or [] if not isinstance(t, types.Tool)], "tool_config": None,
+                })
+                response = await self.client.aio.models.generate_content(model=model, contents=contents, config=plain)
             except Exception:
                 self.builtin_tools = True  # also fails without them: the model itself is the problem
                 raise
@@ -583,8 +617,16 @@ class MikuBrain:
         contents, config = self._build_request(clean_input, audio, screenshot)
         response = None
 
-        # Only a failed request (error, 429, 503: no answer, no quota spent) moves on to the next model
-        for model in models_to_try:
+        # Only a failed request (error, 429, 503: no answer, no quota spent) moves on to the next model.
+        # The free tier's per-minute limits run out fast, so the chain is long (one bucket per model)
+        told_user = False
+        for i, model in enumerate(models_to_try):
+            if i > 0 and not told_user and self.on_model_switch is not None:
+                told_user = True
+                try:
+                    await self.on_model_switch()  # "Un momento...": the user hears that she is still on it
+                except Exception:
+                    logger.exception("Model-switch cue failed")
             try:
                 self.current_model = model
                 self.total_api_calls += 1
@@ -595,7 +637,7 @@ class MikuBrain:
                     clean_input,
                     " (+audio)" if audio is not None else "",
                 )
-                response = await self._generate(model, contents, config)
+                response = await self._generate(model, *self._for_model(model, contents, config, clean_input))
                 # Clear any previous cooldown for this healthy model
                 self._model_cooldown.pop(model, None)
                 break
@@ -610,8 +652,9 @@ class MikuBrain:
                 if any(term in err_str for term in ["api key", "api_key", "permission_denied", "unauthenticated", "401", "403"]):
                     logger.error("Gemini authentication failed: %s", e)
                     return ("sad", "No puedo conectarme con Gemini: revisa la API key en el archivo .env.", False)
-                # A daily quota does not come back in a minute: stop retrying that model every turn
-                cooldown_sec = 3600.0 if "per day" in err_str else 60.0 if is_rate_limit else 15.0
+                # A daily quota does not come back in a minute, nor a retired model (404): stop retrying them every turn
+                gone = "per day" in err_str or "404" in err_str or "not_found" in err_str
+                cooldown_sec = 3600.0 if gone else 60.0 if is_rate_limit else 15.0
                 self._model_cooldown[model] = time.monotonic() + cooldown_sec
                 logger.warning(
                     "Gemini model '%s' failed (rate_limit/quota=%s, cooldown=%.0fs): %s. Switching to fallback...",

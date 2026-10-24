@@ -30,12 +30,7 @@ class BehaviorConfig:
 @dataclass(slots=True)
 class LLMConfig:
     model: str = "gemini-3.5-flash-lite"
-    models_fallback: list[str] = field(default_factory=lambda: [
-        "gemini-3.1-flash-lite",
-        "gemini-3.5-flash",
-        "gemini-3.6-flash",
-        "gemini-3.7-flash",
-    ])
+    models_fallback: list[str] = field(default_factory=list)  # empty: llm.DEFAULT_FALLBACKS
     max_history_turns: int = 10
     web_search: bool = False  # Google search inside the single request; the free tier rejects it (429)
     temperature: float = 0.8
@@ -161,12 +156,7 @@ def load_config(
         ),
         llm=LLMConfig(
             model=llm_data.get("model", "gemini-3.5-flash-lite"),
-            models_fallback=list(llm_data.get("models_fallback", [
-                "gemini-3.1-flash-lite",
-                "gemini-3.5-flash",
-                "gemini-3.6-flash",
-                "gemini-3.7-flash",
-            ])),
+            models_fallback=list(llm_data.get("models_fallback") or []),
             max_history_turns=llm_data.get("max_history_turns", 10),
             temperature=float(llm_data.get("temperature", 0.8)),
             web_search=bool(llm_data.get("web_search", False)),

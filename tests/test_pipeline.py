@@ -5,7 +5,7 @@ Run: core\\.venv\\Scripts\\python.exe -m tests.test_pipeline  (or with pytest)
 
 import asyncio
 
-from core.pipeline import MikuPipeline
+from core.pipeline import FILLER_PHRASES, MikuPipeline
 
 
 class FakeServer:
@@ -165,6 +165,29 @@ async def _goodbye():
     assert "speak" not in server.sent, server.sent
 
 
+async def _filler():
+    # The brain switches model: Miku says "Un momento..." and waits for it to finish, swallowing its speak_done
+    server = AckServer()
+    p = MikuPipeline(brain=FakeBrain(), tts=FakeTTS(), stt=None, audio_in=None,
+                     resources=FakeResources(), server=server, rvc=None)
+    server.pipeline = p
+    assert p.brain.on_model_switch == p._say_filler, "the pipeline hooks itself into the brain"
+    await asyncio.wait_for(p.brain.on_model_switch(), 2)
+    said = [m[6:] for m in server.sent if m.startswith("speak:")]
+    assert len(said) == 1 and said[0] in FILLER_PHRASES, server.sent
+    assert p._ack_done is None, "its speak_done was consumed: the answer's own speak_done is not swallowed"
+
+    # No frontend connected: no cue, and no 3 s wait for a speak_done that never comes
+    server.clients = set()
+    start = asyncio.get_running_loop().time()
+    await p._say_filler()
+    assert asyncio.get_running_loop().time() - start < 0.5
+
+
+def test_filler_when_switching_model():
+    asyncio.run(_filler())
+
+
 def test_goodbye_on_inactivity():
     asyncio.run(_goodbye())
 
@@ -172,5 +195,6 @@ def test_goodbye_on_inactivity():
 if __name__ == "__main__":
     test_pipeline_flows()
     test_goodbye_on_inactivity()
+    test_filler_when_switching_model()
     test_activation_says_yes_then_listens()
     print("ok")

@@ -36,6 +36,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 # Spoken right after activation so it is obvious Miku is listening; kept very short
 ACK_PHRASES = ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!")
 ACK_WAIT_S = 3.0  # max wait for the frontend to finish playing the cue
+# Said when a Gemini model fails (per-minute quota, 503) and the next one is tried: the user knows she is on it
+FILLER_PHRASES = ("Un momento...", "Mmm...", "Déjame pensar...", "Dame un segundito...", "A ver...")
 # Said before hiding on inactivity (fixed phrases: voice cached on disk, 0 Gemini requests)
 GOODBYE_PHRASES = ("¡Adiós!", "¡Chao!", "¡Nos vemos!", "¡Hasta luego!", "Me voy, ¡llámame si me necesitas!")
 
@@ -79,6 +81,7 @@ class MikuPipeline:
         max_record_seconds: int = 15,
     ) -> None:
         self.brain = brain
+        self.brain.on_model_switch = self._say_filler
         self.tts = tts
         self.stt = stt
         self.audio_in = audio_in
@@ -197,9 +200,9 @@ class MikuPipeline:
             logger.info("Cached Miku-voice acknowledgement: %s", rvc_file.name)
 
     async def prepare_acks(self) -> None:
-        """Pre-generates every acknowledgement (base voice now, Miku's voice once RVC is loaded)."""
+        """Pre-generates every cue (base voice now, Miku's voice once RVC is loaded)."""
         try:
-            for phrase in ACK_PHRASES:
+            for phrase in ACK_PHRASES + FILLER_PHRASES:
                 await self.tts.synthesize(phrase, cache=True)
             if self.rvc is None or not self.rvc.enabled:
                 return
@@ -207,7 +210,7 @@ class MikuPipeline:
                 if self.rvc.is_running and not self.rvc.is_warming_up:
                     break
                 await asyncio.sleep(1)
-            for phrase in ACK_PHRASES:
+            for phrase in ACK_PHRASES + FILLER_PHRASES:
                 if not self._ack_file(phrase).exists():
                     base = await self.tts.synthesize(phrase, cache=True)
                     if base:
@@ -217,7 +220,17 @@ class MikuPipeline:
 
     async def _acknowledge(self) -> None:
         """Short spoken cue ("¿Sí?") on activation; returns once it has finished playing."""
-        phrase = random.choice(ACK_PHRASES)
+        await self._play_cue(ACK_PHRASES, "happy")
+
+    async def _say_filler(self) -> None:
+        """"Un momento...": a model failed and the brain tries the next one, so the wait does not feel dead."""
+        await self._play_cue(FILLER_PHRASES, "thinking")
+
+    async def _play_cue(self, phrases: Tuple[str, ...], emotion: str) -> None:
+        """Plays one cached short phrase and returns once it has finished (its speak_done is swallowed)."""
+        if not self.server.clients:
+            return  # nobody to play it: do not wait ACK_WAIT_S for a speak_done that never comes
+        phrase = random.choice(phrases)
         audio = await self._ack_audio(phrase)
         if not audio:
             return
@@ -225,11 +238,11 @@ class MikuPipeline:
         self._ack_done = asyncio.Event()
         try:
             await self.server.broadcast({
-                "type": "speak", "audio_b64": audio_b64, "mime": mime, "text": phrase, "emotion": "happy",
+                "type": "speak", "audio_b64": audio_b64, "mime": mime, "text": phrase, "emotion": emotion,
             })
             await asyncio.wait_for(self._ack_done.wait(), ACK_WAIT_S)
         except asyncio.TimeoutError:
-            logger.info("No speak_done for the acknowledgement; listening anyway.")
+            logger.info("No speak_done for the cue '%s'; going on.", phrase)
         finally:
             self._ack_done = None
 

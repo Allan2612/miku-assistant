@@ -112,6 +112,26 @@ Hecha el 23-oct bajo la regla de **una petición por turno** (ver Fase 2):
       audio, Gemini rechazaba las integradas (400). Si las rechaza, se reintenta sin ellas (un rechazo no
       gasta cuota).
 
+### Cadena de modelos (24-oct)
+
+Lo que se agota es el límite **por minuto**, no el diario (captura de ai.dev: 3.5-flash-lite 13/15 RPM con 0 RPD).
+Cada modelo tiene su bucket, así que la cadena multiplica la capacidad. Probada en real con la petición de voz de
+Miku (audio + 35 tools):
+
+| Modelo | RPM / RPD | Resultado |
+|---|---|---|
+| `gemini-3.5-flash-lite` (principal) | 15 / 500 | OK |
+| `gemini-3.1-flash-lite` | 15 / 500 | OK, mismas tools |
+| `gemini-3-flash-preview` | 5 / 20 | OK |
+| `gemini-3.5-flash` | 5 / 20 | OK (cuota contada como 3.6-flash) |
+| `gemini-3.8-flash` | 5 / 20 | rechaza `thinking_level=MINIMAL`: va con LOW; a menudo 503 |
+| `gemma-4-26b-a4b-it` | 30 / 14 400 | sin audio (recibe el texto de Whisper), sin thinking ni built-ins; 3-6 s |
+| `gemma-4-31b-it` | 30 / 14 400 | descartado: 504 a los 14 s |
+| `gemini-2.5-*` | — | descartado: 404, retirado para cuentas nuevas |
+
+Al fallar un modelo y pasar al siguiente, Miku dice "Un momento..." (una vez por turno). Probado en real:
+principal roto → aviso → `3.1-flash-lite` respondió; y una orden de voz llegó adaptada a Gemma, que llamó la tool.
+
 ### Pruebas reales con la API (23-oct, herramientas simuladas, archivos en carpeta temporal)
 
 13 casos, 9-10 peticiones: cada turno 1 o 0. Bien: charla, varias tools a la vez, leer una web,
