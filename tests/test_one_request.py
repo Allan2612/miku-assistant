@@ -109,6 +109,16 @@ def test_claimed_action_is_done_locally_when_recognizable():
     assert levels == [100] and emotion == "happy" and "100" in text, (levels, text)
 
 
+def test_claimed_youtube_play_is_done():
+    # Log 05:59: "¡Entendido! Reproduciendo 'Heart Steel' en YouTube." and no tool call
+    import core.tools.web as web
+    played = []
+    web.youtube_play = lambda q: played.append(q) or {"ok": True, "result": "¡Poniendo HEARTSTEEL en YouTube!"}
+    b, _ = brain(reply("[happy] ¡Entendido! Reproduciendo 'Heart Steel' en YouTube."))
+    _, text, _ = asyncio.run(b.chat("no es heart steel reprodúcela", audio=AUDIO))
+    assert played == ["Heart Steel"] and "HEARTSTEEL" in text, (played, text)
+
+
 def test_jot_down_goes_through_fast_path():
     import core.tools.notes as notes
     saved = []
@@ -220,6 +230,7 @@ if __name__ == "__main__":
     test_shutdown_asks_then_yes_runs_locally()
     test_claimed_action_without_tool_is_not_a_lie()
     test_claimed_action_is_done_locally_when_recognizable()
+    test_claimed_youtube_play_is_done()
     test_jot_down_goes_through_fast_path()
     test_screenshot_only_when_asked_and_in_the_same_request()
     test_web_tools_rejected_are_dropped_and_retried_once()

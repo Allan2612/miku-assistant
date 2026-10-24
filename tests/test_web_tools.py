@@ -60,6 +60,7 @@ def test_browser_action_only_types_into_a_focused_opera():
     titles = {42: "Inicio - Opera"}
     web.ctypes = _t.SimpleNamespace(windll=_t.SimpleNamespace(user32=_t.SimpleNamespace(GetForegroundWindow=lambda: fg[0])))
     web._is_opera = lambda hwnd: hwnd == 42
+    web._opera_windows = lambda: [42]
     web._window_title = lambda hwnd: titles[hwnd]
     apps._find_window = lambda name, exe=None: 42 if exe == "opera" and name.lower() in titles[42].lower() else None
     apps._bring_to_front = lambda hwnd: fg[0] == hwnd
@@ -130,7 +131,8 @@ def test_open_url_checks_the_address_and_can_replace_the_last_page():
 def test_close_other_tabs_keeps_one():
     import types as _t
     import core.tools.apps as apps
-    tabs = ["YouTube - Opera", "Mail - Opera", "Docs - Opera", "News - Opera"]
+    tabs = ["GX Corner - Opera", "YouTube - Opera", "Mail - Opera", "Docs - Opera", "News - Opera"]
+    pinned = {"GX Corner - Opera"}  # Opera GX pins it: Ctrl+W does nothing there (78 phantom closes, live)
     state = {"i": 0}
     keys = []
     web.ctypes = _t.SimpleNamespace(windll=_t.SimpleNamespace(user32=_t.SimpleNamespace(GetForegroundWindow=lambda: 42)))
@@ -138,18 +140,19 @@ def test_close_other_tabs_keeps_one():
     web._window_title = lambda hwnd: tabs[state["i"]]
     apps._find_window = lambda name, exe=None: 42 if exe == "opera" and name.lower() in tabs[state["i"]].lower() else None
     apps._bring_to_front = lambda hwnd: True
+    web._opera_windows = lambda: [42]
 
     def press(*vks):
         keys.append(vks)
         if vks == (0x11, 0x22):
             state["i"] = (state["i"] + 1) % len(tabs)
-        elif vks == (0x11, ord("W")):
+        elif vks == (0x11, ord("W")) and tabs[state["i"]] not in pinned:  # the right tab takes over, or the left at the end
             tabs.pop(state["i"])
-            state["i"] %= len(tabs)
+            state["i"] = min(state["i"], len(tabs) - 1)
     apps._press = press
-    state["i"] = 2  # the user is on "Docs"; "todas menos la de YouTube"
+    state["i"] = 3  # the user is on "Docs"; "todas menos la de YouTube"
     res = web.browser_action("close_other_tabs", "youtube")
-    assert tabs == ["YouTube - Opera"] and res["ok"] and "Cerré 3 pestañas" in res["result"], (tabs, res)
+    assert tabs == ["GX Corner - Opera", "YouTube - Opera"] and res["ok"] and "Cerré 3 pestañas" in res["result"], (tabs, res)
 
 
 def test_close_window_tab_by_tab_and_never_beyond_it():
@@ -159,8 +162,11 @@ def test_close_window_tab_by_tab_and_never_beyond_it():
     state = {"tabs": 3, "fg": 42}
     alive = lambda h: h == 42 and state["tabs"] > 0
     web.ctypes = _t.SimpleNamespace(windll=_t.SimpleNamespace(user32=_t.SimpleNamespace(
-        GetForegroundWindow=lambda: state["fg"], IsWindow=alive, IsWindowVisible=alive)))
+        GetForegroundWindow=lambda: state["fg"], IsWindow=alive, IsWindowVisible=alive,
+        PostMessageW=lambda h, msg, w, l: state.update(tabs=0, fg=99))))
+    web._window_title = lambda h: f"tab {state['tabs']}"
     web._is_opera = lambda hwnd: True
+    web._opera_windows = lambda: [42]
     apps._find_window = lambda name, exe=None: 42
     apps._bring_to_front = lambda hwnd: True
     closes = []
@@ -182,6 +188,41 @@ def test_close_window_tab_by_tab_and_never_beyond_it():
     apps._press = press_then_lose_focus
     assert not web.browser_action("close_all_tabs")["ok"] and len(closes) == 1
 
+    # Only a pinned tab left (Ctrl+W ignored): WM_CLOSE the window instead of pressing forever
+    state.update(tabs=2, fg=42)
+    closes.clear()
+    def press_pinned(*vks):
+        closes.append(vks)
+        if state["tabs"] > 1:
+            state["tabs"] -= 1
+    apps._press = press_pinned
+    assert web.browser_action("close_window")["ok"] and len(closes) == 2 and state["tabs"] == 0, (closes, state)
+
+
+def test_close_other_tabs_also_closes_other_windows():
+    import types as _t
+    import core.tools.apps as apps
+    shut = []
+    web.ctypes = _t.SimpleNamespace(windll=_t.SimpleNamespace(user32=_t.SimpleNamespace(GetForegroundWindow=lambda: 42)))
+    web._is_opera = lambda hwnd: True
+    web._opera_windows = lambda: [42, 77, 88]
+    web._find_tab = lambda name, first: 42
+    web._close_other_tabs = lambda hwnd: 2
+    web._close_window_tabs = lambda hwnd: shut.append(hwnd) or True
+    apps._find_window = lambda name, exe=None: 42
+    apps._bring_to_front = lambda hwnd: True
+    res = web.browser_action("close_other_tabs", "paranoia")
+    assert shut == [77, 88] and "2 ventanas más" in res["result"], (shut, res)
+
+
+def test_open_website_says_where_it_went():
+    opened = []
+    web._open_page = lambda url, replace: opened.append((url, replace))
+    web._first_web_result = lambda name: "https://www.bancobcr.com/"
+    assert web.open_website("banco de costa rica")["result"] == "Abrí bancobcr.com."
+    web._first_web_result = lambda name: None
+    assert "búsqueda en Google" in web.open_website("algo raro", replace=True)["result"] and opened[-1][1] is True
+
 
 if __name__ == "__main__":
     test_web_tools_open_browser()
@@ -190,4 +231,6 @@ if __name__ == "__main__":
     test_open_url_checks_the_address_and_can_replace_the_last_page()
     test_close_other_tabs_keeps_one()
     test_close_window_tab_by_tab_and_never_beyond_it()
+    test_close_other_tabs_also_closes_other_windows()
+    test_open_website_says_where_it_went()
     print("ok")

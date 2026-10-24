@@ -14,7 +14,7 @@ import time
 import urllib.parse
 import urllib.request
 import webbrowser
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.tools import tool
 from core.tools._win import find_opera_gx as _find_opera_gx
@@ -177,11 +177,30 @@ LAST_PAGE_REUSE_S = 600.0
 
 
 def _remember_opera_window() -> None:
-    """Runs right after opening a URL: Opera comes to the front with it, so that is the window to remember."""
-    time.sleep(1.5)
-    fg = ctypes.windll.user32.GetForegroundWindow()
-    if fg and _is_opera(fg):
-        _last_page.update(time=time.monotonic(), hwnd=fg)
+    """Runs right after opening a URL. Opera opens it in its last active window but does not come to the front
+    (Windows keeps background processes from taking the focus): so "no, era otra" opened yet another tab (log,
+    24-oct). Bring that window up, so the user sees the page, and remember it."""
+    time.sleep(1.0)
+    from core.tools.apps import _bring_to_front
+    windows = _opera_windows()
+    if windows:
+        _bring_to_front(windows[0])
+        _last_page.update(time=time.monotonic(), hwnd=windows[0])
+
+
+def _opera_windows() -> List[int]:
+    """Opera's main windows, front-most first (EnumWindows walks the z-order from the top)."""
+    user32 = ctypes.windll.user32
+    found: List[int] = []
+
+    def callback(hwnd, _):
+        if (user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd) and not user32.GetWindow(hwnd, 4)
+                and not user32.GetWindowLongW(hwnd, -20) & 0x80 and _is_opera(hwnd)):  # unowned, no tool window
+            found.append(hwnd)
+        return True
+
+    user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(callback), 0)
+    return found
 
 
 def _open_page(url: str, replace: bool) -> None:
@@ -243,6 +262,7 @@ VK_SHIFT, VK_MENU, VK_TAB, VK_LEFT, VK_RIGHT, VK_F5 = 0x10, 0x12, 0x09, 0x25, 0x
 # Ctrl+PgDn/PgUp move by position; Ctrl+Tab can be set to "recently used" order, where repeated presses
 # only flip between the last two tabs
 VK_PRIOR, VK_NEXT = 0x21, 0x22
+WM_CLOSE = 0x0010
 # Opera's own shortcuts (same as Chrome's)
 _BROWSER_KEYS = {
     "new_tab": (VK_CONTROL, ord("T")), "close_tab": (VK_CONTROL, ord("W")),
@@ -305,32 +325,64 @@ def _go_to_tab(hwnd: int, name: str) -> bool:
 
 def _close_window_tabs(hwnd: int) -> bool:
     """Closes the window by closing its tabs one by one: Ctrl+Shift+W made Opera ask "Confirmar el cierre"
-    (live test). Stops as soon as the window is gone, or if it loses the focus (never another window's tabs)."""
+    (live test). Stops as soon as the window is gone, or if it loses the focus (never another window's tabs).
+    A pinned tab ignores Ctrl+W (Opera GX pins "GX Corner"): once only those are left, WM_CLOSE the window."""
     user32 = ctypes.windll.user32
+    alive = lambda: user32.IsWindow(hwnd) and user32.IsWindowVisible(hwnd)
     for _ in range(MAX_TABS_TO_CYCLE * 2):
-        if not (user32.IsWindow(hwnd) and user32.IsWindowVisible(hwnd)):
+        if not alive():
             return True
+        before = _window_title(hwnd)
         if not _keys_to(hwnd, VK_CONTROL, ord("W")):
-            return not (user32.IsWindow(hwnd) and user32.IsWindowVisible(hwnd))
-        time.sleep(0.2)
+            return not alive()
+        time.sleep(0.25)
+        if alive() and _window_title(hwnd) == before:  # did not close: pinned
+            user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+            time.sleep(1.0)
+            return not alive()
     return False
 
 
 def _close_other_tabs(hwnd: int) -> Optional[int]:
-    """Closes every tab of the window except the active one. Returns how many, or None if Opera lost the focus."""
+    """Closes every tab of the window except the active one. Returns how many, or None if Opera lost the focus.
+    Pinned tabs ignore Ctrl+W: they are skipped, not counted (the first version pressed Ctrl+W 78 times on
+    Opera GX's pinned "GX Corner" and called them closed, live test)."""
     keep = _window_title(hwnd)
     closed = 0
-    for _ in range(MAX_TABS_TO_CYCLE):
-        if not _keys_to(hwnd, VK_CONTROL, VK_NEXT):
-            return None
-        time.sleep(0.25)
-        if _window_title(hwnd) == keep:  # back on the kept tab: it is the only one left
-            return closed
+    pinned: set = set()
+    closed_since_keep = False
+    for _ in range(MAX_TABS_TO_CYCLE * 2):
+        title = _window_title(hwnd)
+        if title == keep or title in pinned:
+            if not _keys_to(hwnd, VK_CONTROL, VK_NEXT):
+                return None
+            time.sleep(0.25)
+            if _window_title(hwnd) == keep:
+                if not closed_since_keep:  # a full lap with nothing to close: only kept and pinned tabs remain
+                    return closed
+                closed_since_keep = False
+            continue
+        # Closing a tab activates the next one: close what is active now. Moving on first skipped every
+        # other tab ("aún faltan por cerrar", log 24-oct)
         if not _keys_to(hwnd, VK_CONTROL, ord("W")):
             return None
         time.sleep(0.3)
-        closed += 1
+        if _window_title(hwnd) == title:
+            pinned.add(title)
+        else:
+            closed += 1
+            closed_since_keep = True
     return closed
+
+
+def _find_tab(name: str, first: int) -> Optional[int]:
+    """The Opera window holding a tab whose title contains name, with that tab made active. Looks in the given
+    window first, then in Opera's other windows (it used to look in one window only)."""
+    from core.tools.apps import _bring_to_front
+    for hwnd in [first] + [w for w in _opera_windows() if w != first]:
+        if _bring_to_front(hwnd) and _go_to_tab(hwnd, name):
+            return hwnd
+    return None
 
 
 @tool(
@@ -365,13 +417,23 @@ def browser_action(action: str, target: str = "") -> Dict[str, Any]:
     if not _bring_to_front(hwnd):
         return {"ok": False, "result": "No pude traer Opera al frente, así que no toqué nada."}
 
-    if act in ("go_to_tab", "close_tab", "close_other_tabs") and target and not _go_to_tab(hwnd, target):
-        return {"ok": False, "result": f"No encontré ninguna pestaña con '{target}'."}
+    if act in ("go_to_tab", "close_tab", "close_other_tabs") and target:
+        found = _find_tab(target, first=hwnd)
+        if not found:
+            return {"ok": False, "result": f"No encontré ninguna pestaña con '{target}' en Opera."}
+        hwnd = found
     if act == "close_other_tabs":
         closed = _close_other_tabs(hwnd)
         if closed is None:
             return {"ok": False, "result": "Opera perdió el foco, así que me detuve."}
-        return {"ok": True, "result": f"Cerré {closed} pestaña{'s' if closed != 1 else ''}; dejé {target or 'la actual'}."}
+        # "Todas menos esta" means all of Opera: its other windows too (they were left open, log 24-oct)
+        windows = 0
+        for other in _opera_windows():
+            if other != hwnd and _bring_to_front(other) and _close_window_tabs(other):
+                windows += 1
+        _bring_to_front(hwnd)
+        extra = f" y {windows} ventana{'s' if windows != 1 else ''} más" if windows else ""
+        return {"ok": True, "result": f"Cerré {closed} pestaña{'s' if closed != 1 else ''}{extra}; dejé {target or 'la actual'}."}
     if act in ("close_all_tabs", "close_window"):
         if not _close_window_tabs(hwnd):
             return {"ok": False, "result": "Opera perdió el foco, así que dejé de cerrar pestañas."}
@@ -397,3 +459,40 @@ def _as_url(target: str) -> str:
     if re.match(r"^(https?://)?[\w-]+(\.[\w-]+)+(/\S*)?$", t):
         return t if t.startswith("http") else f"https://{t}"
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(t)
+
+
+def _first_web_result(name: str) -> Optional[str]:
+    """URL of the site DuckDuckGo's "!ducky" (I'm feeling lucky) picks for a name, read from its redirect page."""
+    url = "https://duckduckgo.com/?q=" + urllib.parse.quote_plus("!ducky " + name)
+    with urllib.request.urlopen(urllib.request.Request(url, headers=_YT_HEADERS), timeout=6) as resp:
+        body = resp.read(400_000).decode("utf-8", "replace")
+    m = re.search(r"uddg=([^&\"']+)", body) or re.search(r"url=(https?://[^'\"]+)", body)
+    found = urllib.parse.unquote(m.group(1)) if m else None
+    return found if found and found.startswith(("http://", "https://")) else None
+
+
+@tool(
+    name="open_website",
+    description=(
+        "Abre la web de algo por su NOMBRE cuando no sabes la dirección exacta (ej: 'banco de costa rica', 'steam', "
+        "'tyt soluciones'). Si te dictan o deletrean una dirección con .com, .net..., usa open_url. replace: true si "
+        "corrige la web que acabas de abrir (misma pestaña)."
+    ),
+)
+def open_website(name: str, replace: bool = False) -> Dict[str, Any]:
+    """Abre el primer resultado para un nombre y dice a qué dominio fue, para poder corregirlo."""
+    target = name.strip()
+    if not target:
+        return {"ok": False, "result": "¿Qué página quieres que abra?"}
+    try:
+        url = _first_web_result(target)
+    except (OSError, ValueError) as e:
+        logger.warning("Site lookup failed for %r: %s", target, e)
+        url = None
+    if not url:
+        _open_page("https://www.google.com/search?q=" + urllib.parse.quote_plus(target), replace)
+        return {"ok": True, "result": f"No encontré una web clara para {target}; te abrí la búsqueda en Google."}
+    _open_page(url, replace)
+    host = (urllib.parse.urlparse(url).hostname or url).removeprefix("www.")
+    # The first result is not always the one meant ("tyt soluciones" -> tytsolutions.com): say where it went
+    return {"ok": True, "result": f"Abrí {host}."}

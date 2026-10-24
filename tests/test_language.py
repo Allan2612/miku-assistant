@@ -32,10 +32,10 @@ def _rec(name):
 def fast(text):
     calls.clear()
     for mod, name in [(apps, "open_app"), (apps, "close_app"), (apps, "show_desktop"), (media, "change_volume"),
-                      (media, "mute"), (media, "media_control"), (media, "set_volume"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"), (web, "browser_action"),
+                      (media, "mute"), (media, "media_control"), (media, "set_volume"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"), (web, "browser_action"), (web, "open_website"),
                       (web, "open_url"), (notes, "take_note"), (notes, "open_notes"), (timers, "set_timer"), (memory, "remember"), (system, "shutdown_pc")]:
         setattr(mod, name, _rec(name))
-    web._host_exists = lambda host: host != "titsoluciones.net"  # no network; one misspelling
+    web._host_exists = lambda host: host not in ("titsoluciones.net", "tzytsoluciones.net")  # no network; misspellings
     notes.read_notes = lambda *a: calls.append(("read_notes", ())) or {"ok": True, "result": "notas"}
     routines.ROUTINES["trabajo"] = [{"tool": "_noop"}]
     routines.get_tool_metadata = lambda n: {"function": _rec("routine_step"), "destructive": False}
@@ -108,6 +108,10 @@ FAST_PATH = [
     ("abre tytsoluciones.net", ("open_url", ("tytsoluciones.net",))),
     ("No, era tytsoluciones.net", ("open_url", ("tytsoluciones.net",))),
     ("No, era tITSoluciones.net", None),  # Whisper misspelling that does not exist: Gemini hears the audio
+    ("Busca www.tzytsoluciones.net en Opera", None),  # log 05:58: it googled the misspelling
+    ("Abre la página del Banco de Costa Rica", ("open_website", ("banco de costa rica",))),
+    ("entra a la página web de steam", ("open_website", ("steam",))),
+    ("ve a la página de tytsoluciones.net", None),  # an address: not by name (open_url via Gemini/m_site)
     ("Busca recetas de pasta en Opera", ("web_search", ("recetas de pasta en opera",))),  # web_search drops "en opera"
     # Must go to Gemini (ambiguous, or not a simple command)
     ("cierra la ventana", None),  # which window? (H-023)
@@ -117,7 +121,7 @@ FAST_PATH = [
     ("Abre mi ópera y pon YouTube con la canción More.", None),
     ("recuérdame mañana a las 8 que tengo cita", None),  # a clock time: set_reminder, Gemini's job
     ("Abre los sigres de notas en el recopo, y a ver, me lluta", None),  # once opened the notes
-    ("abre la página web del banco", ("open_app", ("página web del banco",))),  # real open_app finds nothing -> Gemini
+    ("abre la página web del banco", ("open_website", ("banco",))),  # says the domain: easy to correct
     ("Reproduce la canción que estoy escuchando ahora.", None),
     ("Reprodúceme una canción en YouTube.", None),  # vague: Gemini picks one
     ("modo avión", None),

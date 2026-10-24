@@ -138,6 +138,9 @@ FAREWELL_EXACT = {
 _ORDER_HINT = re.compile(
     r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
 )
+_DOMAIN_RE = re.compile(r"^(?:https?://)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?$")
+# What Gemini says it is playing when it forgot to call youtube_play: "Reproduciendo 'Heart Steel' en YouTube"
+_CLAIMED_YT_RE = re.compile(r"(?:reproduciendo|poniendo|te pongo|pongo)\s+['\"«]?(.+?)['\"»]?\s+en\s+youtube", re.IGNORECASE)
 _CHAINED_ORDER = re.compile(
     r"(?:\by\b|,|\bluego\b|\bdespu[eé]s\b|\btambi[eé]n\b)\s*(?:me\s+)?"
     r"(?:abre|[aá]breme|cierra|pon|ponme|sube|s[uú]bele|baja|b[aá]jale|busca|reproduce|minimiza|anota|apunta"
@@ -490,6 +493,14 @@ class MikuBrain:
                 res = open_url(m_site.group("site"), replace=bool(m_site.group("fix")))
                 return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
 
+        # "Abre la página del Banco de Costa Rica": a site by name, no address dictated
+        m_page = re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|entra\s+(?:a|en)|ve\s+a|ll[eé]vame\s+a)\s+(?:la\s+)?"
+                          r"(?:p[aá]gina|web|sitio)(?:\s+web)?\s+(?:de\s+(?:la\s+|los\s+|las\s+)?|del\s+)(.+)$", low)
+        if m_page and not _DOMAIN_RE.match(m_page.group(1)):
+            from core.tools.web import open_website
+            res = open_website(m_page.group(1).strip())
+            return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
+
         m_open = re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+)?(.+)$", low)
         if m_open and len(m_open.group(1).split()) <= 4:
             target = m_open.group(1).strip()
@@ -535,7 +546,10 @@ class MikuBrain:
         # "busca el archivo X" is a file search for Gemini (find_file), not a Google search. "busca en mis
         # documentos" too; but "busca en google X" is: the regex already ate "en google", so only another
         # "en ..." is left out (startswith("busca en") also dropped "busca en google")
+        # A web address that got here does not exist (the m_site rule took the real ones): most likely a Whisper
+        # misspelling ("www.tzytsoluciones.net"), so Gemini, which hears the audio, gets it (log, 24-oct)
         if (m_search_goog and "youtube" not in low and not m_search_goog.group(1).startswith("en ")
+                and not _DOMAIN_RE.match(re.sub(r"\s+en\s+(?:opera|ópera|el\s+navegador|internet)$", "", m_search_goog.group(1)))
                 and not re.match(r"^(?:el |la |mi |mis |un |una )?(?:archivo|documento|carpeta)", m_search_goog.group(1))):
             q = m_search_goog.group(1).strip()
             from core.tools.web import web_search
@@ -800,6 +814,11 @@ class MikuBrain:
             # It heard the audio, Whisper often did not ("¡Suscríbete!" -> "¡Listo, volumen al máximo!"): if the
             # fast path recognizes what it claimed, do that (the fast path has no destructive actions)
             repaired = await asyncio.to_thread(self._try_fast_path_tool, clean_text)
+            yt = _CLAIMED_YT_RE.search(clean_text)
+            if repaired is None and yt:
+                from core.tools.web import youtube_play
+                res = await asyncio.to_thread(youtube_play, yt.group(1).strip())
+                repaired = ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
             if repaired is not None:
                 logger.info("Did locally what Gemini only claimed: %s", repaired[1])
                 emotion, clean_text = repaired[0], repaired[1]

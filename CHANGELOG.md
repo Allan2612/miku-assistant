@@ -14,6 +14,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 
 ### Añadido
+- `open_website`: abre la web de algo por su nombre ("abre la página del Banco de Costa Rica") y dice a qué dominio fue.
 - `browser_action`: controla Opera (pestañas nuevas con una web, cerrar, cambiar, ir a la pestaña de X, reabrir, ventanas, atrás, recargar).
 - `youtube_play`: pone y reproduce en YouTube lo que pidas ("ponme More en YouTube", "pon la canción..."); antes solo abría la búsqueda.
 - Despedidas sin petición e instantáneas, con más frases: "ya está", "no te necesito", "eso es todo", "gracias", "nada" (las ambiguas solo si son toda la frase).
@@ -27,6 +28,9 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- "Cierra todas menos X" dejaba pestañas abiertas: al cerrar una pestaña Opera activa la siguiente y se la saltaba; también cuenta ahora las otras ventanas de Opera y salta las pestañas fijadas (la "GX Corner" de Opera GX contaba como 78 cierres).
+- Corregir una web abría otra pestaña: Opera no pasa al frente al abrir una web desde Miku, así que no se sabía en qué ventana estaba. Ahora Miku la trae al frente y la recuerda.
+- "Busca www.direccion-mal-transcrita.net" ya no la googlea tal cual: pasa a Gemini, que oye el audio. "Reproduciendo X en YouTube" sin herramienta se reproduce de verdad.
 - Direcciones web dictadas o deletreadas: Gemini (que oye el audio) junta las letras deletreadas; `open_url` comprueba que la dirección exista (DNS, máx. 2 s) y si no, la busca en Google; el atajo no abre direcciones mal transcritas por Whisper; Miku dice la dirección ("He abierto tytsoluciones.net").
 - "No, era X" / "te equivocaste": se carga en la misma pestaña (`replace`), y los turnos del atajo quedan en el historial para que Gemini sepa qué se corrige.
 - "¡Suscríbete!" y otras alucinaciones de Whisper con ruido ya no cuentan como petición.
