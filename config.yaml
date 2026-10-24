@@ -1,7 +1,7 @@
 hotkey: "Ctrl+Alt+M"
 language: "es"
 window: { width: 420, height: 620, anchor: "bottom-right", margin: 12, fps_visible: 30 }
-behavior: { hide_after_seconds: 20, max_record_seconds: 10, silence_ms: 700, unload_after_minutes: 10 }
+behavior: { hide_after_seconds: 20, max_record_seconds: 10, silence_ms: 700, unload_after_minutes: 10, follow_up_seconds: 6 }  # follow_up: mic stays open after each answer, no "Hey Miku" (0 = off)
 llm: {
   model: "gemini-3.5-flash-lite",
   # Free tier, requests per minute / per day (24-oct). Each model has its own bucket, so when one runs out

@@ -25,6 +25,7 @@ class BehaviorConfig:
     max_record_seconds: int = 15
     silence_ms: int = 800
     unload_after_minutes: int = 10
+    follow_up_seconds: float = 6.0  # conversation mode: mic stays open after each answer (0 = off)
 
 
 @dataclass(slots=True)
@@ -153,6 +154,7 @@ def load_config(
             max_record_seconds=behavior_data.get("max_record_seconds", 15),
             silence_ms=behavior_data.get("silence_ms", 800),
             unload_after_minutes=behavior_data.get("unload_after_minutes", 10),
+            follow_up_seconds=float(behavior_data.get("follow_up_seconds", 6.0)),
         ),
         llm=LLMConfig(
             model=llm_data.get("model", "gemini-3.5-flash-lite"),

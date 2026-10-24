@@ -5,7 +5,7 @@ Run: core\\.venv\\Scripts\\python.exe -m tests.test_pipeline  (or with pytest)
 
 import asyncio
 
-from core.pipeline import FILLER_PHRASES, MikuPipeline
+from core.pipeline import FILLER_PHRASES, FOLLOW_UP_DELAY_S, MikuPipeline
 
 
 class FakeServer:
@@ -188,6 +188,55 @@ def test_filler_when_switching_model():
     asyncio.run(_filler())
 
 
+class SilentMic(FakeMic):
+    async def record_phrase(self, **_):
+        return None
+
+
+async def _conversation():
+    def make(heard, mic_cls=FakeMic, follow_up_s=2.0):
+        server = FakeServer()
+        brain = RecordingBrain()
+        p = MikuPipeline(brain=brain, tts=FakeTTS(), stt=FakeSTT(heard), audio_in=mic_cls(server),
+                         resources=FakeResources(), server=server, rvc=None, follow_up_s=follow_up_s)
+        p.set_wakeword(FakeWake())
+        return p, server, brain
+
+    wait = FOLLOW_UP_DELAY_S + 0.2
+
+    # After an answer the mic opens again without the wake word, and the follow-up gets answered
+    p, server, brain = make("¿y mañana?")
+    p.handle_speak_done()
+    await asyncio.sleep(wait)
+    assert server.sent[0] == "state" and brain.heard == ["¿y mañana?"], (server.sent, brain.heard)
+
+    # Silence: back to idle, wake word listening again
+    p, server, brain = make("", mic_cls=SilentMic)
+    p.handle_speak_done()
+    await asyncio.sleep(wait)
+    assert brain.heard == [] and not p.wakeword.paused and not p._is_listening
+
+    # The tail of her own answer picked up by the mic is not a question
+    p, server, brain = make("hace sol en Madrid")
+    p._last_answer = "¡Hoy hace sol en Madrid!"
+    p.handle_speak_done()
+    await asyncio.sleep(wait)
+    assert brain.heard == [], brain.heard
+
+    # After a goodbye, or with the mode off: no follow-up
+    p, server, brain = make("hola")
+    p._pending_farewell = True
+    p.handle_speak_done()
+    p2, server2, brain2 = make("hola", follow_up_s=0)
+    p2.handle_speak_done()
+    await asyncio.sleep(wait)
+    assert brain.heard == [] and brain2.heard == [] and server.sent == [] and server2.sent == []
+
+
+def test_conversation_mode():
+    asyncio.run(_conversation())
+
+
 def test_goodbye_on_inactivity():
     asyncio.run(_goodbye())
 
@@ -196,5 +245,6 @@ if __name__ == "__main__":
     test_pipeline_flows()
     test_goodbye_on_inactivity()
     test_filler_when_switching_model()
+    test_conversation_mode()
     test_activation_says_yes_then_listens()
     print("ok")

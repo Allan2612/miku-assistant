@@ -37,6 +37,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 ACK_PHRASES = ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!")
 ACK_WAIT_S = 3.0  # max wait for the frontend to finish playing the cue
 # Said when a Gemini model fails (per-minute quota, 503) and the next one is tried: the user knows she is on it
+# Conversation mode: the mic opens this long after she stops talking (her voice must not be recorded)
+FOLLOW_UP_DELAY_S = 0.35
 FILLER_PHRASES = ("Un momento...", "Mmm...", "Déjame pensar...", "Dame un segundito...", "A ver...")
 # Said before hiding on inactivity (fixed phrases: voice cached on disk, 0 Gemini requests)
 GOODBYE_PHRASES = ("¡Adiós!", "¡Chao!", "¡Nos vemos!", "¡Hasta luego!", "Me voy, ¡llámame si me necesitas!")
@@ -79,6 +81,7 @@ class MikuPipeline:
         rvc: Optional[RVCManager] = None,
         silence_ms: int = 800,
         max_record_seconds: int = 15,
+        follow_up_s: float = 0.0,
     ) -> None:
         self.brain = brain
         self.brain.on_model_switch = self._say_filler
@@ -90,6 +93,8 @@ class MikuPipeline:
         self.rvc = rvc
         self.silence_ms = silence_ms
         self.max_record_seconds = max_record_seconds
+        self.follow_up_s = follow_up_s  # conversation mode: seconds the mic waits after each answer (0 = off)
+        self._last_answer = ""
         self.wakeword: Optional[Any] = None
 
         self._pipeline_lock = asyncio.Lock()
@@ -255,6 +260,7 @@ class MikuPipeline:
 
     async def _speak(self, text: str, emotion: str, farewell: bool = False, cache: bool = False) -> None:
         """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032)."""
+        self._last_answer = text
         voice_res = await self._synthesize_voice(text, cache=cache)
         self.resources.touch()
         await self.server.broadcast({"type": "expression", "name": emotion})
@@ -334,64 +340,94 @@ class MikuPipeline:
                 await self.server.broadcast({"type": "state", "value": "listening"})
                 await self.server.broadcast({"type": "expression", "name": "neutral"})
 
-                # 3. Capture phrase from microphone with VAD
-                # Mic opens here and closes immediately upon silence
-                audio: Optional[np.ndarray] = await self.audio_in.record_phrase(
-                    silence_ms=self.silence_ms,
-                    max_seconds=self.max_record_seconds,
-                    # 8 s: at 5.5 s the user often started late, and what they said went nowhere
-                    initial_timeout=8.0,
-                )
-
-                if audio is None:
-                    logger.info("No speech captured. Returning to idle.")
-                    await self.server.broadcast({"type": "state", "value": "idle"})
-                    if self.wakeword is not None:
-                        self.wakeword.resume()
-                    return
-
-                # 4. Indicate thinking state to UI
-                await self.server.broadcast({"type": "state", "value": "thinking"})
-                await self.server.broadcast({"type": "expression", "name": "thinking"})
-
-                # Wait for Whisper only: waiting for the RVC load (35-80 s) here delayed every
-                # first answer after an unload; RVC falls back to the base voice while it loads
-                if stt_warmup is not None:
-                    await asyncio.gather(stt_warmup, return_exceptions=True)
-
-                # 5. Transcribe audio with faster-whisper on CPU
-                transcribed_text = await self.stt.transcribe(audio)
-
-                # Miku's own cue picked up by the mic must never reach Gemini: "sí" would confirm
-                # a pending destructive action
-                if _normalize(transcribed_text) in _ACK_NORMALIZED:
-                    logger.info("Transcription is just the acknowledgement cue (%r). Ignoring.", transcribed_text)
-                    transcribed_text = ""
-
-                if not transcribed_text:
-                    logger.info("Empty transcription. Returning to idle.")
-                    await self.server.broadcast({"type": "state", "value": "idle"})
-                    if self.wakeword is not None:
-                        self.wakeword.resume()
-                    return
-
-                # 6. Show transcribed text as user subtitle (Gemini never sent back what it heard, live test)
-                await self.server.broadcast({
-                    "type": "subtitle",
-                    "who": "user",
-                    "text": transcribed_text,
-                })
-
-                # 7. One Gemini request hears the audio itself (Whisper's text only gates and drives the fast path)
-                self.resources.touch()
-                emotion, answer, is_farewell = await self.brain.chat(transcribed_text, audio=audio)
-                self._pending_farewell = is_farewell
-
-                # 8. Synthesize speech (edge-tts -> RVC) and speak
-                await self._speak(answer, emotion, farewell=is_farewell)
+                # 8 s: at 5.5 s the user often started late, and what they said went nowhere
+                await self._listen_and_answer(initial_timeout=8.0, stt_warmup=stt_warmup)
 
             except Exception:
                 logger.exception("Error in voice activation pipeline")
+                await self.server.broadcast({"type": "state", "value": "idle"})
+                if self.wakeword is not None:
+                    self.wakeword.resume()
+            finally:
+                self._is_listening = False
+
+    async def _listen_and_answer(self, initial_timeout: float, stt_warmup: Optional[asyncio.Task] = None) -> None:
+        """Records one phrase, transcribes it and answers it. Runs under the pipeline lock, mic state already shown."""
+        # 3. Capture phrase from microphone with VAD
+        # Mic opens here and closes immediately upon silence
+        audio: Optional[np.ndarray] = await self.audio_in.record_phrase(
+            silence_ms=self.silence_ms,
+            max_seconds=self.max_record_seconds,
+            initial_timeout=initial_timeout,
+        )
+
+        if audio is None:
+            logger.info("No speech captured. Returning to idle.")
+            await self.server.broadcast({"type": "state", "value": "idle"})
+            if self.wakeword is not None:
+                self.wakeword.resume()
+            return
+
+        # 4. Indicate thinking state to UI
+        await self.server.broadcast({"type": "state", "value": "thinking"})
+        await self.server.broadcast({"type": "expression", "name": "thinking"})
+
+        # Wait for Whisper only: waiting for the RVC load (35-80 s) here delayed every
+        # first answer after an unload; RVC falls back to the base voice while it loads
+        if stt_warmup is not None:
+            await asyncio.gather(stt_warmup, return_exceptions=True)
+
+        # 5. Transcribe audio with faster-whisper on CPU
+        transcribed_text = await self.stt.transcribe(audio)
+
+        # Miku's own cue picked up by the mic must never reach Gemini: "sí" would confirm
+        # a pending destructive action
+        heard = _normalize(transcribed_text)
+        if heard in _ACK_NORMALIZED:
+            logger.info("Transcription is just the acknowledgement cue (%r). Ignoring.", transcribed_text)
+            transcribed_text = ""
+        # Conversation mode opens the mic right after she speaks: the tail of her own answer must not
+        # come back as the user's next question
+        elif len(heard.split()) >= 2 and heard in _normalize(self._last_answer):
+            logger.info("Transcription is Miku's own last answer (%r). Ignoring.", transcribed_text)
+            transcribed_text = ""
+
+        if not transcribed_text:
+            logger.info("Empty transcription. Returning to idle.")
+            await self.server.broadcast({"type": "state", "value": "idle"})
+            if self.wakeword is not None:
+                self.wakeword.resume()
+            return
+
+        # 6. Show transcribed text as user subtitle (Gemini never sent back what it heard, live test)
+        await self.server.broadcast({
+            "type": "subtitle",
+            "who": "user",
+            "text": transcribed_text,
+        })
+
+        # 7. One Gemini request hears the audio itself (Whisper's text only gates and drives the fast path)
+        self.resources.touch()
+        emotion, answer, is_farewell = await self.brain.chat(transcribed_text, audio=audio)
+        self._pending_farewell = is_farewell
+
+        # 8. Synthesize speech (edge-tts -> RVC) and speak
+        await self._speak(answer, emotion, farewell=is_farewell)
+
+    async def _follow_up(self) -> None:
+        """Conversation mode: after an answer the mic stays open a few seconds, no wake word needed."""
+        await asyncio.sleep(FOLLOW_UP_DELAY_S)  # the echo of her last word dies out before the mic opens
+        if self._is_listening or self._is_speaking or self._pipeline_lock.locked() or not self.server.clients:
+            return
+        async with self._pipeline_lock:
+            self._is_listening = True
+            if self.wakeword is not None:
+                self.wakeword.pause()
+            try:
+                await self.server.broadcast({"type": "state", "value": "listening"})
+                await self._listen_and_answer(initial_timeout=self.follow_up_s)
+            except Exception:
+                logger.exception("Error in conversation follow-up")
                 await self.server.broadcast({"type": "state", "value": "idle"})
                 if self.wakeword is not None:
                     self.wakeword.resume()
@@ -466,6 +502,8 @@ class MikuPipeline:
         self._pending_farewell = False
         if self.wakeword is not None:
             self.wakeword.resume()
+        if not farewell and self.follow_up_s > 0:
+            self._spawn_bg(self._follow_up())
         return farewell
 
     async def check_startup_greeting(self) -> None:

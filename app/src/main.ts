@@ -128,6 +128,31 @@ export function clearAutoHideTimer(): void {
   }
 }
 
+// Short soft tone so the user always knows the mic state without looking: rising = she is listening,
+// falling = she stopped listening without hearing anything
+let earconCtx: AudioContext | null = null;
+function earcon(rising: boolean): void {
+  try {
+    earconCtx ??= new AudioContext();
+    if (earconCtx.state !== "running") void earconCtx.resume();
+    const t = earconCtx.currentTime;
+    const osc = earconCtx.createOscillator();
+    const gain = earconCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(rising ? 660 : 880, t);
+    osc.frequency.exponentialRampToValueAtTime(rising ? 990 : 520, t + 0.12);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+    osc.connect(gain).connect(earconCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.16);
+  } catch (err) {
+    console.warn("[Earcon] Could not play:", err);
+  }
+}
+let micOpen = false;
+
 function handleServerMessage(msg: ServerMessage): void {
   switch (msg.type) {
     case "show": {
@@ -153,7 +178,14 @@ function handleServerMessage(msg: ServerMessage): void {
       if (msg.value === "listening") {
         clearAutoHideTimer();
         ui.showListening();
-      } else if (msg.value === "thinking") {
+        if (!micOpen) earcon(true);
+        micOpen = true;
+        break;
+      }
+      // Mic closed without hearing anything (timeout, silence, or just her own voice): falling tone
+      if (micOpen && msg.value === "idle") earcon(false);
+      micOpen = false;
+      if (msg.value === "thinking") {
         clearAutoHideTimer();
         ui.showThinking();
       } else if (msg.value === "idle") {

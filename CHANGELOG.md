@@ -14,6 +14,8 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 
 ### Añadido
+- **Modo conversación**: tras cada respuesta el micrófono sigue abierto 6 s (`behavior.follow_up_seconds`) para seguir hablando sin "Hey Miku". Si capta el final de la propia voz de Miku, lo descarta.
+- Tonos de estado: uno ascendente al abrir el micrófono y uno descendente al cerrarlo sin haber oído nada (además de la burbuja "Escuchando...").
 - Memoria a largo plazo (`remember` / `forget`), rutinas ("modo trabajo"), ventanas (minimizar, maximizar, restaurar), portapapeles, crear y leer archivos de texto.
 - Leer páginas web que le pases por texto, con `url_context` de Gemini, en la misma petición.
 - "¿Qué ves en mi pantalla?": la captura va en la misma petición que el audio.
