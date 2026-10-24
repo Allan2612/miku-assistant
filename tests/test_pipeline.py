@@ -223,6 +223,12 @@ async def _conversation():
     await asyncio.sleep(wait)
     assert brain.heard == [], brain.heard
 
+    # Whisper's YouTube-outro hallucination in noise is not a request (it reopened a web page, log 24-oct)
+    p, server, brain = make("¡Suscríbete!")
+    p.handle_speak_done()
+    await asyncio.sleep(wait)
+    assert brain.heard == [], brain.heard
+
     # After a goodbye, or with the mode off: no follow-up
     p, server, brain = make("hola")
     p._pending_farewell = True

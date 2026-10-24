@@ -50,6 +50,14 @@ def _normalize(text: str) -> str:
 
 _ACK_NORMALIZED = {_normalize(p) for p in ACK_PHRASES} | {"si"}
 
+# What Whisper writes for noise or silence: it learned it from YouTube subtitles (seen twice in the log: 05:13 and
+# 05:23, both "¡Suscríbete!"). Never a real request
+WHISPER_HALLUCINATIONS = {_normalize(p) for p in (
+    "¡Suscríbete!", "Suscríbete al canal", "¡Suscríbete al canal!", "Gracias por ver", "Gracias por ver el video",
+    "Gracias por ver el vídeo", "¡Gracias por ver!", "Subtítulos por la comunidad de Amara.org",
+    "Subtítulos realizados por la comunidad de Amara.org", "Gracias por su atención", "Hasta la próxima",
+)}
+
 
 def _trim_silence(wav_bytes: bytes, threshold: float = 0.01, keep_s: float = 0.08) -> bytes:
     """edge-tts pads short phrases to ~1.9 s: trim it so the mic opens right after the cue."""
@@ -383,7 +391,11 @@ class MikuPipeline:
         # Miku's own cue picked up by the mic must never reach Gemini: "sí" would confirm
         # a pending destructive action
         heard = _normalize(transcribed_text)
-        if heard in _ACK_NORMALIZED:
+        # Whisper "hears" YouTube outros in noise: "¡Suscríbete!" made Gemini reopen the last web page (log, 24-oct)
+        if heard in WHISPER_HALLUCINATIONS or "amaraorg" in heard.replace(" ", ""):
+            logger.info("Transcription is a known Whisper hallucination (%r). Ignoring.", transcribed_text)
+            transcribed_text = ""
+        elif heard in _ACK_NORMALIZED:
             logger.info("Transcription is just the acknowledgement cue (%r). Ignoring.", transcribed_text)
             transcribed_text = ""
         # Conversation mode opens the mic right after she speaks: the tail of her own answer must not

@@ -35,6 +35,7 @@ def fast(text):
                       (media, "mute"), (media, "media_control"), (media, "set_volume"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"), (web, "browser_action"),
                       (web, "open_url"), (notes, "take_note"), (notes, "open_notes"), (timers, "set_timer"), (memory, "remember"), (system, "shutdown_pc")]:
         setattr(mod, name, _rec(name))
+    web._host_exists = lambda host: host != "titsoluciones.net"  # no network; one misspelling
     notes.read_notes = lambda *a: calls.append(("read_notes", ())) or {"ok": True, "result": "notas"}
     routines.ROUTINES["trabajo"] = [{"tool": "_noop"}]
     routines.get_tool_metadata = lambda n: {"function": _rec("routine_step"), "destructive": False}
@@ -98,6 +99,16 @@ FAST_PATH = [
     ("Recarga la página.", ("browser_action", ("reload", ""))),
     ("vuelve atrás", ("browser_action", ("back", ""))),
     ("cierra la ventana de opera", ("browser_action", ("close_window", ""))),
+    ("Cierra todas las pestañas.", ("browser_action", ("close_all_tabs", ""))),
+    ("cierra todas las pestañas de opera excepto la de youtube", ("browser_action", ("close_other_tabs", "youtube"))),
+    ("Cierra todas las pestañas menos la de YouTube", ("browser_action", ("close_other_tabs", "youtube"))),
+    ("cierra las demás pestañas", ("browser_action", ("close_other_tabs", ""))),
+    # Web addresses (log, 24-oct): open them, never google "X en opera"
+    ("Busca ttsoluciones.net en Opera", ("open_url", ("ttsoluciones.net",))),
+    ("abre tytsoluciones.net", ("open_url", ("tytsoluciones.net",))),
+    ("No, era tytsoluciones.net", ("open_url", ("tytsoluciones.net",))),
+    ("No, era tITSoluciones.net", None),  # Whisper misspelling that does not exist: Gemini hears the audio
+    ("Busca recetas de pasta en Opera", ("web_search", ("recetas de pasta en opera",))),  # web_search drops "en opera"
     # Must go to Gemini (ambiguous, or not a simple command)
     ("cierra la ventana", None),  # which window? (H-023)
     ("me encanta Frieren, acuérdate de eso", None),  # the fact is before: Gemini writes it
@@ -146,6 +157,7 @@ LIES = [
     "Puse el volumen al 30.",
     "¡Entendido! Voy a apagar el equipo ahora mismo.",
     "¡Yatta! Reproduciendo More en YouTube para ti.",
+    "Cierro las pestañas en este momento.",
     "¡Hecho! Te avisaré en diez minutos.",
     "¡Listo!",
     "Ya no se me olvida que te encanta Frieren.",

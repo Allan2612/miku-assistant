@@ -27,6 +27,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- Direcciones web dictadas o deletreadas: Gemini (que oye el audio) junta las letras deletreadas; `open_url` comprueba que la dirección exista (DNS, máx. 2 s) y si no, la busca en Google; el atajo no abre direcciones mal transcritas por Whisper; Miku dice la dirección ("He abierto tytsoluciones.net").
+- "No, era X" / "te equivocaste": se carga en la misma pestaña (`replace`), y los turnos del atajo quedan en el historial para que Gemini sepa qué se corrige.
+- "¡Suscríbete!" y otras alucinaciones de Whisper con ruido ya no cuentan como petición.
+- Pestañas: "cierra todas las pestañas (menos la de X)" y "cierra las demás"; cambio de pestaña por posición (Ctrl+AvPág); cerrar una ventana va pestaña a pestaña (Ctrl+Shift+W pedía confirmación).
 - "Súbele el volumen a 100%" solo subía 15: el atajo entiende niveles ("al 30", "al máximo", "a tope", "al mínimo"). Una frase con varias órdenes ("abre Spotify y sube el volumen") ya no la resuelve a medias el atajo: va a Gemini. Si Gemini dice que hizo algo sin hacerlo y el atajo lo reconoce ("¡volumen al máximo!"), se hace en local en vez de disculparse.
 - Pedir otra canción abría una pestaña más y la anterior seguía sonando: `youtube_play` reutiliza la pestaña de YouTube que abrió. "Abre Opera" con Opera ya abierto trae su ventana en lugar de abrir otra.
 - Si no hablabas en los primeros segundos, la burbuja seguía diciendo "Escuchando..." con el micrófono ya cerrado y lo que dijeras después se perdía: ahora desaparece al volver a reposo, y la espera inicial pasa de 5,5 a 8 s.

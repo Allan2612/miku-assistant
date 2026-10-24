@@ -7,7 +7,9 @@ import json
 import logging
 import os
 import re
+import socket
 import subprocess
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -36,11 +38,37 @@ def _open_in_browser(target_url: str) -> None:
         webbrowser.open(target_url)
 
 
+DNS_CHECK_S = 2.0
+
+
+def _host_exists(host: str) -> Optional[bool]:
+    """True/False from DNS, None if it did not answer in DNS_CHECK_S (on this network some lookups hang ~10 s,
+    which tripped the tool timeout): unknown means open it anyway."""
+    box: Dict[str, Any] = {}
+
+    def lookup() -> None:
+        try:
+            socket.getaddrinfo(host, 443)
+            box["ok"] = True
+        except (socket.gaierror, UnicodeError):
+            box["ok"] = False
+        except OSError:
+            pass
+
+    t = threading.Thread(target=lookup, daemon=True, name="miku-dns")
+    t.start()
+    t.join(DNS_CHECK_S)
+    return box.get("ok")
+
+
 @tool(
     name="open_url",
-    description="Abre una URL web válida (solo http/https) en Opera GX si está instalado, si no en el navegador predeterminado."
+    description=(
+        "Abre una web (solo http/https) en Opera GX. replace: true si el usuario corrige la web que acabas de abrir "
+        "('no, era otra', 'te equivocaste'): se carga en la misma pestaña en vez de abrir otra."
+    ),
 )
-def open_url(url: str = "", uri: str = "") -> Dict[str, Any]:
+def open_url(url: str = "", uri: str = "", replace: bool = False) -> Dict[str, Any]:
     """Abre una URL en el navegador."""
     target_url = url or uri
     if not target_url:
@@ -50,25 +78,36 @@ def open_url(url: str = "", uri: str = "") -> Dict[str, Any]:
         clean_url = f"https://{clean_url}"
 
     parsed = urllib.parse.urlparse(clean_url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or not parsed.hostname:
         return {"ok": False, "result": f"La URL '{target_url}' no es válida."}
+    # Said aloud: "tytsoluciones.net", not "https colon slash slash www..." (the voice dropped it altogether)
+    bare = parsed.hostname.removeprefix("www.")
 
-    _open_in_browser(clean_url)
-    return {"ok": True, "result": f"He abierto {clean_url} en tu navegador."}
+    # A dictated or spelled address often comes out wrong ("tygtsoluciones.net"). If it does not exist, Google
+    # with that name usually finds the right one ("quizás quisiste decir")
+    if _host_exists(parsed.hostname) is False:
+        _open_page("https://www.google.com/search?q=" + urllib.parse.quote_plus(bare), replace)
+        return {"ok": True, "result": f"No encontré {bare}; te lo busqué en Google por si se escribe distinto."}
+
+    _open_page(clean_url, replace)
+    return {"ok": True, "result": f"He abierto {bare}."}
 
 
 @tool(
     name="web_search",
-    description="Abre en el navegador una búsqueda de Google. Solo si el usuario pide buscar algo; si te hace una pregunta, respóndela tú."
+    description=(
+        "Abre en el navegador una búsqueda de Google. Solo si el usuario pide buscar algo; si te hace una pregunta, "
+        "respóndela tú. replace: true si corrige la búsqueda o web que acabas de abrir (misma pestaña)."
+    ),
 )
-def web_search(query: str = "", search_query: str = "") -> Dict[str, Any]:
+def web_search(query: str = "", search_query: str = "", replace: bool = False) -> Dict[str, Any]:
     """Busca en Google y abre los resultados."""
-    target_q = query or search_query
+    # "busca X en Opera": where to search is not part of what to search
+    target_q = re.sub(r"\s+en\s+(?:opera|ópera|el\s+navegador|internet|google)$", "", (query or search_query).strip(),
+                      flags=re.IGNORECASE)
     if not target_q:
         return {"ok": False, "result": "Debes especificar qué deseas buscar en Google."}
-    q = urllib.parse.quote_plus(target_q.strip())
-    url = f"https://www.google.com/search?q={q}"
-    _open_in_browser(url)
+    _open_page("https://www.google.com/search?q=" + urllib.parse.quote_plus(target_q), replace)
     return {"ok": True, "result": f"He buscado '{target_q}' en Google."}
 
 
@@ -106,9 +145,15 @@ def _reuse_youtube_tab(url: str) -> bool:
     open a second tab and the first one kept playing (user, 24-oct). False means: open a new tab instead."""
     if time.monotonic() - _last_youtube_open > YT_TAB_REUSE_S:
         return False
-    from core.tools.apps import _bring_to_front, _find_window, _press, _type_into_foreground
+    from core.tools.apps import _find_window
     hwnd = _find_window("youtube", exe="opera")  # the window title is the active tab's: "... - YouTube - Opera"
-    if not hwnd or not _bring_to_front(hwnd):
+    return bool(hwnd) and _navigate_in(hwnd, url)
+
+
+def _navigate_in(hwnd: int, url: str) -> bool:
+    """Loads url in the active tab of this Opera window (address bar). False: it typed nothing that mattered."""
+    from core.tools.apps import _bring_to_front, _press, _type_into_foreground
+    if not _bring_to_front(hwnd):
         return False
     _press(VK_CONTROL, ord("L"))  # address bar
     time.sleep(0.15)
@@ -121,8 +166,32 @@ def _reuse_youtube_tab(url: str) -> bool:
         return False
     _press(VK_DELETE)  # drop the address bar's inline autocomplete, or Enter could open a URL from history
     _press(VK_RETURN)
-    logger.info("Reused the YouTube tab for %s", url)
+    _last_page.update(time=time.monotonic(), hwnd=hwnd)
+    logger.info("Reused the tab for %s", url)
     return True
+
+
+# The Opera window where Miku last opened a page: "no, era otra web" replaces it there
+_last_page: Dict[str, Any] = {"time": float("-inf"), "hwnd": None}
+LAST_PAGE_REUSE_S = 600.0
+
+
+def _remember_opera_window() -> None:
+    """Runs right after opening a URL: Opera comes to the front with it, so that is the window to remember."""
+    time.sleep(1.5)
+    fg = ctypes.windll.user32.GetForegroundWindow()
+    if fg and _is_opera(fg):
+        _last_page.update(time=time.monotonic(), hwnd=fg)
+
+
+def _open_page(url: str, replace: bool) -> None:
+    """Opens url; with replace (the user corrects the last page), in the tab Miku used last, if it can."""
+    hwnd = _last_page["hwnd"]
+    if (replace and hwnd and time.monotonic() - _last_page["time"] < LAST_PAGE_REUSE_S
+            and ctypes.windll.user32.IsWindow(hwnd) and _navigate_in(hwnd, url)):
+        return
+    _open_in_browser(url)
+    threading.Thread(target=_remember_opera_window, daemon=True, name="miku-opera-window").start()
 
 
 def _first_youtube_video(query: str) -> Optional[Tuple[str, str]]:
@@ -171,12 +240,15 @@ def youtube_play(query: str = "", search_query: str = "") -> Dict[str, Any]:
 
 
 VK_SHIFT, VK_MENU, VK_TAB, VK_LEFT, VK_RIGHT, VK_F5 = 0x10, 0x12, 0x09, 0x25, 0x27, 0x74
+# Ctrl+PgDn/PgUp move by position; Ctrl+Tab can be set to "recently used" order, where repeated presses
+# only flip between the last two tabs
+VK_PRIOR, VK_NEXT = 0x21, 0x22
 # Opera's own shortcuts (same as Chrome's)
 _BROWSER_KEYS = {
     "new_tab": (VK_CONTROL, ord("T")), "close_tab": (VK_CONTROL, ord("W")),
-    "next_tab": (VK_CONTROL, VK_TAB), "previous_tab": (VK_CONTROL, VK_SHIFT, VK_TAB),
+    "next_tab": (VK_CONTROL, VK_NEXT), "previous_tab": (VK_CONTROL, VK_PRIOR),
     "reopen_tab": (VK_CONTROL, VK_SHIFT, ord("T")), "new_window": (VK_CONTROL, ord("N")),
-    "close_window": (VK_CONTROL, VK_SHIFT, ord("W")), "back": (VK_MENU, VK_LEFT),
+    "back": (VK_MENU, VK_LEFT),
     "forward": (VK_MENU, VK_RIGHT), "reload": (VK_F5,),
 }
 _BROWSER_DONE = {
@@ -184,6 +256,7 @@ _BROWSER_DONE = {
     "previous_tab": "Volví a la pestaña anterior", "reopen_tab": "Reabrí la última pestaña cerrada",
     "new_window": "Abrí una ventana nueva", "close_window": "Cerré la ventana", "back": "Volví atrás",
     "forward": "Fui hacia adelante", "reload": "Recargué la página", "go_to_tab": "Ya estás en la pestaña",
+    "close_all_tabs": "Cerré todas las pestañas de esa ventana", "close_other_tabs": "Cerré las demás pestañas",
 }
 MAX_TABS_TO_CYCLE = 40
 
@@ -216,13 +289,13 @@ def _keys_to(hwnd: int, *vks: int) -> bool:
 
 
 def _go_to_tab(hwnd: int, name: str) -> bool:
-    """Ctrl+Tab through the window's tabs until the active one's title (= window title) contains name."""
+    """Ctrl+PgDn through the window's tabs until the active one's title (= window title) contains name."""
     name = name.lower()
     first = _window_title(hwnd)
     for _ in range(MAX_TABS_TO_CYCLE):
         if name in _window_title(hwnd).lower():
             return True
-        if not _keys_to(hwnd, VK_CONTROL, VK_TAB):
+        if not _keys_to(hwnd, VK_CONTROL, VK_NEXT):
             return False
         time.sleep(0.25)  # the window title follows the active tab with a small delay
         if _window_title(hwnd) == first:  # went all the way round
@@ -230,12 +303,44 @@ def _go_to_tab(hwnd: int, name: str) -> bool:
     return False
 
 
+def _close_window_tabs(hwnd: int) -> bool:
+    """Closes the window by closing its tabs one by one: Ctrl+Shift+W made Opera ask "Confirmar el cierre"
+    (live test). Stops as soon as the window is gone, or if it loses the focus (never another window's tabs)."""
+    user32 = ctypes.windll.user32
+    for _ in range(MAX_TABS_TO_CYCLE * 2):
+        if not (user32.IsWindow(hwnd) and user32.IsWindowVisible(hwnd)):
+            return True
+        if not _keys_to(hwnd, VK_CONTROL, ord("W")):
+            return not (user32.IsWindow(hwnd) and user32.IsWindowVisible(hwnd))
+        time.sleep(0.2)
+    return False
+
+
+def _close_other_tabs(hwnd: int) -> Optional[int]:
+    """Closes every tab of the window except the active one. Returns how many, or None if Opera lost the focus."""
+    keep = _window_title(hwnd)
+    closed = 0
+    for _ in range(MAX_TABS_TO_CYCLE):
+        if not _keys_to(hwnd, VK_CONTROL, VK_NEXT):
+            return None
+        time.sleep(0.25)
+        if _window_title(hwnd) == keep:  # back on the kept tab: it is the only one left
+            return closed
+        if not _keys_to(hwnd, VK_CONTROL, ord("W")):
+            return None
+        time.sleep(0.3)
+        closed += 1
+    return closed
+
+
 @tool(
     name="browser_action",
     description=(
-        "Controla Opera con sus atajos: action = new_tab | close_tab | next_tab | previous_tab | reopen_tab | "
-        "go_to_tab | new_window | close_window | back | forward | reload. target: para new_tab, una web o lo que "
-        "buscar; para go_to_tab y close_tab, parte del título de la pestaña (ej: 'youtube'); vacío = la actual."
+        "Controla Opera con sus atajos: action = new_tab | close_tab | close_other_tabs | close_all_tabs | next_tab | "
+        "previous_tab | reopen_tab | go_to_tab | new_window | close_window | back | forward | reload. target: para "
+        "new_tab, una web o lo que buscar; para go_to_tab y close_tab, parte del título de la pestaña (ej: "
+        "'youtube'); para close_other_tabs, la pestaña que se QUEDA ('todas menos la de YouTube' -> 'youtube'); "
+        "vacío = la actual. close_all_tabs cierra todas las de esa ventana."
     ),
 )
 def browser_action(action: str, target: str = "") -> Dict[str, Any]:
@@ -243,12 +348,12 @@ def browser_action(action: str, target: str = "") -> Dict[str, Any]:
     from core.tools.apps import _bring_to_front, _find_window, _type_into_foreground
     act = action.strip().lower().replace(" ", "_")
     target = target.strip()
-    if act not in _BROWSER_KEYS and act != "go_to_tab":
+    if act not in _BROWSER_KEYS and act not in ("go_to_tab", "close_other_tabs", "close_all_tabs", "close_window"):
         return {"ok": False, "result": f"No sé hacer '{action}' en el navegador."}
 
     user32 = ctypes.windll.user32
     # The Opera window to act on: one whose active tab matches the target, else the one in front, else any
-    hwnd = (_find_window(target, exe="opera") if target and act in ("go_to_tab", "close_tab") else None)
+    hwnd = (_find_window(target, exe="opera") if target and act in ("go_to_tab", "close_tab", "close_other_tabs") else None)
     fg = user32.GetForegroundWindow()
     if not hwnd:
         hwnd = fg if fg and _is_opera(fg) else _find_window("", exe="opera")
@@ -260,8 +365,17 @@ def browser_action(action: str, target: str = "") -> Dict[str, Any]:
     if not _bring_to_front(hwnd):
         return {"ok": False, "result": "No pude traer Opera al frente, así que no toqué nada."}
 
-    if act in ("go_to_tab", "close_tab") and target and not _go_to_tab(hwnd, target):
+    if act in ("go_to_tab", "close_tab", "close_other_tabs") and target and not _go_to_tab(hwnd, target):
         return {"ok": False, "result": f"No encontré ninguna pestaña con '{target}'."}
+    if act == "close_other_tabs":
+        closed = _close_other_tabs(hwnd)
+        if closed is None:
+            return {"ok": False, "result": "Opera perdió el foco, así que me detuve."}
+        return {"ok": True, "result": f"Cerré {closed} pestaña{'s' if closed != 1 else ''}; dejé {target or 'la actual'}."}
+    if act in ("close_all_tabs", "close_window"):
+        if not _close_window_tabs(hwnd):
+            return {"ok": False, "result": "Opera perdió el foco, así que dejé de cerrar pestañas."}
+        return {"ok": True, "result": "Cerré esa ventana de Opera con todas sus pestañas."}
     if act != "go_to_tab" and not _keys_to(hwnd, *_BROWSER_KEYS[act]):
         return {"ok": False, "result": "Opera perdió el foco, así que me detuve."}
     if act == "new_tab" and target:

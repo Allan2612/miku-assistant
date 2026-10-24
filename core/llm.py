@@ -56,6 +56,10 @@ Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (g
 
 Si el mensaje del usuario llega como audio, escúchalo tú: la transcripción automática se equivoca a menudo.
 
+Deletreo: si el usuario deletrea una dirección o un nombre letra por letra ("te, i griega, te soluciones punto net"), escribe exactamente esas letras juntas ("tytsoluciones.net"): no inventes ni quites letras. "i griega" o "ye" es y; "punto" es ".".
+
+Correcciones: si el usuario dice que te equivocaste o que "era otra" web, búsqueda o canción, vuelve a llamar la herramienta con lo correcto y replace: true (open_url, web_search) para reutilizar la misma pestaña.
+
 Si el usuario se despide ("adiós", "gracias, eso es todo", "vete", "chao"), responde con una despedida corta y la etiqueta [happy]; el sistema te ocultará.
 
 Hora y fecha actuales: {current_time}
@@ -89,7 +93,9 @@ CLAIMED_ACTION_RE = re.compile(
     # "¡Entendido! Voy a apagar el equipo ahora mismo" with no shutdown_pc call (live test)
     r"|voy a (?:apagar|reiniciar|suspender|abrir|cerrar|poner|subir|bajar|guardar|anotar|crear|copiar|minimizar)"
     # "¡Yatta! Reproduciendo More en YouTube" with no tool call (live, 24-oct)
-    r"|reproduciendo|poniendo|abriendo|buscando|te pongo)\b",
+    r"|reproduciendo|poniendo|abriendo|buscando|te pongo"
+    # "Cierro las pestañas en este momento" with no tool call (live, 24-oct)
+    r"|cierro|abro|subo|bajo|guardo|anoto|copio|minimizo|cerrando)\b",
     re.IGNORECASE,
 )
 
@@ -427,7 +433,13 @@ class MikuBrain:
         # "Ponme More en YouTube", "abre world is mine en youtube": search it there
         # Opera tabs and windows (browser_action presses Opera's shortcuts, only while Opera has the focus)
         browser = None
-        if m := re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:la|esta|esa)\s+pesta[ñn]a(?:\s+de\s+(.+))?$", low):
+        # "Cierra todas las pestañas menos la de YouTube" closed one tab only (log, 24-oct)
+        if m := re.match(rf"{_WAKE}(?:cierra|cerrar)\s+todas\s+las\s+pesta[ñn]as(?:\s+de\s+(?:opera|ópera))?"
+                         r"(?:,?\s+(?:excepto|menos|salvo|pero\s+no)\s+(?:la\s+)?(?:de\s+(?:la\s+)?)?(.+))?$", low):
+            browser = ("close_other_tabs", m.group(1)) if m.group(1) else ("close_all_tabs", "")
+        elif re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:las\s+)?(?:dem[aá]s|otras)\s+pesta[ñn]as$", low):
+            browser = ("close_other_tabs", "")
+        elif m := re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:la|esta|esa)\s+pesta[ñn]a(?:\s+de\s+(.+))?$", low):
             browser = ("close_tab", m.group(1) or "")
         elif m := re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|pon)\s+(?:una\s+)?(?:nueva\s+pesta[ñn]a|pesta[ñn]a\s+nueva)"
                            r"(?:\s+(?:con|de|en)\s+(.+))?$", low):
@@ -462,6 +474,22 @@ class MikuBrain:
 
         # 2. Open app / website / notes with verbs ("pon" is left out: "pon la música" means play, H-024).
         # Short targets only: "abre los tigres del norte en el ..." once opened the notes because it said "notas"
+        # A web address: "busca ttsoluciones.net en Opera" googled "ttsoluciones.net en opera" (log, 24-oct).
+        # "No, era X.net" corrects the page she just opened: same tab
+        m_site = re.match(
+            rf"{_WAKE}(?:(?P<fix>(?:no,?\s+)?(?:era|es)\s+)|(?:busca|buscar|abre|[aá]breme|abrir|ve\s+a|entra\s+(?:a|en))\s+)"
+            r"(?P<site>(?:https?://)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?)(?:\s+en\s+(?:opera|ópera|el\s+navegador|internet))?$",
+            low,
+        )
+        if m_site:
+            from core.tools.web import _host_exists, open_url
+            host = re.sub(r"^(?:https?://)?(?:www\.)?", "", m_site.group("site")).split("/")[0]
+            # Whisper misspells dictated addresses ("titsoluciones.net"); Gemini, hearing the audio, got
+            # "tytsoluciones.net" right 3 times out of 3 (live). An address that does not exist is its job
+            if _host_exists(host) is not False:
+                res = open_url(m_site.group("site"), replace=bool(m_site.group("fix")))
+                return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
+
         m_open = re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+)?(.+)$", low)
         if m_open and len(m_open.group(1).split()) <= 4:
             target = m_open.group(1).strip()
@@ -660,6 +688,9 @@ class MikuBrain:
         fast_res = await asyncio.to_thread(self._try_fast_path_tool, clean_input)
         if fast_res is not None:
             logger.info("Executed local fast-path command: '%s' -> %s", clean_input, fast_res[1])
+            # In the history too: "no, era tytsoluciones.net" after a local search got "¡Entendido! Dejo
+            # constancia..." because Gemini never knew what had been done (log, 24-oct)
+            self._remember(clean_input, f"[{fast_res[0]}] {fast_res[1]}")
             self._last_query_text = clean_input
             self._last_query_time = now
             self._last_result = fast_res
