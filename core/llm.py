@@ -23,7 +23,9 @@ from google import genai
 from google.genai import types
 
 from core.tools import get_registered_tools, get_tool_metadata, note_user_reply
+from core.browser import bridge
 from core.screen import capture_screen_png
+from core.state import describe_pc
 from core.tools.memory import memory_facts
 
 load_dotenv()
@@ -50,7 +52,7 @@ Confirmaciones de seguridad: para apagar, reiniciar o suspender el equipo llama 
 
 Actualidad: si te preguntan algo reciente o que no sabes con seguridad (noticias, resultados, precios, el clima), usa la búsqueda de Google si la tienes. Si te dan una dirección web, puedes leerla. Resume lo encontrado en 1 o 2 frases.
 
-Pantalla: si el mensaje trae una imagen, es una captura de la pantalla del usuario en este momento. Contesta a lo que pregunta sobre ella (qué ves, qué significa un error, qué hacer) en 1 o 2 frases. Si te pide abrir algo que se ve en ella ("la segunda opción", "ese enlace"), lee en la captura la dirección de ese resultado (en Google aparece bajo el título, como "tytsoluciones.net › ...") y llama a open_url con ella; si no se ve la dirección, usa open_website con el título.
+Pantalla: si el mensaje trae una imagen, es una captura de la pantalla del usuario en este momento. Contesta a lo que pregunta sobre ella (qué ves, qué significa un error, qué hacer) en 1 o 2 frases. Si te pide abrir algo que se ve ("la segunda opción", "ese enlace") y está en los resultados visibles del estado, usa esa dirección; si no, lee en la captura la dirección de ese resultado (en Google aparece bajo el título, como "tytsoluciones.net › ...") y llama a open_url con ella; si no se ve la dirección, usa open_website con el título.
 
 Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si dice "acuérdate", "recuerda" o "no lo olvides", SIEMPRE llama a remember con el dato en tercera persona (ej: "Le encanta Frieren"): decir que lo recordarás sin llamarla no guarda nada. Si te pide que olvides algo, llama a forget.
 
@@ -58,7 +60,9 @@ Si el mensaje del usuario llega como audio, escúchalo tú: la transcripción au
 
 Deletreo: si el usuario deletrea una dirección o un nombre letra por letra ("te, i griega, te soluciones punto net"), escribe exactamente esas letras juntas ("tytsoluciones.net"): no inventes ni quites letras. "i griega" o "ye" es y; "punto" es ".".
 
-Correcciones: si el usuario dice que te equivocaste o que "era otra" web, búsqueda o canción, vuelve a llamar la herramienta con lo correcto y replace: true (open_url, web_search) para reutilizar la misma pestaña.
+Estado del PC: cada mensaje del usuario trae un bloque "[Estado del PC ...]" con las apps abiertas, el volumen, los temporizadores, las pestañas de Opera (cada una con su número) y los resultados de búsqueda que se ven. Decide con esos datos, no supongas: para cerrar, cambiar o recargar pestañas llama a browser_tabs con sus números; para abrir un resultado visible usa open_url con su dirección. No leas el bloque en voz alta.
+
+Correcciones: si el usuario dice que te equivocaste o que "era otra" web, búsqueda o canción, vuelve a llamar la herramienta con lo correcto y con tab_id = el número de la pestaña equivocada (la marcada "abierta por Miku"), para reutilizarla en vez de abrir otra.
 
 Si el usuario se despide ("adiós", "gracias, eso es todo", "vete", "chao"), responde con una despedida corta y la etiqueta [happy]; el sistema te ocultará.
 
@@ -101,9 +105,13 @@ CLAIMED_ACTION_RE = re.compile(
 
 # The user asks about the screen: a screenshot rides in the same single request (never taken otherwise)
 SCREEN_RE = re.compile(
-    r"\b(?:(?:mi |la |esta |en )?pantalla|qu[eé] ves|mira (?:esto|esta|este|aqu[ií])|este error|esta ventana"
-    # Something on screen by position: "ábreme la segunda opción" (log 06:13: it searched again, blind)
-    r"|(?:primer|segund|tercer|cuart|quint|últim|ultim)[oa]?\s+(?:opci[oó]n|resultado|enlace|link|v[ií]deo)"
+    r"\b(?:(?:mi |la |esta |en )?pantalla|qu[eé] ves|mira (?:esto|esta|este|aqu[ií])|este error|esta ventana)\b",
+    re.IGNORECASE,
+)
+# Something on screen by position: "ábreme la segunda opción" (log 06:13: it searched again, blind). The
+# extension's visible results answer it without an image; a screenshot is the fallback
+POSITION_RE = re.compile(
+    r"\b(?:(?:primer|segund|tercer|cuart|quint|últim|ultim)[oa]?\s+(?:opci[oó]n|resultado|enlace|link|v[ií]deo)"
     r"|(?:ese|esa|este|esta)\s+(?:enlace|link|resultado|opci[oó]n|bot[oó]n))\b",
     re.IGNORECASE,
 )
@@ -144,7 +152,6 @@ NUDGE_TEXT = (
     "(Aviso del sistema) Dijiste que hiciste una acción, pero no llamaste ninguna herramienta, así que no ocurrió. "
     "Si el usuario pidió una acción, llama ahora la herramienta adecuada. Si no, responde sin decir que la hiciste."
 )
-_DOMAIN_RE = re.compile(r"^(?:https?://)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?$")
 _CHAINED_ORDER = re.compile(
     r"(?:\by\b|,|\bluego\b|\bdespu[eé]s\b|\btambi[eé]n\b)\s*(?:me\s+)?"
     r"(?:abre|[aá]breme|cierra|pon|ponme|sube|s[uú]bele|baja|b[aá]jale|busca|reproduce|minimiza|anota|apunta"
@@ -238,9 +245,9 @@ class MikuBrain:
         return prompt
 
     def _build_request(
-        self, clean_input: str, audio: Optional[np.ndarray], screenshot: Optional[bytes] = None
+        self, clean_input: str, audio: Optional[np.ndarray], screenshot: Optional[bytes] = None, state: str = ""
     ) -> Tuple[List[types.Content], types.GenerateContentConfig]:
-        """One request per turn: text history + the user's audio (or text). Tools are declared, never auto-called."""
+        """Text history + the user's audio (or text) + the PC state. Tools are declared, never auto-called."""
         contents = [
             types.Content(role=turn["role"], parts=[types.Part.from_text(text=turn["text"])])
             for turn in self._history_turns[-(self.max_history * 2):]
@@ -250,6 +257,9 @@ class MikuBrain:
         else:
             user_part = types.Part.from_text(text=clean_input)
         parts = [user_part]
+        if state:
+            # Only in this request, never in the history: an old snapshot would contradict the new one
+            parts.append(types.Part.from_text(text=state))
         if screenshot:
             parts.append(types.Part.from_bytes(data=screenshot, mime_type="image/png"))
         contents.append(types.Content(role="user", parts=parts))
@@ -435,8 +445,10 @@ class MikuBrain:
 
     def _try_fast_path_tool(self, text: str) -> Optional[Tuple[str, str, bool]]:
         """
-        Instant local fast-path execution for unambiguous direct PC commands.
-        Executes immediately with 0ms cloud latency and 100% resilience against 429 quota exhaustion.
+        Local, instant, 0-request answers for a few UNAMBIGUOUS commands: volume, play/pause, the time, notes,
+        timers, routines, "recuerda que", shutdown (it only asks). Everything else (opening apps or sites, YouTube,
+        tabs) is Gemini's: it hears the audio, Whisper's text is often wrong ("Sueblo", "tITSoluciones"), and it
+        sees the PC state. Every extra regex here was one more way to act on a misheard phrase.
         """
         # Whisper wraps phrases in "¡...!" / "¿...?" and ends them with ".": every "^verb" rule missed them
         low = text.lower().strip().strip("¡!¿?.,;: ")
@@ -461,12 +473,6 @@ class MikuBrain:
                 greet = "¡Buenas noches! ¿Qué necesitas antes de descansar?"
             return ("happy", greet, False)
 
-        # 1. Direct App / Website shortcuts without explicit 'abre'
-        if low in ("bloc de notas", "el bloc de notas", "notas", "mis notas", "abrir notas"):
-            from core.tools.notes import open_notes
-            open_notes()
-            return ("happy", "¡Yatta! Ya te abrí el Bloc de notas.", False)
-
         # Routines: "modo trabajo", "activa el modo música" (0 requests)
         m_routine = re.match(rf"{_WAKE}(?:activa\s+(?:el\s+)?|pon\s+(?:el\s+)?|rutina\s+)?modo\s+(\w+)$", low.strip("¡!¿?., "))
         if m_routine:
@@ -474,139 +480,6 @@ class MikuBrain:
             if find_routine(m_routine.group(1)):
                 res = run_routine(m_routine.group(1))
                 return ("happy" if res.get("ok") else "sad", res["result"], False)
-
-        if low in ("el navegador", "navegador", "internet", "abrir navegador", "opera", "ópera", "opera gx", "operagx", "abrir opera", "abrir opera gx"):
-            from core.tools.apps import open_app
-            open_app("opera gx")
-            return ("happy", "¡Listo! Ya abrí Opera GX para ti.", False)
-
-        if low in ("youtube", "abrir youtube"):
-            from core.tools.web import open_url
-            open_url("https://www.youtube.com")
-            return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
-
-        # "Ponme More en YouTube", "abre world is mine en youtube": search it there
-        # Opera tabs and windows (browser_action presses Opera's shortcuts, only while Opera has the focus)
-        browser = None
-        # "Cierra todas las pestañas menos la de YouTube" closed one tab only (log, 24-oct)
-        if m := re.match(rf"{_WAKE}(?:cierra|cerrar)\s+todas\s+las\s+pesta[ñn]as(?:\s+de\s+(?:opera|ópera))?"
-                         r"(?:,?\s+(?:excepto|menos|salvo|pero\s+no)\s+(?:la\s+)?(?:de\s+(?:la\s+)?)?(.+))?$", low):
-            browser = ("close_other_tabs", m.group(1)) if m.group(1) else ("close_all_tabs", "")
-        elif re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:las\s+)?(?:dem[aá]s|otras)\s+pesta[ñn]as$", low):
-            browser = ("close_other_tabs", "")
-        elif m := re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:la|esta|esa)\s+pesta[ñn]a(?:\s+de\s+(.+))?$", low):
-            browser = ("close_tab", m.group(1) or "")
-        elif m := re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|pon)\s+(?:una\s+)?(?:nueva\s+pesta[ñn]a|pesta[ñn]a\s+nueva)"
-                           r"(?:\s+(?:con|de|en)\s+(.+))?$", low):
-            browser = ("new_tab", m.group(1) or "")
-        elif m := re.match(rf"{_WAKE}(?:ve|ir|vete|cambia|pasa|cámbiate|cambiate)\s+a\s+la\s+pesta[ñn]a\s+(?:de\s+)?(.+)$", low):
-            browser = ("go_to_tab", m.group(1))
-        elif re.match(rf"{_WAKE}(?:recarga|actualiza|refresca)\s+(?:la\s+)?p[aá]gina$", low):
-            browser = ("reload", "")
-        elif re.match(rf"{_WAKE}(?:vuelve|regresa|ve)\s+(?:atr[aá]s|a\s+la\s+p[aá]gina\s+anterior)$", low):
-            browser = ("back", "")
-        elif re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:la|esta|esa)\s+ventana\s+de(?:l)?\s+(?:opera|navegador)$", low):
-            browser = ("close_window", "")
-        if browser:
-            from core.tools.web import browser_action
-            res = browser_action(*browser)
-            return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
-
-        # "Pon la canción More, reprodúcela por mí": the model once said "Reproduciendo More" with no tool call.
-        # Only what is before a comma is the song ("pon" alone stays out: "pon la música" is play, H-024)
-        m_yt_play = (
-            re.match(rf"{_WAKE}(?:pon|ponme|reproduce|reprod[uú]ceme|abre|[aá]breme)\s+(.+?)\s+en\s+youtube$", low)
-            or re.match(rf"{_WAKE}(?:pon|ponme|reproduce|reprod[uú]ceme)\s+(?:la\s+canci[oó]n|el\s+v[ií]deo)\s+(?:de\s+)?([^,]+?)"
-                        r"(?:\s+en\s+youtube)?(?:,.*)?$", low)
-        )
-        # Vague ("una canción", "algo") is for Gemini, which can pick something
-        # ...and so is "la canción que estoy escuchando" (a description, not a title)
-        if (m_yt_play and m_yt_play.group(1) not in ("el", "la", "algo", "música", "una canción", "un video", "un vídeo")
-                and not m_yt_play.group(1).startswith(("que ", "qué "))):
-            from core.tools.web import youtube_play
-            res = youtube_play(m_yt_play.group(1).strip())
-            return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
-
-        # 2. Open app / website / notes with verbs ("pon" is left out: "pon la música" means play, H-024).
-        # Short targets only: "abre los tigres del norte en el ..." once opened the notes because it said "notas"
-        # A web address: "busca ttsoluciones.net en Opera" googled "ttsoluciones.net en opera" (log, 24-oct).
-        # "No, era X.net" corrects the page she just opened: same tab
-        m_site = re.match(
-            rf"{_WAKE}(?:(?P<fix>(?:no,?\s+)?(?:era|es)\s+)|(?:busca|buscar|abre|[aá]breme|abrir|ve\s+a|entra\s+(?:a|en))\s+)"
-            r"(?P<site>(?:https?://)?(?:www\.)?[\w-]+(?:\.[\w-]+)+(?:/\S*)?)(?:\s+en\s+(?:opera|ópera|el\s+navegador|internet))?$",
-            low,
-        )
-        if m_site:
-            from core.tools.web import _host_exists, open_url
-            host = re.sub(r"^(?:https?://)?(?:www\.)?", "", m_site.group("site")).split("/")[0]
-            # Whisper misspells dictated addresses ("titsoluciones.net"); Gemini, hearing the audio, got
-            # "tytsoluciones.net" right 3 times out of 3 (live). An address that does not exist is its job
-            if _host_exists(host) is not False:
-                res = open_url(m_site.group("site"), replace=bool(m_site.group("fix")))
-                return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
-
-        # "Abre la página del Banco de Costa Rica": a site by name, no address dictated
-        m_page = re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|entra\s+(?:a|en)|ve\s+a|ll[eé]vame\s+a)\s+(?:la\s+)?"
-                          r"(?:p[aá]gina|web|sitio)(?:\s+web)?\s+(?:de\s+(?:la\s+|los\s+|las\s+)?|del\s+)(.+)$", low)
-        if m_page and not _DOMAIN_RE.match(m_page.group(1)):
-            from core.tools.web import open_website
-            res = open_website(m_page.group(1).strip())
-            return ("happy" if res.get("ok") else "sad", res.get("result", ""), False)
-
-        m_open = re.match(rf"{_WAKE}(?:abre|[aá]breme|abrir|inicia|iniciar|lanza|lanzar|ejecuta|ejecutar)\s+(?:el\s+|la\s+|los\s+|las\s+|un\s+|una\s+)?(.+)$", low)
-        if m_open and len(m_open.group(1).split()) <= 4:
-            target = m_open.group(1).strip()
-            bare = target.removeprefix("mi ").removeprefix("mis ")
-            if bare == "youtube":
-                from core.tools.web import open_url
-                open_url("https://www.youtube.com")
-                return ("happy", "¡Listo! Ya abrí YouTube en tu navegador.", False)
-            elif bare in ("opera", "ópera", "opera gx", "ópera gx", "navegador", "el navegador", "internet"):
-                from core.tools.apps import open_app
-                open_app("opera gx")
-                return ("happy", "¡Listo! Ya abrí Opera GX para ti.", False)
-            elif bare in ("notas", "bloc de notas", "blog de notas", "block de notas"):
-                from core.tools.notes import open_notes
-                open_notes()
-                return ("happy", "¡Yatta! Ya te abrí el Bloc de notas.", False)
-            else:
-                from core.tools.apps import open_app
-                res = open_app(target)
-                if res.get("ok"):
-                    return ("happy", f"¡Listo! Ya abrí {target}.", False)
-
-        # 3. Close app: only known app aliases; anything else ("apaga el PC", "cierra la ventana") goes to Gemini (H-023)
-        m_close = re.match(rf"{_WAKE}(?:cierra|cerrar)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)$", low)
-        if m_close:
-            from core.tools.apps import close_app, DEFAULT_APP_ALIASES, _clean_query
-            target = _clean_query(m_close.group(1))
-            if target in DEFAULT_APP_ALIASES:
-                res = close_app(target)
-                if res.get("ok"):
-                    return ("happy", f"Listo, cerré {target}.", False)
-                return ("sad", res.get("result", f"No pude cerrar {target}."), False)
-
-        # 4. Web Search / YouTube Search
-        m_search_yt = re.match(rf"{_WAKE}(?:busca|buscar)\s+en\s+youtube\s+(.+)$", low)
-        if m_search_yt:
-            q = m_search_yt.group(1).strip()
-            from core.tools.web import youtube_search
-            youtube_search(q)
-            return ("happy", f"¡Buscando '{q}' en YouTube!", False)
-
-        m_search_goog = re.match(rf"{_WAKE}(?:busca|buscar)\s+(?:en\s+google\s+)?(.+)$", low)
-        # "busca el archivo X" is a file search for Gemini (find_file), not a Google search. "busca en mis
-        # documentos" too; but "busca en google X" is: the regex already ate "en google", so only another
-        # "en ..." is left out (startswith("busca en") also dropped "busca en google")
-        # A web address that got here does not exist (the m_site rule took the real ones): most likely a Whisper
-        # misspelling ("www.tzytsoluciones.net"), so Gemini, which hears the audio, gets it (log, 24-oct)
-        if (m_search_goog and "youtube" not in low and not m_search_goog.group(1).startswith("en ")
-                and not _DOMAIN_RE.match(re.sub(r"\s+en\s+(?:opera|ópera|el\s+navegador|internet)$", "", m_search_goog.group(1)))
-                and not re.match(r"^(?:el |la |mi |mis |un |una )?(?:archivo|documento|carpeta)", m_search_goog.group(1))):
-            q = m_search_goog.group(1).strip()
-            from core.tools.web import web_search
-            web_search(q)
-            return ("happy", f"¡Listo! Ya busqué '{q}' en Google.", False)
 
         # 5. Volume / Media: whole words only ("playlist" or "display" must not press play, H-024)
         def has_word(*words: str) -> bool:
@@ -786,13 +659,14 @@ class MikuBrain:
 
         last_error = None
         screenshot = None
-        if SCREEN_RE.search(clean_input):
+        if SCREEN_RE.search(clean_input) or (POSITION_RE.search(clean_input) and not bridge.results):
             try:
                 screenshot = await asyncio.to_thread(capture_screen_png)
                 logger.info("Attaching a screenshot (%.0f KB) to the request.", len(screenshot) / 1024)
             except Exception as e:
                 logger.warning("Screen capture failed (%s). Asking without it.", e)
-        contents, config = self._build_request(clean_input, audio, screenshot)
+        state = await asyncio.to_thread(describe_pc)
+        contents, config = self._build_request(clean_input, audio, screenshot, state)
         response = None
 
         # Only a failed request (error, 429, 503: no answer, no quota spent) moves on to the next model.

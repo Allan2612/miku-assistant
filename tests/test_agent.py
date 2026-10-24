@@ -15,6 +15,7 @@ from google.genai import types
 os.environ.setdefault("GEMINI_API_KEY", "test")
 
 import core.tools as tools
+import core.llm as llm
 import core.tools.system as system
 from core.llm import MAX_TOOL_ROUNDS, MikuBrain
 
@@ -58,6 +59,7 @@ class FakeModels:
 
 def brain(*replies):
     b = MikuBrain(model_name="m", models_fallback=["m"])
+    llm.describe_pc = lambda: ""  # the real PC state is not part of these tests
     models = FakeModels(replies)
     b.client = type("C", (), {"aio": type("A", (), {"models": models})()})()
     return b, models
@@ -260,6 +262,18 @@ def test_fast_path_takes_no_request():
     assert not models.requests
 
 
+def test_pc_state_rides_in_the_request_but_not_in_the_history():
+    b, models = brain(reply("[happy] Tienes Spotify abierto."), reply("[happy] Vale."))
+    llm.describe_pc = lambda: "[Estado del PC] Apps abiertas: Spotify."
+    asyncio.run(b.chat("qué tengo abierto"))
+    assert [p.text for p in models.requests[0][-1].parts] == ["qué tengo abierto", "[Estado del PC] Apps abiertas: Spotify."]
+    llm.describe_pc = lambda: "[Estado del PC] Apps abiertas: ninguna."
+    asyncio.run(b.chat("gracias por decirme, ahora cuéntame algo"))
+    history_texts = [p.text for c in models.requests[1][:-1] for p in c.parts]
+    assert not any("Estado del PC" in t for t in history_texts), "an old snapshot must not stay in the history"
+    assert "ninguna" in models.requests[1][-1].parts[1].text
+
+
 if __name__ == "__main__":
     test_action_results_go_back_and_the_answer_comes_from_them()
     test_failed_tool_is_seen_by_the_model()
@@ -278,4 +292,5 @@ if __name__ == "__main__":
     test_fallback_chain_tells_the_user_once()
     test_requests_adapted_per_model()
     test_fast_path_takes_no_request()
+    test_pc_state_rides_in_the_request_but_not_in_the_history()
     print("ok")

@@ -98,6 +98,7 @@ Hecha el 23-oct bajo la regla de **una petición por turno** (ver Fase 2):
 
 - [x] ~~Recortar el fast-path~~ **Se queda**: cada comando que resuelve cuesta 0 peticiones, y el
       usuario lo prefiere. Solo arreglos: "ópera" con tilde ya entra, y rutinas por voz.
+      (24-oct: sí se recortó; ver "Arreglos generales" más abajo.)
 - [x] **Memoria**: tools `remember` / `forget` (`core/tools/memory.py`), que Gemini pide en la misma
       respuesta. Hechos en `cache/memory.json` (máx 50, escritura atómica), inyectados al prompt.
       JSON en vez de SQLite: una lista corta no necesita más. **Sin** resumen de conversaciones:
@@ -154,6 +155,17 @@ arreglados:
 **Prueba:** usarla un día real y comprobar que cubre más tareas sin "no puedo hacer eso".
 
 ---
+
+## Arreglos generales (24-oct) — en vez de parche por caso
+
+Los logs mostraban la misma raíz detrás de muchos fallos: Miku decidía **a ciegas**. Cuatro cambios:
+
+- [x] **Resultados de vuelta** (bucle de agente, `core/llm.py`): las herramientas devuelven su resultado a Gemini, que
+      responde con lo que pasó o da otro paso. Rompe la regla de "1 petición": una acción cuesta 2.
+- [x] **Estado del PC en cada petición** (`core/state.py`): apps, volumen, temporizadores, pestañas y resultados visibles.
+- [x] **Extensión de Opera** (`browser-extension/`, `core/browser.py`): pestañas por número con la API del navegador, en
+      vez de atajos de teclado.
+- [x] **Atajo local reducido** a órdenes que no dependen de qué hay abierto.
 
 ## La latencia de RVC (hueso duro, sin fase)
 

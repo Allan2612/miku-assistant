@@ -13,6 +13,7 @@ from typing import Callable, Set, Dict, Any, Optional
 import websockets
 from websockets.asyncio.server import ServerConnection
 
+from core.browser import EXTENSION_ORIGIN, bridge
 from core.llm import MikuBrain
 from core.tts import TTSManager
 
@@ -24,6 +25,7 @@ ALLOWED_ORIGINS = [
     "http://tauri.localhost",   # Tauri v2 on Windows (production)
     "https://tauri.localhost",
     "http://localhost:1420",    # vite dev server
+    EXTENSION_ORIGIN,           # Miku's Opera extension (fixed id): tab state and commands only
     None,
 ]
 
@@ -163,8 +165,33 @@ class MikuServer:
 
 
 
+    async def _handle_extension(self, websocket: ServerConnection) -> None:
+        """Miku's Opera extension: it may only report tabs and answer commands, never drive Miku."""
+        try:
+            async for raw_message in websocket:
+                try:
+                    data = json.loads(raw_message)
+                except json.JSONDecodeError:
+                    continue
+                msg_type = data.get("type") if isinstance(data, dict) else None
+                if msg_type == "ext_hello":
+                    bridge.attach(websocket)
+                elif msg_type == "tabs_state":
+                    bridge.update(data)
+                elif msg_type == "ext_result":
+                    bridge.resolve(data)
+                elif msg_type != "ext_ping":
+                    logger.warning("Ignoring '%s' from the Opera extension.", msg_type)
+        except websockets.exceptions.ConnectionClosed:
+            pass
+        finally:
+            bridge.detach(websocket)
+
     async def handle_client(self, websocket: ServerConnection) -> None:
         """Handles individual client connection lifecycle."""
+        if websocket.request.headers.get("Origin") == EXTENSION_ORIGIN:
+            await self._handle_extension(websocket)
+            return
         self.clients.add(websocket)
         client_addr = websocket.remote_address
         logger.info("Frontend client connected: %s (total clients: %d)", client_addr, len(self.clients))

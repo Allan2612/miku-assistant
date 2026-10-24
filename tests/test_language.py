@@ -16,7 +16,7 @@ import core.tools.routines as routines
 import core.tools.system as system
 import core.tools.timers as timers
 import core.tools.web as web
-from core.llm import CLAIMED_ACTION_RE, SCREEN_RE, MikuBrain
+from core.llm import CLAIMED_ACTION_RE, POSITION_RE, SCREEN_RE, MikuBrain
 from core.tools.apps import _spoken_app_list
 
 calls = []
@@ -32,10 +32,9 @@ def _rec(name):
 def fast(text):
     calls.clear()
     for mod, name in [(apps, "open_app"), (apps, "close_app"), (apps, "show_desktop"), (media, "change_volume"),
-                      (media, "mute"), (media, "media_control"), (media, "set_volume"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"), (web, "browser_action"), (web, "open_website"),
+                      (media, "mute"), (media, "media_control"), (media, "set_volume"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"), (web, "browser_tabs"), (web, "open_website"),
                       (web, "open_url"), (notes, "take_note"), (notes, "open_notes"), (timers, "set_timer"), (memory, "remember"), (system, "shutdown_pc")]:
         setattr(mod, name, _rec(name))
-    web._host_exists = lambda host: host not in ("titsoluciones.net", "tzytsoluciones.net")  # no network; misspellings
     notes.read_notes = lambda *a: calls.append(("read_notes", ())) or {"ok": True, "result": "notas"}
     routines.ROUTINES["trabajo"] = [{"tool": "_noop"}]
     routines.get_tool_metadata = lambda n: {"function": _rec("routine_step"), "destructive": False}
@@ -50,25 +49,14 @@ FAST_PATH = [
     ("Toma nota: llamar a mamá", ("take_note", ("llamar a mamá",))),
     ("qué pendientes tengo", ("read_notes", ())),
     ("¿Qué notas tengo?", ("read_notes", ())),
-    ("¡Abre mi ópera!", ("open_app", ("opera gx",))),
-    ("abre el navegador", ("open_app", ("opera gx",))),
-    ("ópera", ("open_app", ("opera gx",))),
-    ("abre youtube", ("open_url", ("https://www.youtube.com",))),
     ("Baja el volumen.", ("change_volume", (-15,))),
     ("sube el volumen", ("change_volume", (15,))),
     ("silencio", ("mute", (True,))),
     ("pausa", ("media_control", ("pause",))),
-    ("busca recetas de pasta", ("web_search", ("recetas de pasta",))),
-    ("busca en youtube world is mine", ("youtube_search", ("world is mine",))),
-    ("Busca en Google recetas de arroz con leche.", ("web_search", ("recetas de arroz con leche",))),
-    ("Hey Miku, busca el clima de mañana", ("web_search", ("el clima de mañana",))),
     ("¡Modo trabajo!", ("routine_step", ())),
     ("activa el modo trabajo", ("routine_step", ())),
     ("muestra el escritorio", ("show_desktop", ())),
     # Real Whisper transcriptions from the user's log
-    ("Hey Miku, abre mi ópera.", ("open_app", ("opera gx",))),
-    ("Ábreme Opera.", ("open_app", ("opera gx",))),
-    ("¡Abreme el blog de notas!", ("open_notes", ())),
     ("¡Bajá el volumen!", ("change_volume", (-15,))),
     ("Subele el volumen a 100%.", ("set_volume", (100,))),  # log 05:13: used to add 15
     ("pon el volumen al 30", ("set_volume", (30,))),
@@ -80,39 +68,49 @@ FAST_PATH = [
     ("bájale el volumen", ("change_volume", (-15,))),
     ("Subile al volumen", None),  # "al volumen" is not the pattern: Gemini decides
     ("súbele el volumen", ("change_volume", (15,))),
-    ("Ponme more en YouTube.", ("youtube_play", ("more",))),
-    ("Pon la canción more, reprodúcela por mí.", ("youtube_play", ("more",))),
-    ("reproduce el video de los tigres del norte", ("youtube_play", ("los tigres del norte",))),
-    ("Reprodúceme world is mine en youtube", ("youtube_play", ("world is mine",))),
-    ("Oye Miku, cierra spotify", ("close_app", ("spotify",))),
     ("Recuérdame en 10 minutos que saque la ropa de lavadora.", ("set_timer", (10.0, "Recordatorio: saque la ropa de lavadora"))),
     ("avísame en media hora", ("set_timer", (30.0, "Temporizador"))),
     ("pon un temporizador de cinco minutos para el té", ("set_timer", (5.0, "Recordatorio: el té"))),
     ("Hey Miku, recuérdame en una hora que llame a mamá", ("set_timer", (60.0, "Recordatorio: llame a mamá"))),
     ("Recuerda que mi gato se llama Mochi.", ("remember", ("mi gato se llama Mochi",))),
     ("acuérdate de que mi cumple es el 3 de mayo", ("remember", ("mi cumple es el 3 de mayo",))),
-    ("Cierra esta pestaña.", ("browser_action", ("close_tab", ""))),
-    ("cierra la pestaña de youtube", ("browser_action", ("close_tab", "youtube"))),
-    ("abre una nueva pestaña con wikipedia.org", ("browser_action", ("new_tab", "wikipedia.org"))),
     ("Pestaña nueva", None),  # no verb: Gemini
-    ("ve a la pestaña de discord", ("browser_action", ("go_to_tab", "discord"))),
-    ("Recarga la página.", ("browser_action", ("reload", ""))),
-    ("vuelve atrás", ("browser_action", ("back", ""))),
-    ("cierra la ventana de opera", ("browser_action", ("close_window", ""))),
-    ("Cierra todas las pestañas.", ("browser_action", ("close_all_tabs", ""))),
-    ("cierra todas las pestañas de opera excepto la de youtube", ("browser_action", ("close_other_tabs", "youtube"))),
-    ("Cierra todas las pestañas menos la de YouTube", ("browser_action", ("close_other_tabs", "youtube"))),
-    ("cierra las demás pestañas", ("browser_action", ("close_other_tabs", ""))),
-    # Web addresses (log, 24-oct): open them, never google "X en opera"
-    ("Busca ttsoluciones.net en Opera", ("open_url", ("ttsoluciones.net",))),
-    ("abre tytsoluciones.net", ("open_url", ("tytsoluciones.net",))),
-    ("No, era tytsoluciones.net", ("open_url", ("tytsoluciones.net",))),
-    ("No, era tITSoluciones.net", None),  # Whisper misspelling that does not exist: Gemini hears the audio
-    ("Busca www.tzytsoluciones.net en Opera", None),  # log 05:58: it googled the misspelling
-    ("Abre la página del Banco de Costa Rica", ("open_website", ("banco de costa rica",))),
-    ("entra a la página web de steam", ("open_website", ("steam",))),
-    ("ve a la página de tytsoluciones.net", None),  # an address: not by name (open_url via Gemini/m_site)
-    ("Busca recetas de pasta en Opera", ("web_search", ("recetas de pasta en opera",))),  # web_search drops "en opera"
+    # Apps, web pages, searches, YouTube and tabs go to Gemini: it sees the PC state (open apps, tabs with ids,
+    # visible results) and picks the right tool and target; regexes guessed wrong too often (logs, 24-oct)
+    ('¡Abre mi ópera!', None),
+    ('abre el navegador', None),
+    ('ópera', None),
+    ('abre youtube', None),
+    ('busca recetas de pasta', None),
+    ('busca en youtube world is mine', None),
+    ('Busca en Google recetas de arroz con leche.', None),
+    ('Hey Miku, busca el clima de mañana', None),
+    ('Hey Miku, abre mi ópera.', None),
+    ('Ábreme Opera.', None),
+    ('¡Abreme el blog de notas!', None),
+    ('Ponme more en YouTube.', None),
+    ('Pon la canción more, reprodúcela por mí.', None),
+    ('reproduce el video de los tigres del norte', None),
+    ('Reprodúceme world is mine en youtube', None),
+    ('Oye Miku, cierra spotify', None),
+    ('Cierra esta pestaña.', None),
+    ('cierra la pestaña de youtube', None),
+    ('abre una nueva pestaña con wikipedia.org', None),
+    ('ve a la pestaña de discord', None),
+    ('Recarga la página.', None),
+    ('vuelve atrás', None),
+    ('cierra la ventana de opera', None),
+    ('Cierra todas las pestañas.', None),
+    ('cierra todas las pestañas de opera excepto la de youtube', None),
+    ('Cierra todas las pestañas menos la de YouTube', None),
+    ('cierra las demás pestañas', None),
+    ('Busca ttsoluciones.net en Opera', None),
+    ('abre tytsoluciones.net', None),
+    ('No, era tytsoluciones.net', None),
+    ('Abre la página del Banco de Costa Rica', None),
+    ('entra a la página web de steam', None),
+    ('Busca recetas de pasta en Opera', None),
+    ('abre la página web del banco', None),
     # Must go to Gemini (ambiguous, or not a simple command)
     ("cierra la ventana", None),  # which window? (H-023)
     ("me encanta Frieren, acuérdate de eso", None),  # the fact is before: Gemini writes it
@@ -121,7 +119,6 @@ FAST_PATH = [
     ("Abre mi ópera y pon YouTube con la canción More.", None),
     ("recuérdame mañana a las 8 que tengo cita", None),  # a clock time: set_reminder, Gemini's job
     ("Abre los sigres de notas en el recopo, y a ver, me lluta", None),  # once opened the notes
-    ("abre la página web del banco", ("open_website", ("banco",))),  # says the domain: easy to correct
     ("Reproduce la canción que estoy escuchando ahora.", None),
     ("Reprodúceme una canción en YouTube.", None),  # vague: Gemini picks one
     ("modo avión", None),
@@ -194,12 +191,12 @@ def test_screenshot_trigger():
         assert not SCREEN_RE.search(text), text
 
 
-def test_screen_references_take_a_screenshot():
+def test_position_references():
     # Log 06:13: "ármeme la segunda opción" repeated the search: she could not see the results
     for text in ("Muy bien, ábreme la segunda opción.", "abre el primer resultado", "dale a ese enlace", "la tercera opción"):
-        assert SCREEN_RE.search(text), text
+        assert POSITION_RE.search(text), text
     for text in ("primero abre spotify", "esta es mi opinión", "segundo plano"):
-        assert not SCREEN_RE.search(text), text
+        assert not POSITION_RE.search(text), text
 
 
 def test_answer_parsing():
@@ -227,7 +224,7 @@ if __name__ == "__main__":
     test_greeting_answers_locally()
     test_claimed_action_detector()
     test_screenshot_trigger()
-    test_screen_references_take_a_screenshot()
+    test_position_references()
     test_answer_parsing()
     test_spoken_app_list()
     print("ok")

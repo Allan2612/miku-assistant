@@ -318,7 +318,7 @@ def close_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
 
 @tool(
     name="show_desktop",
-    description="Muestra el escritorio de Windows MINIMIZANDO todas las ventanas (Win+D). No cierra nada: para cerrar pestañas usa browser_action, para cerrar un programa close_app."
+    description="Muestra el escritorio de Windows MINIMIZANDO todas las ventanas (Win+D). No cierra nada: para cerrar pestañas usa browser_tabs, para cerrar un programa close_app."
 )
 def show_desktop() -> Dict[str, Any]:
     """Envía la pulsación Win+D en el escritorio interactivo."""

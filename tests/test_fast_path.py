@@ -1,4 +1,4 @@
-"""H-023, H-024: the local fast path must only handle unambiguous commands.
+"""H-023, H-024: the local fast path must only handle unambiguous commands (volume, media, notes, timers).
 
 Tools are replaced by recorders, so nothing on the PC changes.
 Run: core\\.venv\\Scripts\\python.exe -m tests.test_fast_path  (or with pytest)
@@ -34,13 +34,12 @@ def fast(text):
     return MikuBrain._try_fast_path_tool(None, text)
 
 
-def test_close_only_known_apps():
+def test_closing_goes_to_gemini():
+    # Closing needs to know what is open (apps, tabs): Gemini gets that in the PC state, regexes do not
     _setup()
-    for phrase in ("apaga el pc", "apaga la música", "cierra la ventana", "cierra e", "quitar el silencio"):
-        fast(phrase)
-    assert not any(c[0] == "close_app" for c in calls), calls
-    fast("cierra spotify")
-    assert calls == [("close_app", ("spotify",))], calls
+    for phrase in ("apaga la música", "cierra la ventana", "cierra e", "quitar el silencio", "cierra spotify"):
+        assert fast(phrase) is None, phrase
+    assert not calls, calls
 
 
 def test_no_hijacking():
@@ -62,7 +61,7 @@ def test_reports_tool_failure():
 
 
 if __name__ == "__main__":
-    test_close_only_known_apps()
+    test_closing_goes_to_gemini()
     test_no_hijacking()
     test_reports_tool_failure()
     print("ok")

@@ -7,7 +7,9 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 ## [Unreleased]
 ### Cambiado (plan de mejoras, ver `docs/mejoras.md`)
 - Cadena de respaldo de 6 modelos ordenada por cuota gratuita (cada modelo tiene su propio límite por minuto): `3.5-flash-lite` → `3.1-flash-lite` → `3-flash-preview` → `3.5-flash` → `3.8-flash` → `gemma-4-26b`. Al pasar al siguiente, Miku dice "Un momento...", "Mmm..." o similar (una vez por turno, voz cacheada). Gemma no acepta audio: recibe el texto de Whisper. Un modelo retirado (404) espera 1 h antes de reintentarse.
-- **Como máximo una petición a Gemini por turno** (plan gratuito). Whisper filtra ruido y alimenta el atajo local (0 peticiones); lo demás va en una sola petición con el audio, y Gemini responde y pide herramientas a la vez. Las herramientas se ejecutan en local y su resultado no vuelve a Gemini.
+- **Miku ve el resultado de lo que hace** (bucle de agente): los resultados de las herramientas vuelven a Gemini, que responde según lo que de verdad pasó o da otro paso (máx. 3 rondas). Charla = 1 petición, una acción = 2. Antes se pedía a ciegas en una sola petición y Miku decía "listo" sin saber si funcionó.
+- **Estado del PC en cada petición**: apps abiertas, volumen, temporizadores, pestañas de Opera con su número y los resultados de búsqueda visibles. "Cierra todas menos la de T y T", "la segunda opción" o "¿ya está abierto?" se deciden con datos, no adivinando.
+- **Atajo local reducido** a órdenes inequívocas (volumen, pausa, hora, temporizadores, notas, recordar, rutinas, escritorio, apagar con confirmación). Apps, webs, búsquedas, YouTube y pestañas van a Gemini: las expresiones regulares adivinaban mal (direcciones mal transcritas, "cierra la ventana", correcciones).
 - El "sí" para apagar o reiniciar se ejecuta en local, sin petición.
 - Modelo principal `gemini-3.5-flash-lite`, con el pensamiento al mínimo: los tokens de pensamiento agotaban el límite y dejaban respuestas vacías.
 - La ventana arranca sin `--js-flags=--lite-mode`: ahorraba 1 MB, pero Live2D gastaba 5 veces más CPU y Miku tardaba en aparecer.
@@ -15,7 +17,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ### Añadido
 - `open_website`: abre la web de algo por su nombre ("abre la página del Banco de Costa Rica") y dice a qué dominio fue.
-- `browser_action`: controla Opera (pestañas nuevas con una web, cerrar, cambiar, ir a la pestaña de X, reabrir, ventanas, atrás, recargar).
+- **Extensión de Miku para Opera** (`browser-extension/`): Miku ve todas las pestañas y las maneja por número (`browser_tabs`: cerrar varias, activar, recargar, atrás, adelante; `open_url`/`web_search`/`youtube_play` con `tab_id`). Sustituye a `browser_action`, que simulaba el teclado y fallaba con pestañas fijadas, el orden de Ctrl+Tab, el diálogo de cierre y el foco.
 - `youtube_play`: pone y reproduce en YouTube lo que pidas ("ponme More en YouTube", "pon la canción..."); antes solo abría la búsqueda.
 - Despedidas sin petición e instantáneas, con más frases: "ya está", "no te necesito", "eso es todo", "gracias", "nada" (las ambiguas solo si son toda la frase).
 - **Modo conversación**: tras cada respuesta el micrófono sigue abierto 6 s (`behavior.follow_up_seconds`) para seguir hablando sin "Hey Miku". Si capta el final de la propia voz de Miku, lo descarta.
@@ -36,7 +38,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Corregir una web abría otra pestaña: Opera no pasa al frente al abrir una web desde Miku, así que no se sabía en qué ventana estaba. Ahora Miku la trae al frente y la recuerda.
 - "Busca www.direccion-mal-transcrita.net" ya no la googlea tal cual: pasa a Gemini, que oye el audio. "Reproduciendo X en YouTube" sin herramienta se reproduce de verdad.
 - Direcciones web dictadas o deletreadas: Gemini (que oye el audio) junta las letras deletreadas; `open_url` comprueba que la dirección exista (DNS, máx. 2 s) y si no, la busca en Google; el atajo no abre direcciones mal transcritas por Whisper; Miku dice la dirección ("He abierto tytsoluciones.net").
-- "No, era X" / "te equivocaste": se carga en la misma pestaña (`replace`), y los turnos del atajo quedan en el historial para que Gemini sepa qué se corrige.
+- "No, era X" / "te equivocaste": se carga en la misma pestaña (`tab_id` de la pestaña que abrió Miku), y los turnos del atajo quedan en el historial para que Gemini sepa qué se corrige.
 - "¡Suscríbete!" y otras alucinaciones de Whisper con ruido ya no cuentan como petición.
 - Pestañas: "cierra todas las pestañas (menos la de X)" y "cierra las demás"; cambio de pestaña por posición (Ctrl+AvPág); cerrar una ventana va pestaña a pestaña (Ctrl+Shift+W pedía confirmación).
 - "Súbele el volumen a 100%" solo subía 15: el atajo entiende niveles ("al 30", "al máximo", "a tope", "al mínimo"). Una frase con varias órdenes ("abre Spotify y sube el volumen") ya no la resuelve a medias el atajo: va a Gemini. Si Gemini dice que hizo algo sin hacerlo y el atajo lo reconoce ("¡volumen al máximo!"), se hace en local en vez de disculparse.
