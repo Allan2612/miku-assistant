@@ -16,6 +16,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 
 ### Añadido
+- Recordatorios con fecha ("el viernes a las 8") y repetidos ("todos los días a las 9", "cada 2 horas"); la lista los dice hablados ("mañana a las 08:00"). Tras un aviso, "recuérdamelo en 10 minutos" funciona: el aviso queda en la conversación.
+- Pendientes: "ya hice X" los marca como hechos (✔ en `notes.md`) y "bórralo" los quita; "qué me falta" lee solo los no hechos, y el estado del PC los incluye.
+- La conversación se guarda en `cache/history.json`: tras un reinicio Miku sigue sabiendo de qué hablaban (si fue en las últimas 12 h).
+- "¿Qué sabes de mí?" y corregir datos ("ya no trabajo ahí") con `forget` + `remember`.
 - Cada activación por "Hey Miku" guarda los 2 s que oyó el detector en `cache/wake/` (fecha y puntuación en el nombre, máx. 200), para ver qué dispara las activaciones sin querer.
 - `open_website`: abre la web de algo por su nombre ("abre la página del Banco de Costa Rica") y dice a qué dominio fue.
 - **Extensión de Miku para Opera** (`browser-extension/`): Miku ve todas las pestañas y las maneja por número (`browser_tabs`: cerrar varias, activar, recargar, atrás, adelante; `open_url`/`web_search`/`youtube_play` con `tab_id`). Sustituye a `browser_action`, que simulaba el teclado y fallaba con pestañas fijadas, el orden de Ctrl+Tab, el diálogo de cierre y el foco.

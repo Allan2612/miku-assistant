@@ -68,7 +68,7 @@ No hay herramientas para borrar, mover ni renombrar archivos.
 | Función | Parámetros | Implementación |
 |---|---|---|
 | `set_timer` | `minutes: float, label: str?` | Cuenta atrás ("5 minutos para el té"); al terminar: "¡Tu temporizador de el té ha terminado!" |
-| `remind` | `text, minutes? \| at: "HH:MM"?` | Recordatorio en N minutos o a una hora (hoy; mañana si ya pasó; el minuto actual cuenta como ahora). Avisa "¡Oye, recuerda: X!". Sustituye a `set_reminder`, que solo aceptaba una hora y llevaba al modelo a usar `set_timer` para "recuérdame en 5 minutos" |
+| `remind` | `text, minutes?, at?: "HH:MM", date?: "AAAA-MM-DD", every_minutes?` | Recordatorio en N minutos, a una hora o en una fecha ("el viernes a las 8": el modelo calcula la fecha desde la de hoy, que va en el prompt en español y AAAA-MM-DD). Se repite con `every_minutes` (1440 = cada día, 10080 = cada semana, 120 = cada 2 h): al sonar sigue con el mismo número a su siguiente hora. Sin fecha y ya pasada la hora: mañana; el minuto actual cuenta como ahora; una fecha pasada es un error. Avisa "¡Oye, recuerda: X!". `list_timers` y el estado del PC lo dicen hablado: "mañana a las 08:00", "todos los días a las 09:00" |
 | `list_timers` / `cancel_timer` | `id?` | — |
 
 **Avisos:** si Miku estaba oculta, aparece, lo dice y se vuelve a ocultar, sin abrir el micrófono. Si estaba conversando (respondió hace menos de `hide_after_seconds` y nadie la ocultó), lo dice y la conversación sigue. Si está hablando, espera a que termine.
@@ -78,9 +78,13 @@ No hay herramientas para borrar, mover ni renombrar archivos.
 ## Notas — `tools/notes.py`
 | Función | Parámetros | Implementación |
 |---|---|---|
-| `take_note` | `text: str` | Añade una línea con fecha a `notes.md` en Documentos |
-| `read_notes` | `last_n: int = 3` | Devuelve las últimas notas, sin la fecha (se leen en voz alta) |
+| `take_note` | `text: str` | Añade una línea `- [fecha] texto` a `notes.md` en Documentos (no repite la misma nota en 30 min) |
+| `read_notes` | `last_n: int = 5` | Lee los **pendientes** (las notas no hechas), sin la fecha |
+| `complete_note` | `text` | "Ya hice X": marca la nota con ✔ (`- ✔ [fecha] texto`); sigue en el archivo, pero ya no es pendiente. Busca por palabras enteras o comienzos ("subí lo del PR" → "subir el PR"), sin tildes. Si hay varias o ninguna, lo dice y lista los pendientes para que el modelo lo intente de nuevo |
+| `delete_note` | `text` | Borra la línea (hecha o no), con la misma búsqueda |
 | `open_notes` | — | Abre `notes.md` en el editor predeterminado |
+
+Los pendientes van en el estado del PC de cada petición (los 8 más recientes).
 
 "Apunta / anota / apúntame (que) X" y "qué pendientes tengo" van por el atajo local (0 peticiones).
 

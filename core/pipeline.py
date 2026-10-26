@@ -346,6 +346,7 @@ class MikuPipeline:
             talking = time.monotonic() - self._last_turn_at < self.hide_after_s
             await self.server.broadcast({"type": "show"})
             self._pending_farewell = not talking
+            self.brain.note_announcement(message)
             await self._speak(message, "happy", farewell=not talking)
 
     async def handle_voice_activation(self, wake_clip: Optional[np.ndarray] = None) -> None:

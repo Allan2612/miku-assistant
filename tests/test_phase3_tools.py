@@ -62,8 +62,31 @@ def test_read_notes_speaks_without_timestamps():
     notes.NOTES_FILE = tmp / "notes.md"
     notes.NOTES_FILE.write_text("# Notas de Miku\n\n- [2026-10-20 02:58] comprar pan\n- [2026-10-23 14:14] subir el PR.\n",
                                 encoding="utf-8")
-    assert notes.read_notes()["result"] == "Tus últimas 2 notas: comprar pan. subir el PR."
-    assert notes.read_notes(1)["result"] == "Tu última nota: subir el PR."
+    assert notes.read_notes()["result"] == "Tienes 2 pendientes: comprar pan. subir el PR."
+    assert notes.read_notes(1)["result"] == "Tienes 2 pendientes; los últimos 1: subir el PR."
+
+
+def test_pending_notes_can_be_done_and_deleted():
+    import core.tools.notes as notes
+    notes.NOTES_FILE = tmp / "todo_notes.md"
+    notes.NOTES_FILE.write_text("# Notas de Miku\n\n- [2026-10-20 02:58] comprar pan\n- [2026-10-23 14:14] Subir el PR.\n"
+                                "- [2026-10-24 09:00] llamar a mamá\n- [2026-10-24 09:05] llamar al banco\n",
+                                encoding="utf-8")
+    # "Ya hice lo del PR": marked, kept in the file, no longer pending
+    assert notes.complete_note("lo del pr")["result"] == "Marqué como hecho: Subir el PR."
+    assert "- ✔ [2026-10-23 14:14] Subir el PR." in notes.NOTES_FILE.read_text(encoding="utf-8")
+    assert "PR" not in notes.read_notes()["result"] and "PR" not in notes.describe_pending()
+    # Two matches: ask which; none: say so and list what is pending, so the model can try again
+    res = notes.complete_note("llamar")
+    assert not res["ok"] and "mamá" in res["result"] and "banco" in res["result"]
+    res = notes.complete_note("lavar el carro")
+    assert not res["ok"] and "comprar pan" in res["result"]
+    assert notes.complete_note("llamar a mama")["ok"], "accents do not matter"
+    # Delete works on done ones too; the header line survives the rewrite
+    assert notes.delete_note("subir el pr")["ok"]
+    text = notes.NOTES_FILE.read_text(encoding="utf-8")
+    assert "PR" not in text and text.startswith("# Notas de Miku")
+    assert notes.describe_pending() == "comprar pan; llamar al banco"
 
 
 def test_same_note_is_not_saved_twice():
@@ -80,6 +103,7 @@ def test_same_note_is_not_saved_twice():
 if __name__ == "__main__":
     test_read_notes_speaks_without_timestamps()
     test_same_note_is_not_saved_twice()
+    test_pending_notes_can_be_done_and_deleted()
     test_memory_remember_forget_and_prompt()
     test_routine_runs_steps_locally_via_fast_path()
     test_text_files_stay_on_desktop_and_never_overwrite()

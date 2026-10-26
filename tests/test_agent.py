@@ -8,6 +8,7 @@ Run: core\\.venv\\Scripts\\python.exe -m tests.test_agent  (or with pytest)
 
 import asyncio
 import os
+import time
 
 import numpy as np
 from google.genai import types
@@ -274,6 +275,27 @@ def test_pc_state_rides_in_the_request_but_not_in_the_history():
     assert "ninguna" in models.requests[1][-1].parts[1].text
 
 
+def test_history_survives_a_restart_and_keeps_reminders():
+    import tempfile
+    from pathlib import Path
+    path = Path(tempfile.mkdtemp()) / "history.json"
+    b = MikuBrain(model_name="m", models_fallback=["m"], history_file=path)
+    b._remember("me llamo Alan", "[happy] ¡Hola, Alan!")
+    # A reminder she said is in the history: "recuérdamelo en 10 minutos" needs to know what "lo" is
+    b.note_announcement("¡Oye, recuerda: tomar agua!")
+
+    again = MikuBrain(model_name="m", models_fallback=["m"], history_file=path)
+    texts = [t["text"] for t in again._history_turns]
+    assert "me llamo Alan" in texts and "[happy] ¡Oye, recuerda: tomar agua!" in texts, texts
+
+    # A conversation from yesterday is not brought back
+    old = time.time() - llm.HISTORY_MAX_AGE_S - 60
+    os.utime(path, (old, old))
+    assert MikuBrain(model_name="m", models_fallback=["m"], history_file=path)._history_turns == []
+    # Tests and other callers without a file keep it in memory only
+    assert MikuBrain(model_name="m", models_fallback=["m"])._history_turns == []
+
+
 if __name__ == "__main__":
     test_action_results_go_back_and_the_answer_comes_from_them()
     test_failed_tool_is_seen_by_the_model()
@@ -293,4 +315,5 @@ if __name__ == "__main__":
     test_requests_adapted_per_model()
     test_fast_path_takes_no_request()
     test_pc_state_rides_in_the_request_but_not_in_the_history()
+    test_history_survives_a_restart_and_keeps_reminders()
     print("ok")

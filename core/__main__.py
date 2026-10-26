@@ -72,6 +72,7 @@ async def async_main() -> None:
         max_history=config.llm.max_history_turns,
         temperature=config.llm.temperature,
         web_search=config.llm.web_search,
+        history_file=Path(root_dir) / "cache" / "history.json",
     )
 
     tts = TTSManager(

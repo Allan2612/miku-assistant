@@ -34,9 +34,14 @@ def describe_pc() -> str:
         lines.append(f"Volumen: {level}%{' (silenciado)' if ep.GetMute() else ''}.")
     except Exception as e:
         logger.debug("No volume for the state: %s", e)
-    from core.tools.timers import _TIMERS
-    if _TIMERS:
-        lines.append("Temporizadores: " + "; ".join(f"el {t['id']}, {t['label']}, a las {t['end_time']}"
-                                                     for t in _TIMERS.values()) + ".")
+    from core.tools.timers import describe_timers
+    if timers := describe_timers():
+        lines.append(f"Temporizadores y recordatorios: {timers}.")
+    try:
+        from core.tools.notes import describe_pending
+        if pending := describe_pending():
+            lines.append(f"Pendientes del usuario: {pending}.")
+    except OSError as e:
+        logger.debug("No notes for the state: %s", e)
     lines.append(bridge.describe())
     return "\n".join(lines)

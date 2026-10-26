@@ -67,7 +67,7 @@ el saludo de arranque espera a la voz de Miku.
 
 Criterio: ninguna respuesta con la voz de Dalia tras el arranque.
 
-## Fase D — Recordatorios, notas y memoria
+## Fase D — Recordatorios, notas y memoria ✅ (26-oct)
 
 Lo que hay hoy:
 - Temporizadores y recordatorios persistentes (sobreviven a reinicios), máx. 20, solo "en N minutos" o "a las HH:MM"
@@ -87,6 +87,9 @@ Qué añadir:
 - Los pendientes y próximos recordatorios entran en el estado del PC, igual que las pestañas.
 
 Criterio: tests por herramienta y una prueba en vivo de cada frase.
+
+Hecho (26-oct): todo lo anterior salvo el resumen de días anteriores, que costaría una petición a Gemini por día; la
+conversación de las últimas 12 h sí vuelve tras un reinicio.
 
 ## Fase E — Windows como el navegador
 

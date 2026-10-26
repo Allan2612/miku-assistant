@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import random
 import os
@@ -15,6 +16,7 @@ import re
 import time
 import wave
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -27,6 +29,7 @@ from core.browser import bridge
 from core.screen import capture_screen_png
 from core.state import describe_pc
 from core.tools.memory import memory_facts
+from core.tools.timers import _WEEKDAYS
 
 load_dotenv()
 
@@ -54,7 +57,9 @@ Actualidad: si te preguntan algo reciente o que no sabes con seguridad (noticias
 
 Pantalla: si el mensaje trae una imagen, es una captura de la pantalla del usuario en este momento. Contesta a lo que pregunta sobre ella (qué ves, qué significa un error, qué hacer) en 1 o 2 frases. Si te pide abrir algo que se ve ("la segunda opción", "ese enlace") y está en los resultados visibles del estado, usa esa dirección; si no, lee en la captura la dirección de ese resultado (en Google aparece bajo el título, como "tytsoluciones.net › ...") y llama a open_url con ella; si no se ve la dirección, usa open_website con el título.
 
-Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si dice "acuérdate", "recuerda" o "no lo olvides", SIEMPRE llama a remember con el dato en tercera persona (ej: "Le encanta Frieren"): decir que lo recordarás sin llamarla no guarda nada. Si te pide que olvides algo, llama a forget.
+Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si dice "acuérdate", "recuerda" o "no lo olvides", SIEMPRE llama a remember con el dato en tercera persona (ej: "Le encanta Frieren"): decir que lo recordarás sin llamarla no guarda nada. Si te pide que olvides algo, llama a forget. Si corrige un dato ("ya no trabajo ahí"), llama a forget con el viejo y a remember con el nuevo. Si pregunta qué sabes de él, resume en 1 o 2 frases lo que recuerdas (abajo).
+
+Pendientes: el estado del PC trae los pendientes del usuario. "Apunta X" llama a take_note; "ya hice X" llama a complete_note con las palabras del pendiente; "bórralo" llama a delete_note. Recordatorios con fecha ("mañana", "el viernes") o repetidos ("todos los días"): remind con date y every_minutes; "recuérdamelo en 10 minutos" tras un aviso es un remind nuevo con el mismo texto.
 
 Si el mensaje del usuario llega como audio, escúchalo tú: la transcripción automática se equivoca a menudo.
 
@@ -152,6 +157,7 @@ _ORDER_HINT = re.compile(
 _ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
 # Follow-up requests after the first one: tool results back to the model, a nudge, or a second tool step
 MAX_TOOL_ROUNDS = 3
+HISTORY_MAX_AGE_S = 12 * 3600  # a saved conversation older than this is not restored
 NUDGE_TEXT = (
     "(Aviso del sistema) Dijiste que hiciste una acción, pero no llamaste ninguna herramienta, así que no ocurrió. "
     "Si el usuario pidió una acción, llama ahora la herramienta adecuada. Si no, responde sin decir que la hiciste."
@@ -188,6 +194,7 @@ class MikuBrain:
         max_history: int = 10,
         temperature: float = 0.8,
         web_search: bool = False,
+        history_file: Optional[Path] = None,
     ) -> None:
         self.primary_model = model_name
         self.models_fallback = models_fallback or list(DEFAULT_FALLBACKS)
@@ -220,6 +227,9 @@ class MikuBrain:
         # In-memory history turns for model transfer: [{"role": "user"|"model", "text": str}]
         self._history_turns: List[Dict[str, str]] = []
         self._acted_last_turn = False  # the previous turn ran a tool (local or Gemini's)
+        # On disk, so a restart does not leave her with no idea what was just said; None (tests) = memory only
+        self.history_file = history_file
+        self._load_history()
 
         logger.info(
             "MikuBrain initialized with %d PC tools. Primary: %s | Fallbacks: %s",
@@ -240,7 +250,8 @@ class MikuBrain:
 
     def _build_system_instruction(self) -> str:
         now = datetime.now()
-        now_str = now.strftime("%A, %d de %B de %Y, %H:%M:%S")
+        # Spanish weekday + ISO date: remind(date=...) needs "el viernes" worked out from it
+        now_str = f"{_WEEKDAYS[now.weekday()]} {now:%Y-%m-%d %H:%M}"
         hour = now.hour
         if 5 <= hour < 12:
             period = "mañana (saluda con '¡Buenos días!' si el usuario te saluda)"
@@ -356,6 +367,38 @@ class MikuBrain:
         self._history_turns.append({"role": "model", "text": model_text})
         if len(self._history_turns) > self.max_history * 4:
             self._history_turns = self._history_turns[-(self.max_history * 2):]
+        self._save_history()
+
+    def note_announcement(self, message: str) -> None:
+        """A reminder she just said: in the history, so "recuérdamelo en 10 minutos" knows what "lo" is."""
+        self._remember("(Aviso del sistema: sonó un recordatorio)", f"[happy] {message}")
+
+    def _load_history(self) -> None:
+        if self.history_file is None:
+            return
+        try:
+            # An old conversation would confuse more than help: only one from the last few hours comes back
+            if time.time() - self.history_file.stat().st_mtime > HISTORY_MAX_AGE_S:
+                return
+            turns = json.loads(self.history_file.read_text(encoding="utf-8"))
+            self._history_turns = [
+                {"role": t["role"], "text": str(t["text"])} for t in turns
+                if isinstance(t, dict) and t.get("role") in ("user", "model")
+            ][-(self.max_history * 2):]
+            logger.info("Restored %d history turns from the last session.", len(self._history_turns) // 2)
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # no file or a broken one: a fresh conversation, never a crash
+
+    def _save_history(self) -> None:
+        if self.history_file is None:
+            return
+        try:
+            self.history_file.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.history_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._history_turns[-(self.max_history * 2):], ensure_ascii=False), encoding="utf-8")
+            tmp.replace(self.history_file)
+        except OSError as e:
+            logger.warning("Could not save the conversation history: %s", e)
 
     async def _run_tool_calls(self, calls: List[Any]) -> List[Dict[str, Any]]:
         """Runs the model's tool calls locally, in order, and returns their result dicts."""

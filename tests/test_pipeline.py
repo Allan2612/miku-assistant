@@ -28,6 +28,9 @@ class FakeBrain:
             raise RuntimeError("boom")
         return "happy", "¡Hola!", False
 
+    def note_announcement(self, message):
+        self.announced = message
+
 
 class FakeTTS:
     async def synthesize(self, text, cache=False):
