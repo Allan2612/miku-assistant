@@ -11,14 +11,16 @@ Esos resultados se escriben para ser leídos en voz alta: sin viñetas, sin `#` 
 
 Leyenda: 🔒 = requiere confirmación del usuario antes de ejecutarse.
 
-## Apps y ventanas — `tools/apps.py`
+## Apps y ventanas — `tools/apps.py`, `tools/windows.py`
+
+**Estado:** cada petición lleva las ventanas visibles (como la barra de tareas) de delante hacia atrás, con número, programa, título (si no es solo el nombre), activa/minimizada/maximizada y monitor (si hay más de uno; el 1 es el de la izquierda). Coordenadas en píxeles reales (contexto DPI por monitor). ~3 ms.
+
 | Función | Parámetros | Implementación |
 |---|---|---|
 | `open_app` | `name: str` | 0) Opera ya abierto: trae su ventana al frente (lanzarlo de nuevo abría otra ventana); 1) alias de `config.yaml → apps`; 2) búsqueda difusa en accesos directos del menú Inicio (`%ProgramData%` y `%AppData%\Microsoft\Windows\Start Menu`), cacheada al arrancar; 3) `os.startfile`. Si hay varias coincidencias, devuelve las opciones |
 | `close_app` | `name: str` | `psutil`: solo procesos con el **nombre exacto** (o su alias); nunca procesos del sistema ni el propio Miku. `terminate()` y, si a los 3 s sigue vivo, `kill()`. Sin confirmación (decisión revisable, H-002) |
 | `list_open_apps` | — | Ventanas visibles como en la barra de tareas (con título, sin dueño, ni ocultas ni de herramienta) → nombre del proceso con nombre amigable ("Visual Studio Code", "el Bloc de notas"), sin duplicados y sin la propia Miku. Se lee en voz alta |
-| `focus_app` | `name: str` | Traer ventana al frente |
-| `window_action` | `name: str, action: minimize \| maximize \| restore` | `ShowWindow` sobre la primera ventana visible cuyo título contiene el nombre. Un nombre vacío se rechaza (coincidiría con cualquier ventana) |
+| `windows` | `action, window_ids: list[int], monitor?` | Ventanas **por número** (su handle), el que trae el estado del PC: `focus`, `minimize`, `maximize`, `restore`, `close` (WM_CLOSE, como la X: la app puede pedir guardar), `left` / `right` (mitad de su monitor), `move` (a otro monitor). Varias a la vez ("minimiza todo menos el juego" = todas las demás). Minimizar y colocar usan las variantes que **no activan** otra ventana: no le quitan el foco a un juego. Rechaza números que no están en el estado y la ventana de Miku. Sustituye a `focus_app` y `window_action`, que buscaban por un trozo del título y tomaban la primera |
 | `show_desktop` | — | Tecla Win+D |
 
 ## Medios y sonido — `tools/media.py`

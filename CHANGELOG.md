@@ -16,6 +16,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 
 ### Añadido
+- **Ventanas por número**, como las pestañas: el estado del PC lista cada ventana (número, programa, título, activa/minimizada/maximizada, monitor) y la herramienta `windows` las activa, minimiza, maximiza, restaura, cierra (como la X), pone a la izquierda o derecha o mueve a otro monitor. "Minimiza todo menos el juego" o "pon Discord en el otro monitor" se deciden con datos. Minimizar no activa otra ventana (no le quita el foco a un juego). Sustituye a `focus_app` y `window_action`.
 - Recordatorios con fecha ("el viernes a las 8") y repetidos ("todos los días a las 9", "cada 2 horas"); la lista los dice hablados ("mañana a las 08:00"). Tras un aviso, "recuérdamelo en 10 minutos" funciona: el aviso queda en la conversación.
 - Pendientes: "ya hice X" los marca como hechos (✔ en `notes.md`) y "bórralo" los quita; "qué me falta" lee solo los no hechos, y el estado del PC los incluye.
 - La conversación persiste: tras un reinicio vuelven los últimos turnos (`cache/history.json`; si son de otro día, el modelo sabe que es una conversación anterior). Todo lo hablado se archiva por día en `cache/conversations/`, y "¿de qué hablamos ayer?" o "¿qué te dije del banco?" lo busca con `recall_conversation`. Sin resumen diario: solo gasta petición cuando se pregunta.

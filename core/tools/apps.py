@@ -336,46 +336,6 @@ def show_desktop() -> Dict[str, Any]:
     return {"ok": True, "result": "Mostrando el escritorio."}
 
 
-@tool(
-    name="focus_app",
-    description="Trae la ventana de una aplicación al primer plano por su nombre o título."
-)
-def focus_app(name: str = "", app_name: str = "") -> Dict[str, Any]:
-    """Busca y trae una ventana visible al primer plano en el escritorio interactivo."""
-    target_name = name or app_name
-    if not target_name:
-        return {"ok": False, "result": "Debes indicar el nombre de la ventana a enfocar."}
-    found_hwnd = _find_window(target_name)
-    if found_hwnd:
-        _bring_to_front(found_hwnd)
-        return {"ok": True, "result": f"He traído {target_name} al frente."}
-
-    return {"ok": False, "result": f"No encontré ninguna ventana abierta que coincida con '{target_name}'."}
-
-
-_SHOW_COMMANDS = {"minimize": 6, "maximize": 3, "restore": 9}
-_ACTION_WORDS = {"minimiza": "minimize", "maximiza": "maximize", "restaura": "restore", "agranda": "maximize", "esconde": "minimize"}
-
-
-@tool(
-    name="window_action",
-    description="Minimiza, maximiza o restaura la ventana de una aplicación abierta por su nombre o título (action: minimize | maximize | restore)."
-)
-def window_action(name: str, action: str = "minimize") -> Dict[str, Any]:
-    """Cambia el estado de una ventana visible."""
-    act = action.strip().lower()
-    act = next((v for k, v in _ACTION_WORDS.items() if act.startswith(k)), act)
-    if act not in _SHOW_COMMANDS:
-        return {"ok": False, "result": f"No sé hacer '{action}' con una ventana (usa minimize, maximize o restore)."}
-    # An empty name matches every title: it would act on whatever window comes first
-    hwnd = _find_window(name) if _clean_query(name) else None
-    if not hwnd:
-        return {"ok": False, "result": f"No encontré ninguna ventana abierta que coincida con '{name}'."}
-    ctypes.windll.user32.ShowWindow(hwnd, _SHOW_COMMANDS[act])
-    done = {"minimize": "minimicé", "maximize": "maximicé", "restore": "restauré"}[act]
-    return {"ok": True, "result": f"Listo, {done} {name}."}
-
-
 def _find_window(target_name: str, exe: Optional[str] = None) -> Optional[int]:
     """First visible top-level window whose title contains the cleaned name; with exe, only that process's
     main windows (unowned, not tool windows), e.g. exe="opera" for Opera's browser windows."""
@@ -516,32 +476,9 @@ def _spoken_app_list(exe_stems: List[str]) -> str:
 
 
 def _visible_window_processes() -> List[str]:
-    """Exe stems of the top-level windows the user sees (taskbar-like: titled, unowned, not cloaked or tool)."""
-    _attach_user_desktop()
-    user32, dwmapi = ctypes.windll.user32, ctypes.windll.dwmapi
-    GW_OWNER, GWL_EXSTYLE, WS_EX_TOOLWINDOW, DWMWA_CLOAKED = 4, -20, 0x00000080, 14
-    stems: List[str] = []
-
-    def callback(hwnd, _):
-        if not user32.IsWindowVisible(hwnd) or user32.GetWindowTextLengthW(hwnd) == 0:
-            return True
-        if user32.GetWindow(hwnd, GW_OWNER) or user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW:
-            return True
-        cloaked = wintypes.DWORD(0)  # suspended UWP apps and windows on other virtual desktops
-        dwmapi.DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked))
-        if cloaked.value:
-            return True
-        pid = wintypes.DWORD(0)
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        try:
-            stems.append(Path(psutil.Process(pid.value).name()).stem)
-        except (psutil.Error, OSError):
-            pass
-        return True
-
-    WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    user32.EnumWindows(WNDENUMPROC(callback), 0)
-    return stems
+    """Exe stems of the top-level windows the user sees (see tools/windows.py)."""
+    from core.tools.windows import visible_windows  # windows.py imports this module
+    return [w["exe"] for w in visible_windows()]
 
 
 @tool(

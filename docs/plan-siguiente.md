@@ -92,7 +92,7 @@ Hecho (26-oct): todo lo anterior. En vez del resumen de días anteriores (una pe
 conversación se archiva por día y `recall_conversation` la busca solo cuando el usuario pregunta; los últimos turnos
 vuelven siempre tras un reinicio, marcados si son de otro día.
 
-## Fase E — Windows como el navegador
+## Fase E — Windows como el navegador ✅ (26-oct, falta probar en vivo)
 
 La misma idea que con Opera: que Miku vea qué hay y actúe por número, sin adivinar.
 
@@ -104,6 +104,9 @@ La misma idea que con Opera: que Miku vea qué hay y actúe por número, sin adi
 - Después, si hace falta: ajustes rápidos (brillo, modo oscuro, Bluetooth, no molestar) y leer/pulsar dentro de una
   app con UI Automation (lo que es la extensión para Opera, pero para cualquier programa). Lo segundo es grande:
   solo si hay casos concretos.
+
+Hecho: estado con las ventanas por número y la herramienta `windows` (focus, minimize, maximize, restore, close,
+left, right, move). Pendiente: ajustes rápidos y UI Automation, solo si aparecen casos concretos.
 
 Criterio: "cierra todas las ventanas menos VS Code", "pon Discord en el otro monitor", "minimiza todo menos Spotify"
 funcionan a la primera.

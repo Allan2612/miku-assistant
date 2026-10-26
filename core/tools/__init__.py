@@ -142,6 +142,7 @@ def get_tool_metadata(name: str) -> Optional[Dict[str, Any]]:
 
 # Import all tool modules so decorators register them
 import core.tools.apps
+import core.tools.windows
 import core.tools.media
 import core.tools.web
 import core.tools.system
