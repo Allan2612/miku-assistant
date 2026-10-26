@@ -180,27 +180,25 @@ class MikuPipeline:
 
     async def _synthesize_voice(self, text: str, cache: bool = False) -> Optional[Tuple[str, str]]:
         """
-        Synthesizes speech with edge-tts and converts to Miku voice via RVC.
-        Gracefully falls back to edge-tts if RVC fails or is disabled.
+        Synthesizes speech with edge-tts and converts it to Miku's voice via RVC.
+        One voice only: if RVC is on and fails, None (the answer goes out as a subtitle), never the base voice.
         """
         tts_res = await self.tts.synthesize(text, cache=cache)
         if not tts_res:
             return None
 
         audio_b64, mime = tts_res
+        if self.rvc is None or not self.rvc.enabled:
+            return audio_b64, mime  # RVC off in config.yaml: the base voice is her voice
 
-        # If RVC is enabled, convert audio timbre & pitch to Miku
-        if self.rvc is not None and self.rvc.enabled:
-            try:
-                rvc_res = await self.rvc.convert(audio_b64)
-                if rvc_res:
-                    return rvc_res
-                else:
-                    logger.info("RVC returned None. Falling back to edge-tts voice.")
-            except Exception as e:
-                logger.warning("RVC conversion failed (%s). Falling back to edge-tts voice.", e)
-
-        return audio_b64, mime
+        try:
+            rvc_res = await self.rvc.convert(audio_b64)
+        except Exception as e:
+            logger.warning("RVC conversion failed (%s).", e)
+            rvc_res = None
+        if not rvc_res:
+            logger.warning("No Miku voice for this answer: subtitle only, never another voice.")
+        return rvc_res
 
     def _spawn_bg(self, coro: Any) -> None:
         """Fire-and-forget task with a strong reference (unreferenced tasks can be collected)."""
@@ -208,24 +206,30 @@ class MikuPipeline:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
-    @staticmethod
-    def _ack_file(phrase: str) -> Path:
-        digest = hashlib.md5(phrase.encode("utf-8")).hexdigest()
+    def _ack_file(self, phrase: str) -> Path:
+        # The voice settings are part of the name: cues cached with another model must never be played (26-oct)
+        voice = f"{self.rvc.model_path}|{self.rvc.f0_up_key}|{self.rvc.index_rate}" if self.rvc is not None else ""
+        digest = hashlib.md5(f"{phrase}|{voice}".encode("utf-8")).hexdigest()
         return ROOT_DIR / "cache" / "voice" / f"ack_{digest}.wav"
 
     async def _ack_audio(self, phrase: str) -> Optional[Tuple[str, str]]:
-        """Miku's voice (RVC, cached on disk) if ready; otherwise the cached base voice."""
+        """The cue in Miku's voice (RVC, cached on disk). Not cached yet: converted now if RVC is loaded,
+        otherwise skipped (the listening tone still plays): never in another voice."""
+        if self.rvc is None or not self.rvc.enabled:
+            return await self.tts.synthesize(phrase, cache=True)
         rvc_file = self._ack_file(phrase)
+        if not rvc_file.exists() and self.rvc.is_loaded:
+            base = await self.tts.synthesize(phrase, cache=True)
+            if base:
+                await self._convert_ack(base[0], rvc_file)
         if rvc_file.exists():
             return base64.b64encode(rvc_file.read_bytes()).decode("ascii"), "audio/wav"
-        base = await self.tts.synthesize(phrase, cache=True)
-        if base and self.rvc is not None and self.rvc.enabled and self.rvc.is_loaded:
-            self._spawn_bg(self._convert_ack(base[0], rvc_file))
-        return base
+        return None
 
     async def _convert_ack(self, base_b64: str, rvc_file: Path) -> None:
         res = await self.rvc.convert(base_b64)
         if res:
+            rvc_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = rvc_file.with_suffix(".tmp")
             tmp.write_bytes(_trim_silence(base64.b64decode(res[0])))
             os.replace(tmp, rvc_file)

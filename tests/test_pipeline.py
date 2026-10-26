@@ -350,6 +350,51 @@ def test_false_wake_words_never_reach_gemini():
     assert brain.heard == ["abre spotify"] and "hide" not in server.sent
 
 
+class FakeRVC:
+    enabled, model_path, f0_up_key, index_rate = True, "models/rvc/miku.pth", 4, 0.25
+
+    def __init__(self, works=True, loaded=True):
+        self.works, self.is_loaded = works, loaded
+
+    async def convert(self, audio_b64):
+        import base64
+        import io
+        import soundfile as sf
+        buf = io.BytesIO()
+        sf.write(buf, np.full(4000, 0.3, dtype=np.float32), 40000, format="WAV")  # a real WAV: cues get trimmed
+        return (base64.b64encode(buf.getvalue()).decode("ascii"), "audio/wav") if self.works else None
+
+
+async def _one_voice():
+    import tempfile
+    from pathlib import Path
+    import core.pipeline as pl
+    pl.ROOT_DIR = Path(tempfile.mkdtemp())  # cue cache in a temp folder
+
+    # RVC fails: the answer is a subtitle, never the base voice
+    server = AckServer()
+    p = MikuPipeline(brain=FakeBrain(), tts=FakeTTS(), stt=None, audio_in=None,
+                     resources=FakeResources(), server=server, rvc=FakeRVC(works=False))
+    server.pipeline = p
+    p.set_wakeword(FakeWake())
+    await p._speak("¡Hola!", "happy")
+    assert not any(m.startswith("speak") for m in server.sent) and "subtitle" in server.sent, server.sent
+
+    # A cue with no Miku-voice copy while RVC loads: skipped, not played in the base voice
+    p.rvc = FakeRVC(loaded=False)
+    assert await p._ack_audio("¿Sí?") is None
+    # Loaded: converted now and cached under a name that includes the voice settings
+    p.rvc = FakeRVC()
+    assert await p._ack_audio("¿Sí?") is not None
+    first = p._ack_file("¿Sí?")
+    p.rvc.f0_up_key = 2
+    assert p._ack_file("¿Sí?") != first, "another voice setting must not reuse the cached cue"
+
+
+def test_only_one_voice():
+    asyncio.run(_one_voice())
+
+
 def test_reminders_only_speak():
     asyncio.run(_reminders_only_speak())
 
@@ -375,4 +420,5 @@ if __name__ == "__main__":
     test_reminders_only_speak()
     test_hide_without_a_word()
     test_false_wake_words_never_reach_gemini()
+    test_only_one_voice()
     print("ok")

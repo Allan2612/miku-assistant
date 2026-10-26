@@ -63,14 +63,13 @@ async def _flow():
     assert await m.convert("QUJD") is not None, "fell back to the base voice for a 0.3 s load"
     await warm
 
-    # A cold start longer than the wait: base voice for this answer, never a frozen turn
-    rvc.WAIT_FOR_LOAD_S = 0.2
+    # A long cold start too: the answer waits for her voice instead of using another one (26-oct)
     m = manager(load_s=1.0)
     warm = asyncio.create_task(m.warmup())
     await asyncio.sleep(0.05)
-    assert await m.convert("QUJD") is None
+    assert await m.convert("QUJD") == ("TUlLVQ==", "audio/wav")
     await warm
-    assert m.is_loaded
+    assert m.sent == ["load", "convert"], "loaded once, by the warmup"
 
 
 def test_standby_and_waiting_for_a_load():

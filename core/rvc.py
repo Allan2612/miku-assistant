@@ -30,9 +30,6 @@ LOAD_TIMEOUT_S = 180.0
 # Measured on the RTX 3050: 6-20 s for a 7 s phrase when another program shares the GPU.
 # A timeout restarts the worker (35-80 s reload), so it must not fire on a merely slow conversion.
 CONVERT_TIMEOUT_S = 60.0
-# An answer waits this long for a load in progress instead of switching to the base voice ("otra voz", 26-oct).
-# With the worker on standby a load takes 3-5 s; only a cold start (10-48 s of imports) runs past it
-WAIT_FOR_LOAD_S = 8.0
 
 
 class RVCManager:
@@ -202,17 +199,10 @@ class RVCManager:
         if not self.enabled or not audio_b64:
             return None
 
-        # A load in progress: wait a little rather than answer in another voice; a long cold start still
-        # falls back to the base voice (H-028)
+        # A load in progress holds the lock: the answer waits for it. She has one voice only; the base voice
+        # while RVC loaded was the "otra voz" the user heard (26-oct). With the standby worker it is 3-5 s
         if self._is_warming_up:
-            for _ in range(int(WAIT_FOR_LOAD_S / 0.1)):
-                await asyncio.sleep(0.1)
-                if not self._is_warming_up:
-                    break
-            else:
-                logger.info("RVC still loading after %.0f s. Using the base voice for this answer.", WAIT_FOR_LOAD_S)
-                return None
-
+            logger.info("RVC still loading: the answer waits for Miku's voice.")
         async with self._lock:
             # 1. Worker alive and models loaded (a standby worker loads them now: 3-5 s)
             if not await self._load():
