@@ -130,7 +130,7 @@ async def async_main() -> None:
 
     wakeword = WakeWordListener(
         config=config.wakeword,
-        on_wake=pipeline.handle_voice_activation,
+        on_wake=lambda clip: pipeline.handle_voice_activation(wake_clip=clip),
         loop=loop,
     )
     pipeline.set_wakeword(wakeword)

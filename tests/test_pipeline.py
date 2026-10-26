@@ -5,7 +5,9 @@ Run: core\\.venv\\Scripts\\python.exe -m tests.test_pipeline  (or with pytest)
 
 import asyncio
 
-from core.pipeline import FILLER_PHRASES, FOLLOW_UP_DELAY_S, MikuPipeline
+import numpy as np
+
+from core.pipeline import _SAYS_MIKU, FILLER_PHRASES, FOLLOW_UP_DELAY_S, MikuPipeline
 
 
 class FakeServer:
@@ -302,6 +304,49 @@ async def _hide_now():
     assert not p.wakeword.paused and not p._pending_farewell
 
 
+class SeqSTT(FakeSTT):
+    """First call: the wake word clip; then the user's phrase."""
+
+    def __init__(self, clip_text, phrase):
+        super().__init__(phrase)
+        self.texts = [clip_text]
+
+    async def transcribe(self, audio):
+        return self.texts.pop(0) if self.texts else self.text
+
+
+async def _wake(clip_text, phrase, mic_cls=FakeMic, clip=True):
+    server = AckServer()
+    brain = RecordingBrain()
+    stt = SeqSTT(clip_text, phrase) if clip else FakeSTT(phrase)
+    p = MikuPipeline(brain=brain, tts=FakeTTS(), stt=stt, audio_in=mic_cls(server),
+                     resources=FakeResources(), server=server, rvc=None)
+    server.pipeline = p
+    p.set_wakeword(FakeWake())
+    await p.handle_voice_activation(wake_clip=np.zeros(32000, dtype=np.int16) if clip else None)
+    return server, brain, p
+
+
+def test_false_wake_words_never_reach_gemini():
+    # What Whisper heard in the 4 false activations of 26-oct
+    for text in ("¡Suscríbete!", "Discrúan", "Mike, que buena corta", "", "mi cuerpo", "Mikel"):
+        assert not _SAYS_MIKU.search(text), text
+    for text in ("Hey Miku.", "Ey, Micu", "Oye Miko", "¡Hey, Mikú!", "En Miku necesito"):
+        assert _SAYS_MIKU.search(text), text
+
+    server, brain, p = asyncio.run(_wake("Mike, que buena corta", "abre spotify"))
+    assert brain.heard == [] and "hide" in server.sent and not p.wakeword.paused, server.sent
+    server, brain, _ = asyncio.run(_wake("", "", mic_cls=SilentMic))
+    assert brain.heard == [] and "hide" in server.sent, "a false one with silence after hides too"
+
+    _, brain, _ = asyncio.run(_wake("Hey Miku.", "abre spotify"))
+    assert brain.heard == ["abre spotify"]
+    _, brain, _ = asyncio.run(_wake("", "Miku, abre spotify"))  # the name landed in the phrase
+    assert brain.heard == ["Miku, abre spotify"]
+    server, brain, _ = asyncio.run(_wake("", "abre spotify", clip=False))  # hotkey or click: no check
+    assert brain.heard == ["abre spotify"] and "hide" not in server.sent
+
+
 def test_reminders_only_speak():
     asyncio.run(_reminders_only_speak())
 
@@ -326,4 +371,5 @@ if __name__ == "__main__":
     test_activation_says_yes_then_listens()
     test_reminders_only_speak()
     test_hide_without_a_word()
+    test_false_wake_words_never_reach_gemini()
     print("ok")

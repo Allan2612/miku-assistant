@@ -16,6 +16,7 @@ import hashlib
 import logging
 import os
 import random
+import re
 import time
 from datetime import datetime, date
 from pathlib import Path
@@ -60,6 +61,12 @@ WHISPER_HALLUCINATIONS = {_normalize(p) for p in (
     "Gracias por ver el vídeo", "¡Gracias por ver!", "Subtítulos por la comunidad de Amara.org",
     "Subtítulos realizados por la comunidad de Amara.org", "Gracias por su atención", "Hasta la próxima",
 )}
+
+# "Miku" as Whisper writes it ("Hey Miku", "Ey, Micu", "Miko"); not "Mike" nor "mi cuerpo"
+_SAYS_MIKU = re.compile(r"\bm[iíy]\s?[kcq]{1,2}[uúo]\b", re.IGNORECASE)
+# Real wake word activations without a "Miku" in them: 4 of 4 clips on 26-oct (Discord, a video, near silence),
+# at scores up to 0.99, so the score cannot tell them apart. Whisper checks the clip while she listens
+WAKE_CHECK_TIMEOUT_S = 6.0
 
 
 def _trim_silence(wav_bytes: bytes, threshold: float = 0.01, keep_s: float = 0.08) -> bytes:
@@ -341,7 +348,7 @@ class MikuPipeline:
             self._pending_farewell = not talking
             await self._speak(message, "happy", farewell=not talking)
 
-    async def handle_voice_activation(self) -> None:
+    async def handle_voice_activation(self, wake_clip: Optional[np.ndarray] = None) -> None:
         """
         Triggered when user activates Miku via hotkey, wakeword, or click.
         Supports instant barge-in: interrupts Miku immediately if she is currently speaking.
@@ -371,6 +378,11 @@ class MikuPipeline:
             try:
                 # 1. Concurrently pre-warm STT and RVC worker while the user begins speaking
                 stt_warmup = None if self.stt.is_loaded else asyncio.create_task(self.stt.warmup())
+                # The wake word's 2 s clip is transcribed while she says "¿Sí?" and listens: no added delay, and
+                # nothing reaches Gemini until it says "Miku"
+                wake_check = None
+                if wake_clip is not None:
+                    wake_check = asyncio.create_task(self._clip_text(wake_clip, stt_warmup))
                 if self.rvc is not None and self.rvc.enabled and not self.rvc.is_loaded:
                     self._spawn_bg(self.rvc.warmup())
 
@@ -383,7 +395,7 @@ class MikuPipeline:
                 await self.server.broadcast({"type": "expression", "name": "neutral"})
 
                 # 8 s: at 5.5 s the user often started late, and what they said went nowhere
-                await self._listen_and_answer(initial_timeout=8.0, stt_warmup=stt_warmup)
+                await self._listen_and_answer(initial_timeout=8.0, stt_warmup=stt_warmup, wake_check=wake_check)
 
             except Exception:
                 logger.exception("Error in voice activation pipeline")
@@ -393,7 +405,33 @@ class MikuPipeline:
             finally:
                 self._is_listening = False
 
-    async def _listen_and_answer(self, initial_timeout: float, stt_warmup: Optional[asyncio.Task] = None) -> None:
+    async def _clip_text(self, clip: np.ndarray, stt_warmup: Optional[asyncio.Task]) -> str:
+        if stt_warmup is not None:
+            await asyncio.gather(stt_warmup, return_exceptions=True)
+        return await self.stt.transcribe(clip.astype(np.float32) / 32768.0)
+
+    async def _wake_was_real(self, wake_check: Optional[asyncio.Task], heard: str = "") -> bool:
+        """False (and she hides at once, silently) if the wake word clip did not say "Miku". Fails open: a check
+        that errors or takes too long never blocks a real request."""
+        if wake_check is None:
+            return True
+        try:
+            clip_text = await asyncio.wait_for(asyncio.shield(wake_check), WAKE_CHECK_TIMEOUT_S)
+        except Exception:
+            return True
+        # "Miku, abre Spotify" in one breath: the name may land in the phrase instead of the clip
+        if _SAYS_MIKU.search(clip_text) or _SAYS_MIKU.search(heard):
+            return True
+        logger.info("False wake word: the clip said %r, not 'Miku'. Hiding without answering.", clip_text)
+        await self.server.broadcast({"type": "state", "value": "idle"})
+        await self.server.broadcast({"type": "hide"})
+        if self.wakeword is not None:
+            self.wakeword.resume()
+        return False
+
+    async def _listen_and_answer(
+        self, initial_timeout: float, stt_warmup: Optional[asyncio.Task] = None, wake_check: Optional[asyncio.Task] = None
+    ) -> None:
         """Records one phrase, transcribes it and answers it. Runs under the pipeline lock, mic state already shown."""
         # 3. Capture phrase from microphone with VAD
         # Mic opens here and closes immediately upon silence
@@ -404,6 +442,8 @@ class MikuPipeline:
         )
 
         if audio is None:
+            if not await self._wake_was_real(wake_check):
+                return
             logger.info("No speech captured. Returning to idle.")
             await self.server.broadcast({"type": "state", "value": "idle"})
             if self.wakeword is not None:
@@ -438,6 +478,8 @@ class MikuPipeline:
             logger.info("Transcription is Miku's own last answer (%r). Ignoring.", transcribed_text)
             transcribed_text = ""
 
+        if not await self._wake_was_real(wake_check, transcribed_text):
+            return
         if not transcribed_text:
             logger.info("Empty transcription. Returning to idle.")
             await self.server.broadcast({"type": "state", "value": "idle"})

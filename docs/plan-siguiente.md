@@ -34,7 +34,11 @@ Sin errores en lo demás: 22 peticiones, un 504 de Gemini que la cadena de respa
 Prueba: tests de pipeline (aviso sin micrófono), tabla de frases de despedida, test del recordatorio unificado.
 Cuota: A2 ahorra peticiones; el resto no cambia.
 
-## Fase B — Activaciones sin querer (wake word)
+## Fase B — Activaciones sin querer (wake word) ✅ (26-oct)
+
+Resultado con los primeros 4 clips: ninguno decía "Miku" (Whisper oyó "¡Suscríbete!" en casi silencio,
+"Discrúan", "Mike, que buena corta" y nada), con puntuaciones de hasta 0,99. Hecho: el paso 2 (verificar con
+Whisper), en paralelo para no retrasar la activación. El paso 3 (reentrenar) queda solo si siguen colándose.
 
 1. ✅ **Medir antes de tocar** (26-oct): cada activación guarda sus 2 s de audio en `cache/wake/`
    (`fecha_puntuación.wav`); el log dice si después hubo voz. Un par de días de uso normal dan los casos reales.

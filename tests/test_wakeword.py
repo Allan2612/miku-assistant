@@ -31,7 +31,7 @@ class FakeModel:
 def test_activation_saves_the_last_two_seconds():
     woke = []
     cfg = types.SimpleNamespace(enabled=True, model="hey_miku.onnx", threshold=0.35, patience=1)
-    listener = ww.WakeWordListener(cfg, on_wake=lambda: woke.append(1))
+    listener = ww.WakeWordListener(cfg, on_wake=lambda clip: woke.append(clip))
     listener._model, listener._running, listener._target_key = FakeModel(), True, "hey_miku"
     loud = np.full(1280, 500, dtype=np.int16)
 

@@ -39,6 +39,7 @@ Dos procesos principales que se comunican por WebSocket local, más un subproces
 
 1. **Activación**: atajo (`Ctrl+Alt+M` por defecto) o palabra clave → backend envía `show`.
 2. **Pre-calentamiento asíncrono**: en el mismo instante de la activación, `resources.py` lanza/despierta en segundo plano el subproceso `rvc_worker.py` y carga Whisper si estaban descargados (aprovechando los segundos que el usuario tarda en hablar para que la carga tenga **costo cero en latencia percibida**).
+2b. **Verificación de la palabra clave** (solo si la activó "Hey Miku"): Whisper transcribe en paralelo los 2 s de audio que disparó el detector (guardados en `cache/wake/`). Antes de mandar nada a Gemini, si ni ese clip ni la frase dicen "Miku", fue una activación falsa: Miku se oculta en silencio. Si la comprobación falla o tarda más de 6 s, se da por buena.
 3. Frontend: muestra ventana → animación **aparecer** → estado `listening`.
 4. Backend graba del mic hasta que el VAD detecta ~0,8 s de silencio (máx. 15 s).
 5. Whisper transcribe en CPU (`int8`). Si no hay texto, o solo es el propio "¿Sí?" de Miku, se descarta: 0 peticiones.

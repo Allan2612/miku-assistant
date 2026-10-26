@@ -31,6 +31,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- Activaciones sin querer: los 4 audios guardados de activaciones falsas no decían "Miku" (un vídeo, Discord, casi silencio) aunque el detector les dio hasta 0,99. Ahora Whisper transcribe los 2 s del "Hey Miku" mientras ella dice "¿Sí?" y escucha; si ahí (o en tu frase) no aparece "Miku", se oculta en silencio y no llega nada a Gemini. Sin retraso para las activaciones reales; con el atajo de teclado o un clic no se comprueba.
 - "A veces habla con otra voz": tras 10 min sin uso se descargaba RVC y recargarlo tardaba 10-48 s (casi todo, importar torch), en los que Miku hablaba con la voz base de edge-tts. Ahora queda un proceso en espera con todo importado (RAM, 0 MB de VRAM) y la recarga tarda 3-5 s; una respuesta espera hasta 8 s a que termine la carga en vez de cambiar de voz, y el saludo de arranque espera a su voz.
 - Los recordatorios ya no abren el micrófono después de avisar ni suenan encima de otra frase: si Miku estaba oculta, aparece, avisa y se oculta; si estabas hablando con ella, avisa y la conversación sigue.
 - "Ocúltate", "escóndete", "ya puedes irte": se oculta al instante, sin hablar ni gastar petición. "Nada, nada", "no era nada", "olvídalo" o "me equivoqué" se despiden sin petición (antes "Nada, nada" iba a Gemini y respondía "¡De nada!").

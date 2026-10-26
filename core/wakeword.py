@@ -60,7 +60,7 @@ class WakeWordListener:
     def __init__(
         self,
         config: WakewordConfig,
-        on_wake: Callable[[], Coroutine[Any, Any, None]],
+        on_wake: Callable[[np.ndarray], Coroutine[Any, Any, None]],
         loop: Optional[asyncio.AbstractEventLoop] = None,
     ) -> None:
         self.enabled: bool = config.enabled
@@ -217,15 +217,15 @@ class WakeWordListener:
                         self.patience,
                     )
                     # Off the audio thread: a disk write here would drop audio
-                    threading.Thread(target=_save_clip, args=(np.concatenate(self._recent), score),
-                                     daemon=True, name="miku-wake-clip").start()
+                    clip = np.concatenate(self._recent)
+                    threading.Thread(target=_save_clip, args=(clip, score), daemon=True, name="miku-wake-clip").start()
                     # Automatically pause listening during subsequent conversation
                     self._paused = True
                     self._model.reset()
 
                     if self._loop and not self._loop.is_closed():
                         try:
-                            coro = self._on_wake()
+                            coro = self._on_wake(clip)  # the pipeline checks it really was "Miku"
                             if asyncio.iscoroutine(coro):
                                 asyncio.run_coroutine_threadsafe(coro, self._loop)
                         except RuntimeError:
