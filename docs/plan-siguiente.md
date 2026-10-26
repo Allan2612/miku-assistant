@@ -88,8 +88,9 @@ Qué añadir:
 
 Criterio: tests por herramienta y una prueba en vivo de cada frase.
 
-Hecho (26-oct): todo lo anterior salvo el resumen de días anteriores, que costaría una petición a Gemini por día; la
-conversación de las últimas 12 h sí vuelve tras un reinicio.
+Hecho (26-oct): todo lo anterior. En vez del resumen de días anteriores (una petición a Gemini por día), cada
+conversación se archiva por día y `recall_conversation` la busca solo cuando el usuario pregunta; los últimos turnos
+vuelven siempre tras un reinicio, marcados si son de otro día.
 
 ## Fase E — Windows como el navegador
 

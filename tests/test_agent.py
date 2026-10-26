@@ -278,7 +278,9 @@ def test_pc_state_rides_in_the_request_but_not_in_the_history():
 def test_history_survives_a_restart_and_keeps_reminders():
     import tempfile
     from pathlib import Path
+    import core.tools.memory as memory
     path = Path(tempfile.mkdtemp()) / "history.json"
+    memory.CONVERSATIONS_DIR = path.parent / "conversations"  # never the real cache/conversations
     b = MikuBrain(model_name="m", models_fallback=["m"], history_file=path)
     b._remember("me llamo Alan", "[happy] ¡Hola, Alan!")
     # A reminder she said is in the history: "recuérdamelo en 10 minutos" needs to know what "lo" is
@@ -288,10 +290,18 @@ def test_history_survives_a_restart_and_keeps_reminders():
     texts = [t["text"] for t in again._history_turns]
     assert "me llamo Alan" in texts and "[happy] ¡Oye, recuerda: tomar agua!" in texts, texts
 
-    # A conversation from yesterday is not brought back
+    # One from another day comes back too, marked as a past conversation
     old = time.time() - llm.HISTORY_MAX_AGE_S - 60
     os.utime(path, (old, old))
-    assert MikuBrain(model_name="m", models_fallback=["m"], history_file=path)._history_turns == []
+    turns = MikuBrain(model_name="m", models_fallback=["m"], history_file=path)._history_turns
+    assert turns[0]["text"] == "me llamo Alan" and "conversación del" in turns[-2]["text"], turns
+    assert [t["role"] for t in turns] == ["user", "model"] * (len(turns) // 2), "roles must alternate"
+
+    # Every exchange is archived by day, emotion tag dropped; recall finds it by words or by day
+    day = memory.recall_conversation(text="Alan")["result"]
+    assert "me llamo Alan" in day and "¡Hola, Alan!" in day and "[happy]" not in day, day
+    assert "No encontré" in memory.recall_conversation(text="banco")["result"]
+    assert "No encontré" in memory.recall_conversation(date="2020-01-01")["result"]
     # Tests and other callers without a file keep it in memory only
     assert MikuBrain(model_name="m", models_fallback=["m"])._history_turns == []
 

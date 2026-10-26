@@ -28,7 +28,7 @@ from core.tools import get_registered_tools, get_tool_metadata, note_user_reply
 from core.browser import bridge
 from core.screen import capture_screen_png
 from core.state import describe_pc
-from core.tools.memory import memory_facts
+from core.tools.memory import archive_turn, memory_facts
 from core.tools.timers import _WEEKDAYS
 
 load_dotenv()
@@ -57,7 +57,7 @@ Actualidad: si te preguntan algo reciente o que no sabes con seguridad (noticias
 
 Pantalla: si el mensaje trae una imagen, es una captura de la pantalla del usuario en este momento. Contesta a lo que pregunta sobre ella (qué ves, qué significa un error, qué hacer) en 1 o 2 frases. Si te pide abrir algo que se ve ("la segunda opción", "ese enlace") y está en los resultados visibles del estado, usa esa dirección; si no, lee en la captura la dirección de ese resultado (en Google aparece bajo el título, como "tytsoluciones.net › ...") y llama a open_url con ella; si no se ve la dirección, usa open_website con el título.
 
-Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si dice "acuérdate", "recuerda" o "no lo olvides", SIEMPRE llama a remember con el dato en tercera persona (ej: "Le encanta Frieren"): decir que lo recordarás sin llamarla no guarda nada. Si te pide que olvides algo, llama a forget. Si corrige un dato ("ya no trabajo ahí"), llama a forget con el viejo y a remember con el nuevo. Si pregunta qué sabes de él, resume en 1 o 2 frases lo que recuerdas (abajo).
+Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (gustos, nombres, fechas importantes), llama a remember además de responder. Si dice "acuérdate", "recuerda" o "no lo olvides", SIEMPRE llama a remember con el dato en tercera persona (ej: "Le encanta Frieren"): decir que lo recordarás sin llamarla no guarda nada. Si te pide que olvides algo, llama a forget. Si corrige un dato ("ya no trabajo ahí"), llama a forget con el viejo y a remember con el nuevo. Si pregunta qué sabes de él, resume en 1 o 2 frases lo que recuerdas (abajo). Si pregunta por algo que hablaron otro día ("¿de qué hablamos ayer?"), llama a recall_conversation.
 
 Pendientes: el estado del PC trae los pendientes del usuario. "Apunta X" llama a take_note; "ya hice X" llama a complete_note con las palabras del pendiente; "bórralo" llama a delete_note. Recordatorios con fecha ("mañana", "el viernes") o repetidos ("todos los días"): remind con date y every_minutes; "recuérdamelo en 10 minutos" tras un aviso es un remind nuevo con el mismo texto.
 
@@ -157,7 +157,7 @@ _ORDER_HINT = re.compile(
 _ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
 # Follow-up requests after the first one: tool results back to the model, a nudge, or a second tool step
 MAX_TOOL_ROUNDS = 3
-HISTORY_MAX_AGE_S = 12 * 3600  # a saved conversation older than this is not restored
+HISTORY_MAX_AGE_S = 12 * 3600  # a saved conversation older than this comes back marked as a past one
 NUDGE_TEXT = (
     "(Aviso del sistema) Dijiste que hiciste una acción, pero no llamaste ninguna herramienta, así que no ocurrió. "
     "Si el usuario pidió una acción, llama ahora la herramienta adecuada. Si no, responde sin decir que la hiciste."
@@ -368,6 +368,8 @@ class MikuBrain:
         if len(self._history_turns) > self.max_history * 4:
             self._history_turns = self._history_turns[-(self.max_history * 2):]
         self._save_history()
+        if self.history_file is not None:  # the real assistant, not a test
+            archive_turn(user_text, re.sub(r"^\[\w+\]\s*", "", model_text))
 
     def note_announcement(self, message: str) -> None:
         """A reminder she just said: in the history, so "recuérdamelo en 10 minutos" knows what "lo" is."""
@@ -377,14 +379,20 @@ class MikuBrain:
         if self.history_file is None:
             return
         try:
-            # An old conversation would confuse more than help: only one from the last few hours comes back
-            if time.time() - self.history_file.stat().st_mtime > HISTORY_MAX_AGE_S:
-                return
+            saved_at = self.history_file.stat().st_mtime
             turns = json.loads(self.history_file.read_text(encoding="utf-8"))
             self._history_turns = [
                 {"role": t["role"], "text": str(t["text"])} for t in turns
                 if isinstance(t, dict) and t.get("role") in ("user", "model")
             ][-(self.max_history * 2):]
+            if self._history_turns and time.time() - saved_at > HISTORY_MAX_AGE_S:
+                # Kept, but marked as the past: she must not answer "eso" as if it were said a minute ago
+                day = datetime.fromtimestamp(saved_at)
+                self._history_turns += [
+                    {"role": "user", "text": f"(Aviso del sistema: lo anterior es de una conversación del "
+                                             f"{_WEEKDAYS[day.weekday()]} {day:%Y-%m-%d}. Empieza una nueva.)"},
+                    {"role": "model", "text": "[neutral] Entendido."},
+                ]
             logger.info("Restored %d history turns from the last session.", len(self._history_turns) // 2)
         except (OSError, ValueError, KeyError, TypeError):
             pass  # no file or a broken one: a fresh conversation, never a crash

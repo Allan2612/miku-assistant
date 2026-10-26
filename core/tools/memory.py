@@ -4,6 +4,7 @@ Facts about the user, saved locally and added to every prompt. Remembering is a 
 turn's single request, so memory costs no extra Gemini request.
 """
 
+import datetime
 import json
 import logging
 from pathlib import Path
@@ -14,6 +15,9 @@ from core.tools import tool
 logger = logging.getLogger("miku.tools.memory")
 
 MEMORY_FILE = Path(__file__).resolve().parents[2] / "cache" / "memory.json"
+# Every conversation, one file per day: searched only when the user asks about it (no daily summary request)
+CONVERSATIONS_DIR = MEMORY_FILE.parent / "conversations"
+MAX_RECALL_CHARS = 1500
 # Every fact rides along in every request: keep the prompt (and its tokens) bounded
 MAX_FACTS = 50
 
@@ -62,3 +66,52 @@ def forget(text: str) -> Dict[str, Any]:
         return {"ok": False, "result": f"No tenía nada guardado sobre '{text}'."}
     _save(kept)
     return {"ok": True, "result": f"Olvidé {len(facts) - len(kept)} dato(s) sobre '{text}'."}
+
+
+def archive_turn(user_text: str, model_text: str) -> None:
+    """Appends one exchange to today's conversation file. Never raises: losing a log line beats losing a turn."""
+    try:
+        CONVERSATIONS_DIR.mkdir(parents=True, exist_ok=True)
+        now = datetime.datetime.now()
+        line = json.dumps({"at": now.strftime("%H:%M"), "user": user_text, "miku": model_text}, ensure_ascii=False)
+        with open(CONVERSATIONS_DIR / f"{now:%Y-%m-%d}.jsonl", "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError as e:
+        logger.warning("Could not archive the conversation turn: %s", e)
+
+
+@tool(
+    name="recall_conversation",
+    description=(
+        "Busca en las conversaciones de otros días cuando el usuario pregunta qué hablaron ('¿de qué hablamos ayer?', "
+        "'¿qué te dije del banco?'). date: 'AAAA-MM-DD' (vacío = el último día anterior a hoy con conversación); "
+        "text: palabras a buscar en todos los días (vacío = todo ese día)."
+    ),
+)
+def recall_conversation(date: str = "", text: str = "") -> Dict[str, Any]:
+    """Devuelve lo hablado un día, o los turnos que mencionan algo."""
+    days = sorted(CONVERSATIONS_DIR.glob("*.jsonl")) if CONVERSATIONS_DIR.exists() else []
+    if date:
+        days = [d for d in days if d.stem == date.strip()]
+    elif not text:
+        today = datetime.date.today().isoformat()
+        days = [d for d in days if d.stem < today][-1:]
+    words = text.lower().split()
+    found: List[str] = []
+    for day in reversed(days):  # newest first: the budget goes to the most recent
+        for raw in day.read_text(encoding="utf-8").splitlines():
+            try:
+                t = json.loads(raw)
+            except ValueError:
+                continue
+            said = f"{t.get('user', '')} {t.get('miku', '')}".lower()
+            if all(w in said for w in words):
+                found.append(f"{day.stem} {t.get('at', '')}: el usuario dijo '{t.get('user', '')}' y Miku '{t.get('miku', '')}'")
+    if not found:
+        return {"ok": True, "result": "No encontré nada de eso en conversaciones anteriores."}
+    out = ""
+    for line in found:
+        if len(out) + len(line) > MAX_RECALL_CHARS:
+            break
+        out += line + "\n"
+    return {"ok": True, "result": out.strip()}

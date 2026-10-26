@@ -18,7 +18,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 ### Añadido
 - Recordatorios con fecha ("el viernes a las 8") y repetidos ("todos los días a las 9", "cada 2 horas"); la lista los dice hablados ("mañana a las 08:00"). Tras un aviso, "recuérdamelo en 10 minutos" funciona: el aviso queda en la conversación.
 - Pendientes: "ya hice X" los marca como hechos (✔ en `notes.md`) y "bórralo" los quita; "qué me falta" lee solo los no hechos, y el estado del PC los incluye.
-- La conversación se guarda en `cache/history.json`: tras un reinicio Miku sigue sabiendo de qué hablaban (si fue en las últimas 12 h).
+- La conversación persiste: tras un reinicio vuelven los últimos turnos (`cache/history.json`; si son de otro día, el modelo sabe que es una conversación anterior). Todo lo hablado se archiva por día en `cache/conversations/`, y "¿de qué hablamos ayer?" o "¿qué te dije del banco?" lo busca con `recall_conversation`. Sin resumen diario: solo gasta petición cuando se pregunta.
 - "¿Qué sabes de mí?" y corregir datos ("ya no trabajo ahí") con `forget` + `remember`.
 - Cada activación por "Hey Miku" guarda los 2 s que oyó el detector en `cache/wake/` (fecha y puntuación en el nombre, máx. 200), para ver qué dispara las activaciones sin querer.
 - `open_website`: abre la web de algo por su nombre ("abre la página del Banco de Costa Rica") y dice a qué dominio fue.

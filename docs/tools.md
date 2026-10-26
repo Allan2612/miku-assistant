@@ -94,6 +94,8 @@ Los pendientes van en el estado del PC de cada petición (los 8 más recientes).
 | `remember` | `fact: str` | Guarda un dato del usuario en `cache/memory.json` (máx. 50, sin duplicados, escritura atómica). Todos se añaden al prompt de cada petición |
 | `forget` | `text: str` | Borra los datos que contienen el texto |
 
+**Conversaciones:** cada intercambio se guarda en `cache/conversations/AAAA-MM-DD.jsonl` (hora, lo que dijo el usuario, lo que respondió Miku). `recall_conversation(date?, text?)` busca ahí: un día entero (por defecto el último anterior a hoy) o los turnos con ciertas palabras en cualquier día, hasta 1500 caracteres. Los últimos turnos además vuelven al reiniciar (`cache/history.json`); si son de otro día, van marcados como una conversación anterior.
+
 ## Rutinas — `tools/routines.py`
 | Función | Parámetros | Implementación |
 |---|---|---|
