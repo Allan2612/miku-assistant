@@ -123,6 +123,19 @@ Hoy: edge-tts (Dalia, +10 Hz) → RVC (`miku_mellow`, `index_rate` 0,25). Opcion
 
 Criterio: escucha a ciegas tuya entre opciones; latencia y VRAM medidas para cada una.
 
+Estado (26-oct):
+- Paso 1 listo para ejecutar: `scratch/voice_ab.py`. Ronda 1 = los 5 modelos RVC descargados (`miku`, `mellow`,
+  `power`, `v1`, `v2`) x 4 voces base (Dalia, Ximena, María de Costa Rica, Paloma) con 4 frases típicas, más las
+  voces base solas como referencia; página en `cache/voice_ab/round1/index.html`. Ronda 2 = el ganador con tono
+  +0/+2/+4 e índice 0,25/0,5/0,75. Usa la GPU 1-2 min: se ejecuta cuando el usuario no esté jugando.
+- Paso 3, candidatos de clonación directa (búsqueda del 26-oct, hay que confirmarlo en cada ficha de Hugging Face):
+  Qwen3-TTS (Apache 2.0, español, clonación con ~3 s de audio; VRAM sin confirmar), Chatterbox (MIT, 23 idiomas,
+  ~4-8 GB de VRAM según la fuente, español sin confirmar), XTTS-v2 (español, licencia no comercial: vale para uso
+  personal). Duda de fondo: la voz de referencia de Miku es Vocaloid en japonés; clonarla al español puede perder
+  justo lo que la hace reconocible. Se prueba solo si la ronda 1-2 no convence.
+
+Pendiente de la fase E: prueba en vivo de `windows` (minimizar/mover/colocar con la escala de pantalla real).
+
 ## Orden
 
 A (cambios pequeños) → B y C (medir primero, luego arreglar) → D → E → F. A y C son lo que más se nota hoy; E es lo más grande.
