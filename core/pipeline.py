@@ -64,9 +64,13 @@ WHISPER_HALLUCINATIONS = {_normalize(p) for p in (
 
 # "Miku" as Whisper writes it ("Hey Miku", "Ey, Micu", "Miko"); not "Mike" nor "mi cuerpo"
 _SAYS_MIKU = re.compile(r"\bm[iíy]\s?[kcq]{1,2}[uúo]\b", re.IGNORECASE)
-# Real wake word activations without a "Miku" in them: 4 of 4 clips on 26-oct (Discord, a video, near silence),
-# at scores up to 0.99, so the score cannot tell them apart. Whisper checks the clip while she listens
+# False wake word activations score up to 0.99, so Whisper checks the 2 s clip while she listens. But it often
+# mishears a short real "Hey Miku" ("Maes.", "Más", nothing): 22 clips of 26-oct showed that rejecting every
+# clip without "Miku" hid her from real calls. Only clear cases are false: near silence, or a sentence of
+# other talk (the user chatting while gaming: "cuatro más, el mejor de cinco")
 WAKE_CHECK_TIMEOUT_S = 6.0
+WAKE_SILENCE_RMS = 0.005  # loudest 0.2 s of the clip below this: nobody spoke (false ones: 0.002; real: 0.014+)
+WAKE_SENTENCE_WORDS = 3  # this many words without "Miku" is someone talking about something else
 
 
 def _trim_silence(wav_bytes: bytes, threshold: float = 0.01, keep_s: float = 0.08) -> bytes:
@@ -410,24 +414,32 @@ class MikuPipeline:
             finally:
                 self._is_listening = False
 
-    async def _clip_text(self, clip: np.ndarray, stt_warmup: Optional[asyncio.Task]) -> str:
+    async def _clip_text(self, clip: np.ndarray, stt_warmup: Optional[asyncio.Task]) -> Tuple[str, float]:
+        """What Whisper hears in the wake word clip, and how loud its loudest 0.2 s is."""
+        audio = clip.astype(np.float32) / 32768.0
+        windows = [audio[i:i + 3200] for i in range(0, max(len(audio) - 3200, 0) + 1, 800)]
+        peak = max((float(np.sqrt(np.mean(w ** 2))) for w in windows if len(w)), default=0.0)
         if stt_warmup is not None:
             await asyncio.gather(stt_warmup, return_exceptions=True)
-        return await self.stt.transcribe(clip.astype(np.float32) / 32768.0)
+        return await self.stt.transcribe(audio), peak
 
     async def _wake_was_real(self, wake_check: Optional[asyncio.Task], heard: str = "") -> bool:
-        """False (and she hides at once, silently) if the wake word clip did not say "Miku". Fails open: a check
-        that errors or takes too long never blocks a real request."""
+        """False (and she hides at once, silently) only for a clearly false activation. Fails open: an unclear
+        clip, an error or a slow check never blocks a real request."""
         if wake_check is None:
             return True
         try:
-            clip_text = await asyncio.wait_for(asyncio.shield(wake_check), WAKE_CHECK_TIMEOUT_S)
+            clip_text, peak = await asyncio.wait_for(asyncio.shield(wake_check), WAKE_CHECK_TIMEOUT_S)
         except Exception:
             return True
         # "Miku, abre Spotify" in one breath: the name may land in the phrase instead of the clip
         if _SAYS_MIKU.search(clip_text) or _SAYS_MIKU.search(heard):
             return True
-        logger.info("False wake word: the clip said %r, not 'Miku'. Hiding without answering.", clip_text)
+        silent = peak < WAKE_SILENCE_RMS
+        if not silent and len(re.findall(r"\w+", clip_text)) < WAKE_SENTENCE_WORDS:
+            return True  # empty or a word or two: what a misheard "Hey Miku" looks like
+        logger.info("False wake word (%s): the clip said %r. Hiding without answering.",
+                    "silence" if silent else "other talk", clip_text)
         await self.server.broadcast({"type": "state", "value": "idle"})
         await self.server.broadcast({"type": "hide"})
         if self.wakeword is not None:

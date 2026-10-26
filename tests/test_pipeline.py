@@ -318,7 +318,7 @@ class SeqSTT(FakeSTT):
         return self.texts.pop(0) if self.texts else self.text
 
 
-async def _wake(clip_text, phrase, mic_cls=FakeMic, clip=True):
+async def _wake(clip_text, phrase, mic_cls=FakeMic, clip=True, loud=True):
     server = AckServer()
     brain = RecordingBrain()
     stt = SeqSTT(clip_text, phrase) if clip else FakeSTT(phrase)
@@ -326,25 +326,33 @@ async def _wake(clip_text, phrase, mic_cls=FakeMic, clip=True):
                      resources=FakeResources(), server=server, rvc=None)
     server.pipeline = p
     p.set_wakeword(FakeWake())
-    await p.handle_voice_activation(wake_clip=np.zeros(32000, dtype=np.int16) if clip else None)
+    audio = np.full(32000, 800 if loud else 30, dtype=np.int16)  # RMS 0.024 (a voice) or 0.001 (silence)
+    await p.handle_voice_activation(wake_clip=audio if clip else None)
     return server, brain, p
 
 
 def test_false_wake_words_never_reach_gemini():
-    # What Whisper heard in the 4 false activations of 26-oct
     for text in ("¡Suscríbete!", "Discrúan", "Mike, que buena corta", "", "mi cuerpo", "Mikel"):
         assert not _SAYS_MIKU.search(text), text
     for text in ("Hey Miku.", "Ey, Micu", "Oye Miko", "¡Hey, Mikú!", "En Miku necesito"):
         assert _SAYS_MIKU.search(text), text
 
-    server, brain, p = asyncio.run(_wake("Mike, que buena corta", "abre spotify"))
+    # Clearly false (clips of 26-oct): a sentence of other talk, or near silence
+    server, brain, p = asyncio.run(_wake("Cuatro más, el mejor de cinco.", "abre spotify"))
     assert brain.heard == [] and "hide" in server.sent and not p.wakeword.paused, server.sent
-    server, brain, _ = asyncio.run(_wake("", "", mic_cls=SilentMic))
+    server, brain, _ = asyncio.run(_wake("", "abre spotify", loud=False))
+    assert brain.heard == [] and "hide" in server.sent, "nobody spoke"
+    server, brain, _ = asyncio.run(_wake("", "", mic_cls=SilentMic, loud=False))
     assert brain.heard == [] and "hide" in server.sent, "a false one with silence after hides too"
 
+    # Real calls Whisper misheard in the clip (13:17 "Maes.", 13:26 nothing): she must listen, not hide
+    _, brain, _ = asyncio.run(_wake("Maes.", "ciérrame todas las pestañas"))
+    assert brain.heard == ["ciérrame todas las pestañas"]
+    _, brain, _ = asyncio.run(_wake("", "abre spotify"))
+    assert brain.heard == ["abre spotify"]
     _, brain, _ = asyncio.run(_wake("Hey Miku.", "abre spotify"))
     assert brain.heard == ["abre spotify"]
-    _, brain, _ = asyncio.run(_wake("", "Miku, abre spotify"))  # the name landed in the phrase
+    _, brain, _ = asyncio.run(_wake("Tenía que explotar la", "Miku, abre spotify"))  # the name is in the phrase
     assert brain.heard == ["Miku, abre spotify"]
     server, brain, _ = asyncio.run(_wake("", "abre spotify", clip=False))  # hotkey or click: no check
     assert brain.heard == ["abre spotify"] and "hide" not in server.sent
