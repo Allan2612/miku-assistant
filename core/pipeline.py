@@ -16,6 +16,7 @@ import hashlib
 import logging
 import os
 import random
+import time
 from datetime import datetime, date
 from pathlib import Path
 from typing import Optional, Any, Tuple
@@ -91,6 +92,7 @@ class MikuPipeline:
         silence_ms: int = 800,
         max_record_seconds: int = 15,
         follow_up_s: float = 0.0,
+        hide_after_s: float = 20.0,
     ) -> None:
         self.brain = brain
         self.brain.on_model_switch = self._say_filler
@@ -104,6 +106,10 @@ class MikuPipeline:
         self.max_record_seconds = max_record_seconds
         self.follow_up_s = follow_up_s  # conversation mode: seconds the mic waits after each answer (0 = off)
         self._last_answer = ""
+        # The frontend hides her after hide_after_s without activity: an answer newer than that means she is
+        # still on screen, talking with the user
+        self.hide_after_s = hide_after_s
+        self._last_turn_at = float("-inf")
         self.wakeword: Optional[Any] = None
 
         self._pipeline_lock = asyncio.Lock()
@@ -151,6 +157,10 @@ class MikuPipeline:
         async with self._pipeline_lock:
             self._pending_farewell = True
             await self._speak(random.choice(GOODBYE_PHRASES), "happy", farewell=True, cache=True)
+
+    def end_conversation(self) -> None:
+        """She was hidden by hand: the next reminder must not reopen a conversation."""
+        self._last_turn_at = float("-inf")
 
     def _new_activity(self) -> None:
         # A goodbye cut off by barge-in must not hide Miku after the next answer
@@ -269,6 +279,7 @@ class MikuPipeline:
 
     async def _speak(self, text: str, emotion: str, farewell: bool = False, cache: bool = False) -> None:
         """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032)."""
+        self._last_turn_at = float("-inf") if farewell else time.monotonic()
         if not text and farewell:
             # "Ocúltate": she goes at once, without a word and without opening the mic again
             self._pending_farewell = False
@@ -322,11 +333,12 @@ class MikuPipeline:
             if waited:
                 await asyncio.sleep(1.5)
             self.resources.touch()
+            # Hidden: she shows up, says it and hides again, no mic afterwards (log 26-oct: the mic opened after
+            # every reminder). In the middle of a conversation: she says it and the conversation goes on
+            talking = time.monotonic() - self._last_turn_at < self.hide_after_s
             await self.server.broadcast({"type": "show"})
-            # A reminder only speaks: no conversation mode afterwards, she hides on its speak_done (log 26-oct:
-            # the mic opened after every reminder)
-            self._pending_farewell = True
-            await self._speak(message, "happy", farewell=True)
+            self._pending_farewell = not talking
+            await self._speak(message, "happy", farewell=not talking)
 
     async def handle_voice_activation(self) -> None:
         """
@@ -473,7 +485,6 @@ class MikuPipeline:
         if not clean:
             return
 
-        import time
         now = time.monotonic()
         if clean == self._last_text and (now - self._last_text_time) < 2.0:
             logger.info("Dropping duplicate text input within 2.0s: '%s'", clean)

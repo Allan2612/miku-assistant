@@ -30,7 +30,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
-- Los recordatorios ya no abren el micrófono después de avisar ni suenan encima de otra frase: Miku aparece, avisa y se oculta.
+- Los recordatorios ya no abren el micrófono después de avisar ni suenan encima de otra frase: si Miku estaba oculta, aparece, avisa y se oculta; si estabas hablando con ella, avisa y la conversación sigue.
 - "Ocúltate", "escóndete", "ya puedes irte": se oculta al instante, sin hablar ni gastar petición. "Nada, nada", "no era nada", "olvídalo" o "me equivoqué" se despiden sin petición (antes "Nada, nada" iba a Gemini y respondía "¡De nada!").
 - Recordatorios: una sola herramienta `remind` (en N minutos o a una hora) que avisa "¡Oye, recuerda: X!"; antes "recordatorio en 5 minutos" anunciaba "tu temporizador ha terminado". "Recuérdame en un minuto tomar agua" (sin "que") va por el atajo local.
 - Cerrar muchas pestañas a la vez decía "Opera no respondió" aunque se cerraban: la extensión responde enseguida y Miku comprueba la lista de pestañas antes de dar algo por fallido.

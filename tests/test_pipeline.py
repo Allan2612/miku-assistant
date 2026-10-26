@@ -256,6 +256,24 @@ async def _reminders_only_speak():
     await asyncio.sleep(FOLLOW_UP_DELAY_S + 0.2)
     assert brain.heard == [] and p.audio_in.opened_after is None, "no conversation mode after a reminder"
 
+    # In the middle of a conversation she says it and the conversation goes on (mic opens as after any answer)
+    p, server, brain = make()
+    await p.handle_text_input("hola")
+    p.handle_speak_done()
+    await asyncio.sleep(FOLLOW_UP_DELAY_S + 0.2)  # the follow-up after "hola" heard "gracias"
+    p.handle_speak_done()
+    await asyncio.sleep(FOLLOW_UP_DELAY_S + 0.2)
+    brain.heard.clear()
+    await p.announce_timer("¡Oye, recuerda: tomar agua!")
+    assert p.handle_speak_done() is False, "she stays on screen"
+    await asyncio.sleep(FOLLOW_UP_DELAY_S + 0.2)
+    assert brain.heard == ["gracias"], brain.heard
+
+    # Hidden by hand (click): the conversation is over, the next reminder hides her again
+    p.end_conversation()
+    await p.announce_timer("¡Oye, recuerda: estirar!")
+    assert p.handle_speak_done() is True
+
     # She is still talking (the lock is already free): the reminder waits for her speak_done
     p, server, brain = make()
     p._is_speaking = True

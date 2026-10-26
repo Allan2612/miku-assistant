@@ -110,6 +110,7 @@ async def async_main() -> None:
         silence_ms=config.behavior.silence_ms,
         max_record_seconds=config.behavior.max_record_seconds,
         follow_up_s=config.behavior.follow_up_seconds,
+        hide_after_s=config.behavior.hide_after_seconds,
     )
     server.set_pipeline(pipeline)
     restore_timers()  # after the pipeline registered itself as the timer notifier

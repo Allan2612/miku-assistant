@@ -241,6 +241,8 @@ class MikuServer:
 
                     elif msg_type == "dismiss":
                         logger.info("Client requested dismiss.")
+                        if self.pipeline:
+                            self.pipeline.end_conversation()
                         await self.broadcast({"type": "hide"})
 
                     elif msg_type == "timing":
