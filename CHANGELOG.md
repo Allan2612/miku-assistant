@@ -6,6 +6,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ## [Unreleased]
 ### Cambiado (plan de mejoras, ver `docs/mejoras.md`)
+- Voz de Miku elegida de oído (`scratch/voice_ab.py`): modelo RVC `miku` (antes `miku_mellow`), +4 semitonos, índice 0,25, sobre Dalia. Se compararon 5 modelos x 4 voces base y luego tono x índice.
 - Cadena de respaldo de 6 modelos ordenada por cuota gratuita (cada modelo tiene su propio límite por minuto): `3.5-flash-lite` → `3.1-flash-lite` → `3-flash-preview` → `3.5-flash` → `3.8-flash` → `gemma-4-26b`. Al pasar al siguiente, Miku dice "Un momento...", "Mmm..." o similar (una vez por turno, voz cacheada). Gemma no acepta audio: recibe el texto de Whisper. Un modelo retirado (404) espera 1 h antes de reintentarse.
 - **Miku ve el resultado de lo que hace** (bucle de agente): los resultados de las herramientas vuelven a Gemini, que responde según lo que de verdad pasó o da otro paso (máx. 3 rondas). Charla = 1 petición, una acción = 2. Antes se pedía a ciegas en una sola petición y Miku decía "listo" sin saber si funcionó.
 - **Estado del PC en cada petición**: apps abiertas, volumen, temporizadores, pestañas de Opera con su número y los resultados de búsqueda visibles. "Cierra todas menos la de T y T", "la segunda opción" o "¿ya está abierto?" se deciden con datos, no adivinando.

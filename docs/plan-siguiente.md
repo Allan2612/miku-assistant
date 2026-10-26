@@ -111,7 +111,7 @@ left, right, move). Pendiente: ajustes rápidos y UI Automation, solo si aparece
 Criterio: "cierra todas las ventanas menos VS Code", "pon Discord en el otro monitor", "minimiza todo menos Spotify"
 funcionan a la primera.
 
-## Fase F — Voz más cercana a Miku (investigación)
+## Fase F — Voz más cercana a Miku (paso 1 ✅, 26-oct)
 
 Hoy: edge-tts (Dalia, +10 Hz) → RVC (`miku_mellow`, `index_rate` 0,25). Opciones a comparar con las mismas 10 frases:
 
@@ -133,6 +133,11 @@ Estado (26-oct):
   ~4-8 GB de VRAM según la fuente, español sin confirmar), XTTS-v2 (español, licencia no comercial: vale para uso
   personal). Duda de fondo: la voz de referencia de Miku es Vocaloid en japonés; clonarla al español puede perder
   justo lo que la hace reconocible. Se prueba solo si la ronda 1-2 no convence.
+
+Resultado del paso 1 (26-oct): ganó `miku` + Dalia "sin comparación" (ronda 1) y, en la ronda 2, +4 semitonos con
+índice 0,25. Queda en `config.yaml`. Al usuario aún le falta "un poquito": probablemente la entonación de Dalia
+(RVC cambia el timbre, no el ritmo ni la forma de acentuar). Siguiente prueba posible: velocidad y tono base de
+edge-tts antes de convertir (ronda 3), o clonación con clips de Miku hablando (no cantando).
 
 Pendiente de la fase E: prueba en vivo de `windows` (minimizar/mover/colocar con la escala de pantalla real).
 
