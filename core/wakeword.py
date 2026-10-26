@@ -11,10 +11,13 @@ Strict adherence to GEMINI.md:
 from __future__ import annotations
 
 import asyncio
+import collections
 import logging
 import os
 import threading
 import time
+import wave
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Coroutine, Optional, Any
 
@@ -27,6 +30,28 @@ from core.config import WakewordConfig
 logger = logging.getLogger("miku.wakeword")
 
 BUILTIN_MODELS = {"alexa", "hey_mycroft", "hey_jarvis", "hey_rhasspy", "timer", "weather"}
+
+# What it heard at each activation, to find what triggers the false ones (plan B, 26-oct). Real and false
+# activations can't be told apart by score (false: 0.988; real: 0.355), so the audio is the evidence
+CLIPS_DIR = Path(__file__).resolve().parents[1] / "cache" / "wake"
+CLIP_CHUNKS = 25  # x 80 ms = the last 2 s
+MAX_CLIPS = 200
+
+
+def _save_clip(audio: np.ndarray, score: float) -> None:
+    try:
+        CLIPS_DIR.mkdir(parents=True, exist_ok=True)
+        path = CLIPS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{score:.3f}.wav"
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(audio.astype(np.int16).tobytes())
+        for old in sorted(CLIPS_DIR.glob("*.wav"))[:-MAX_CLIPS]:
+            old.unlink(missing_ok=True)
+        logger.info("Wake clip saved: %s", path.name)
+    except OSError as e:
+        logger.warning("Could not save the wake clip: %s", e)
 
 
 class WakeWordListener:
@@ -55,6 +80,7 @@ class WakeWordListener:
         self._last_trigger_time: float = 0.0
         self._cooldown_seconds: float = 3.0
         self._consecutive_hits: int = 0
+        self._recent: collections.deque = collections.deque(maxlen=CLIP_CHUNKS)
         self._lock = threading.Lock()
 
     @property
@@ -157,6 +183,7 @@ class WakeWordListener:
                 audio_data = chunk[:, 0] if chunk.ndim > 1 else chunk
                 if audio_data.dtype != np.int16:
                     audio_data = audio_data.astype(np.int16)
+                self._recent.append(audio_data.copy())
 
                 # Pure electrical silence floor check (< 6 RMS): skip to save CPU without corrupting buffer
                 rms = float(np.sqrt(np.mean(audio_data.astype(np.float32) ** 2)))
@@ -189,6 +216,9 @@ class WakeWordListener:
                         self.threshold,
                         self.patience,
                     )
+                    # Off the audio thread: a disk write here would drop audio
+                    threading.Thread(target=_save_clip, args=(np.concatenate(self._recent), score),
+                                     daemon=True, name="miku-wake-clip").start()
                     # Automatically pause listening during subsequent conversation
                     self._paused = True
                     self._model.reset()
@@ -224,6 +254,7 @@ class WakeWordListener:
             if self._running and self._paused:
                 if self._model:
                     self._model.reset()
+                self._recent.clear()  # a clip must not start with Miku's own voice from before the pause
                 self._paused = False
                 logger.debug("WakeWord listener resumed.")
 

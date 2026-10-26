@@ -41,6 +41,7 @@ ACK_WAIT_S = 3.0  # max wait for the frontend to finish playing the cue
 # Conversation mode: the mic opens this long after she stops talking (her voice must not be recorded)
 FOLLOW_UP_DELAY_S = 0.35
 ANNOUNCE_WAIT_S = 30.0  # a reminder waits at most this long for her current answer to finish
+GREETING_VOICE_WAIT_S = 90.0  # the startup greeting waits this long for RVC (cold start)
 FILLER_PHRASES = ("Un momento...", "Mmm...", "Déjame pensar...", "Dame un segundito...", "A ver...")
 # Said before hiding on inactivity (fixed phrases: voice cached on disk, 0 Gemini requests)
 GOODBYE_PHRASES = ("¡Adiós!", "¡Chao!", "¡Nos vemos!", "¡Hasta luego!", "Me voy, ¡llámame si me necesitas!")
@@ -211,7 +212,7 @@ class MikuPipeline:
         if rvc_file.exists():
             return base64.b64encode(rvc_file.read_bytes()).decode("ascii"), "audio/wav"
         base = await self.tts.synthesize(phrase, cache=True)
-        if base and self.rvc is not None and self.rvc.enabled and self.rvc.is_running and not self.rvc.is_warming_up:
+        if base and self.rvc is not None and self.rvc.enabled and self.rvc.is_loaded:
             self._spawn_bg(self._convert_ack(base[0], rvc_file))
         return base
 
@@ -231,7 +232,7 @@ class MikuPipeline:
             if self.rvc is None or not self.rvc.enabled:
                 return
             for _ in range(240):  # the first RVC load can take minutes
-                if self.rvc.is_running and not self.rvc.is_warming_up:
+                if self.rvc.is_loaded:
                     break
                 await asyncio.sleep(1)
             for phrase in ACK_PHRASES + FILLER_PHRASES:
@@ -370,7 +371,7 @@ class MikuPipeline:
             try:
                 # 1. Concurrently pre-warm STT and RVC worker while the user begins speaking
                 stt_warmup = None if self.stt.is_loaded else asyncio.create_task(self.stt.warmup())
-                if self.rvc is not None and self.rvc.enabled and not self.rvc.is_running:
+                if self.rvc is not None and self.rvc.enabled and not self.rvc.is_loaded:
                     self._spawn_bg(self.rvc.warmup())
 
                 # 2. Show Miku, say a short "¿Sí?" so the user knows she is listening, then listen.
@@ -515,7 +516,7 @@ class MikuPipeline:
         """Body of handle_text_input; runs under the pipeline lock."""
 
         # Pre-warm RVC in background if needed
-        if self.rvc is not None and self.rvc.enabled and not self.rvc.is_running:
+        if self.rvc is not None and self.rvc.enabled and not self.rvc.is_loaded:
             asyncio.create_task(self.rvc.warmup())
 
         # 1. User subtitle
@@ -572,6 +573,13 @@ class MikuPipeline:
 
             # Allow 1.2s for Live2D model assets to initialize and window appear animation
             await asyncio.sleep(1.2)
+            # Her first words of the day in her own voice: a cold start imports torch & co. for up to ~50 s,
+            # and the greeting used to come out in the base voice (log, 26-oct)
+            if self.rvc is not None and self.rvc.enabled:
+                for _ in range(int(GREETING_VOICE_WAIT_S / 0.5)):
+                    if self.rvc.is_loaded:
+                        break
+                    await asyncio.sleep(0.5)
 
             now_hour = datetime.now().hour
             if 5 <= now_hour < 12:

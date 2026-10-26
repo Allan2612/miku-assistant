@@ -36,8 +36,8 @@ Cuota: A2 ahorra peticiones; el resto no cambia.
 
 ## Fase B — Activaciones sin querer (wake word)
 
-1. **Medir antes de tocar**: guardar los 2 s de audio de cada activación en `cache/wake/` (con la puntuación y si
-   después hubo voz). Un par de días de uso normal dan los casos reales.
+1. ✅ **Medir antes de tocar** (26-oct): cada activación guarda sus 2 s de audio en `cache/wake/`
+   (`fecha_puntuación.wav`); el log dice si después hubo voz. Un par de días de uso normal dan los casos reales.
 2. **Verificar con Whisper**: al detectar "Hey Miku", Whisper (ya cargado) transcribe esos 2 s mientras el micrófono
    ya escucha; si no se parece a "miku", cancela y la oculta antes de que hable. Coste: 0 peticiones. Whisper tarda
    ~1,5 s en frases cortas en este PC: hay que medir si cabe sin retrasar la activación real.
@@ -46,7 +46,7 @@ Cuota: A2 ahorra peticiones; el resto no cambia.
 
 Criterio: un día de uso normal sin activaciones falsas, sin perder las reales de puntuación baja.
 
-## Fase C — Siempre la misma voz
+## Fase C — Siempre la misma voz ✅ (26-oct)
 
 1. Medir en qué se van los 11–53 s de carga de RVC (importar torch, HuBERT, el modelo, la primera inferencia) y la
    VRAM que ocupa cargado.
@@ -55,6 +55,11 @@ Criterio: un día de uso normal sin activaciones falsas, sin perder las reales d
    - Dejar RVC listo en RAM y pasar solo el modelo a la GPU al activarla (segundos en vez de decenas).
    - Nunca hablar con la voz base: si RVC no está listo, esperar (con tope) en lugar de cambiar de voz.
 3. Decidir con los números del paso 1.
+
+Medido (26-oct): cargar los modelos tarda 3-5 s; lo lento es arrancar el proceso (importar torch, transformers y
+faiss: 10 s con la caché del disco caliente, ~48 s en frío). Un proceso con todo importado no ocupa VRAM.
+Hecho: tras descargar queda un worker en espera (solo RAM), la respuesta espera hasta 8 s a una carga en curso, y
+el saludo de arranque espera a la voz de Miku.
 
 Criterio: ninguna respuesta con la voz de Dalia tras el arranque.
 

@@ -30,6 +30,9 @@ LOAD_TIMEOUT_S = 180.0
 # Measured on the RTX 3050: 6-20 s for a 7 s phrase when another program shares the GPU.
 # A timeout restarts the worker (35-80 s reload), so it must not fire on a merely slow conversion.
 CONVERT_TIMEOUT_S = 60.0
+# An answer waits this long for a load in progress instead of switching to the base voice ("otra voz", 26-oct).
+# With the worker on standby a load takes 3-5 s; only a cold start (10-48 s of imports) runs past it
+WAIT_FOR_LOAD_S = 8.0
 
 
 class RVCManager:
@@ -47,6 +50,7 @@ class RVCManager:
         self._reaping: set = set()  # strong refs to proc.wait() tasks of terminated workers
         self._lock = asyncio.Lock()
         self._is_warming_up: bool = False
+        self._loaded: bool = False  # models in VRAM; the process alone (standby) holds none
 
         logger.info(
             "RVCManager initialized (enabled=%s, model=%s, index=%s, f0_up_key=%d)",
@@ -64,6 +68,11 @@ class RVCManager:
     def is_running(self) -> bool:
         """Returns True if the worker subprocess is currently active and alive."""
         return self._proc is not None and self._proc.returncode is None
+
+    @property
+    def is_loaded(self) -> bool:
+        """The models are in VRAM and a conversion can start right away."""
+        return self.is_running and self._loaded
 
     @staticmethod
     def _log_file():
@@ -94,6 +103,7 @@ class RVCManager:
                 cwd=str(ROOT_DIR),
                 limit=10 * 1024 * 1024,  # 10 MB line buffer for base64 audio responses
             )
+            self._loaded = False
             logger.info("RVC worker process spawned with PID %d", self._proc.pid)
             return True
         except Exception as e:
@@ -149,27 +159,40 @@ class RVCManager:
         async with self._lock:
             self._is_warming_up = True
             try:
-                ok = await self._ensure_worker()
-                if not ok:
-                    return False
-
-                resp = await self._send_command({
-                    "cmd": "warmup",
-                    "model": self.model_path,
-                    "index": self.index_path,
-                }, timeout=LOAD_TIMEOUT_S)
-
-                if resp and resp.get("status") == "ok":
+                ok = await self._load()
+                if ok:
                     logger.info("RVC worker warmed up and ready in GPU VRAM.")
-                    return True
-                else:
-                    logger.warning("RVC worker warmup returned non-ok status: %s", resp)
-                    return False
+                return ok
             except Exception as e:
                 logger.error("Error warming up RVC worker: %s", e)
                 return False
             finally:
                 self._is_warming_up = False
+
+    async def _load(self) -> bool:
+        """Starts the worker if needed and loads the models into VRAM. Call with the lock held."""
+        if not await self._ensure_worker():
+            return False
+        if self._loaded:
+            return True
+        resp = await self._send_command({
+            "cmd": "load",
+            "model": self.model_path,
+            "index": self.index_path,
+        }, timeout=LOAD_TIMEOUT_S)
+        self._loaded = bool(resp and resp.get("status") == "ok")
+        if not self._loaded:
+            logger.warning("RVC worker failed to load models: %s", resp)
+        return self._loaded
+
+    async def standby(self) -> None:
+        """Starts a worker that only imports torch & co. (10-48 s, RAM only, no VRAM) and waits: the next
+        load then takes 3-5 s instead of a full process start."""
+        if not self.enabled:
+            return
+        async with self._lock:
+            if await self._ensure_worker():
+                logger.info("RVC worker on standby (no models in VRAM).")
 
     async def convert(self, audio_b64: str) -> Optional[Tuple[str, str]]:
         """
@@ -179,27 +202,21 @@ class RVCManager:
         if not self.enabled or not audio_b64:
             return None
 
-        # A load takes 35-80 s: answer now with the base voice instead of waiting for it (H-028)
+        # A load in progress: wait a little rather than answer in another voice; a long cold start still
+        # falls back to the base voice (H-028)
         if self._is_warming_up:
-            logger.info("RVC still loading. Using the base voice for this answer.")
-            return None
+            for _ in range(int(WAIT_FOR_LOAD_S / 0.1)):
+                await asyncio.sleep(0.1)
+                if not self._is_warming_up:
+                    break
+            else:
+                logger.info("RVC still loading after %.0f s. Using the base voice for this answer.", WAIT_FOR_LOAD_S)
+                return None
 
         async with self._lock:
-            # 1. Ensure worker process is alive
-            if not self.is_running:
-                logger.info("RVC worker not running. Launching and warming up on-demand...")
-                ok = await self._ensure_worker()
-                if not ok:
-                    return None
-                # Load models; if that fails, converting would only wait for another timeout
-                resp = await self._send_command({
-                    "cmd": "load",
-                    "model": self.model_path,
-                    "index": self.index_path,
-                }, timeout=LOAD_TIMEOUT_S)
-                if not resp or resp.get("status") != "ok":
-                    logger.warning("RVC worker failed to load models: %s", resp)
-                    return None
+            # 1. Worker alive and models loaded (a standby worker loads them now: 3-5 s)
+            if not await self._load():
+                return None
 
             # 2. Dispatch conversion
             try:
@@ -226,6 +243,7 @@ class RVCManager:
         Terminates the isolated worker subprocess immediately.
         Invoked by ResourceManager after inactivity timeout to ensure 0 MB VRAM at rest.
         """
+        self._loaded = False
         if self._proc is not None:
             proc, self._proc = self._proc, None
             pid = proc.pid

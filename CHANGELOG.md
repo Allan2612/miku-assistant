@@ -16,6 +16,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 
 ### Añadido
+- Cada activación por "Hey Miku" guarda los 2 s que oyó el detector en `cache/wake/` (fecha y puntuación en el nombre, máx. 200), para ver qué dispara las activaciones sin querer.
 - `open_website`: abre la web de algo por su nombre ("abre la página del Banco de Costa Rica") y dice a qué dominio fue.
 - **Extensión de Miku para Opera** (`browser-extension/`): Miku ve todas las pestañas y las maneja por número (`browser_tabs`: cerrar varias, activar, recargar, atrás, adelante; `open_url`/`web_search`/`youtube_play` con `tab_id`). Sustituye a `browser_action`, que simulaba el teclado y fallaba con pestañas fijadas, el orden de Ctrl+Tab, el diálogo de cierre y el foco.
 - `youtube_play`: pone y reproduce en YouTube lo que pidas ("ponme More en YouTube", "pon la canción..."); antes solo abría la búsqueda.
@@ -30,6 +31,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- "A veces habla con otra voz": tras 10 min sin uso se descargaba RVC y recargarlo tardaba 10-48 s (casi todo, importar torch), en los que Miku hablaba con la voz base de edge-tts. Ahora queda un proceso en espera con todo importado (RAM, 0 MB de VRAM) y la recarga tarda 3-5 s; una respuesta espera hasta 8 s a que termine la carga en vez de cambiar de voz, y el saludo de arranque espera a su voz.
 - Los recordatorios ya no abren el micrófono después de avisar ni suenan encima de otra frase: si Miku estaba oculta, aparece, avisa y se oculta; si estabas hablando con ella, avisa y la conversación sigue.
 - "Ocúltate", "escóndete", "ya puedes irte": se oculta al instante, sin hablar ni gastar petición. "Nada, nada", "no era nada", "olvídalo" o "me equivoqué" se despiden sin petición (antes "Nada, nada" iba a Gemini y respondía "¡De nada!").
 - Recordatorios: una sola herramienta `remind` (en N minutos o a una hora) que avisa "¡Oye, recuerda: X!"; antes "recordatorio en 5 minutos" anunciaba "tu temporizador ha terminado". "Recuérdame en un minuto tomar agua" (sin "que") va por el atajo local.

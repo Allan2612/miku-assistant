@@ -31,7 +31,7 @@ Dos procesos principales que se comunican por WebSocket local, más un subproces
 | Voz → texto | **faster-whisper** `small`, `cpu`, `int8`, `cpu_threads` de la config, idioma de `language` | 0 MB VRAM, ~1,5 s por frase. Es un **filtro local**: descarta ruido y silencio, y alimenta el atajo local. Gemini oye el audio real. Se descarga tras inactividad |
 | Cerebro | **Gemini API** (`google-genai`), `gemini-3.5-flash-lite` (flash solo da 20 peticiones/día gratis) | **Una petición por turno, más una por cada ronda de herramientas** (sus resultados vuelven a Gemini): audio + historial + herramientas + estado del PC. Si un modelo falla (cuota por minuto, 503), Miku dice "Un momento..." y prueba el siguiente de una cadena de 6 (`llm.models_fallback`); Gemma, el último, recibe el texto de Whisper |
 | Texto → voz | **edge-tts** (voz femenina, p. ej. `es-MX-DaliaNeural`) | Gratis, buena calidad, base para RVC |
-| Voz Miku | **RVC** en subproceso aislado (`rvc_worker.py` por `stdio`/`pipe`) | Usa GPU (RTX 3050). Al matar el subproceso tras inactividad, Windows libera el 100 % de la VRAM y RAM de PyTorch |
+| Voz Miku | **RVC** en subproceso aislado (`rvc_worker.py` por `stdio`/`pipe`) | Usa GPU (RTX 3050). Al matar el subproceso tras inactividad, Windows libera el 100 % de la VRAM. Enseguida arranca otro **en espera** (librerías importadas, sin modelos: solo RAM, 0 MB de VRAM), así la siguiente carga tarda 3-5 s en vez de 10-48 s |
 | Activación | Atajo global (Tauri `global-shortcut`) + opcional **openWakeWord** (CPU) | Fase 7 |
 | Audio | `sounddevice` (mic) | Simple y estable |
 
@@ -49,7 +49,7 @@ Dos procesos principales que se comunican por WebSocket local, más un subproces
 10. Frontend reproduce con lip sync + expresión + subtítulo.
 10b. **Modo conversación**: al terminar de hablar (y si no fue una despedida), el micrófono se reabre a los 0,35 s durante `follow_up_seconds` (6 s) sin palabra clave. Tono ascendente al abrirse, descendente si se cierra sin oír nada. Lo que coincida con el final de su última respuesta se descarta (eco).
 11. Tras `hide_after_seconds` sin actividad, el frontend envía `idle_timeout`: Miku se despide ("¡Adiós!", frase cacheada) y el backend envía `hide` (si no llega en 8 s, el frontend se oculta solo). Tras un "adiós" del usuario, igual sin despedida extra → animación **desaparecer** → ventana oculta, render detenido (`app.ticker.stop()`).
-12. Tras `unload_after_minutes` sin uso → se termina el subproceso `rvc_worker.py`, volviendo a **0 MB de VRAM**. Whisper se queda cargado: solo ocupa RAM (~0,5 GB), que al usuario no le importa, y recargarlo retrasaba ~1,5 s la primera frase tras una pausa.
+12. Tras `unload_after_minutes` sin uso → se termina el subproceso `rvc_worker.py`, volviendo a **0 MB de VRAM**, y se arranca uno nuevo en espera (importa torch y compañía, que es lo lento, pero no carga modelos ni toca la GPU). Al activar a Miku carga los modelos en 3-5 s; una respuesta que llega mientras carga espera hasta 8 s antes de usar la voz base. El saludo de arranque espera a la voz de Miku (hasta 90 s en frío). Whisper se queda cargado: solo ocupa RAM (~0,5 GB), y recargarlo retrasaba ~1,5 s la primera frase tras una pausa.
 
 Si TTS o RVC fallan, Miku responde solo con subtítulo o con la voz base de `edge-tts` (degradación elegante, nunca se cuelga).
 

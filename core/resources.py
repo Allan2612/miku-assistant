@@ -61,12 +61,15 @@ class ResourceManager:
                     # cost ~1.5 s on the first phrase after a pause. VRAM is what matters: the RVC worker goes.
 
                     # Kill RVC worker subprocess if running (Phase 6)
-                    if self._rvc is not None and getattr(self._rvc, "is_running", False):
+                    if self._rvc is not None and getattr(self._rvc, "is_loaded", False):
                         logger.info(
                             "Inactivity timeout reached (%.1f min idle). Terminating RVC worker.",
                             idle_duration / 60.0,
                         )
                         self._rvc.terminate_worker()
+                        # A fresh worker waits with its imports done (RAM only): reloading is then 3-5 s,
+                        # not 10-48 s in which she answered with the base voice ("otra voz", 26-oct)
+                        await self._rvc.standby()
                         unloaded_anything = True
 
                     if unloaded_anything:
