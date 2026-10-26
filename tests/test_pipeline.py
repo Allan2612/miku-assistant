@@ -239,6 +239,59 @@ async def _conversation():
     assert brain.heard == [] and brain2.heard == [] and server.sent == [] and server2.sent == []
 
 
+async def _reminders_only_speak():
+    def make():
+        server = FakeServer()
+        brain = RecordingBrain()
+        p = MikuPipeline(brain=brain, tts=FakeTTS(), stt=FakeSTT("gracias"), audio_in=FakeMic(server),
+                         resources=FakeResources(), server=server, rvc=None, follow_up_s=2.0)
+        p.set_wakeword(FakeWake())
+        return p, server, brain
+
+    # A reminder shows her, speaks, and hides on its speak_done: the mic never opens (log 26-oct)
+    p, server, brain = make()
+    await p.announce_timer("¡Oye, recuerda: tomar agua!")
+    assert server.sent[0] == "show" and "speak" in server.sent
+    assert p.handle_speak_done() is True, "the reminder ends in a hide"
+    await asyncio.sleep(FOLLOW_UP_DELAY_S + 0.2)
+    assert brain.heard == [] and p.audio_in.opened_after is None, "no conversation mode after a reminder"
+
+    # She is still talking (the lock is already free): the reminder waits for her speak_done
+    p, server, brain = make()
+    p._is_speaking = True
+    task = asyncio.create_task(p.announce_timer("¡Oye, recuerda: estirar!"))
+    await asyncio.sleep(0.3)
+    assert "speak" not in server.sent, "the reminder talked over her answer"
+    p._is_speaking = False
+    await asyncio.wait_for(task, 3)
+    assert "speak" in server.sent
+
+
+async def _hide_now():
+    # "Ocúltate": empty answer + farewell = hide at once, no voice, no mic
+    class HideBrain(RecordingBrain):
+        async def chat(self, text, audio=None):
+            self.heard.append(text)
+            return "happy", "", True
+
+    server = FakeServer()
+    p = MikuPipeline(brain=HideBrain(), tts=FakeTTS(), stt=FakeSTT("ocúltate"), audio_in=FakeMic(server),
+                     resources=FakeResources(), server=server, rvc=None, follow_up_s=2.0)
+    p.set_wakeword(FakeWake())
+    async with p._pipeline_lock:
+        await p._listen_and_answer(initial_timeout=1)
+    assert "hide" in server.sent and "speak" not in server.sent, server.sent
+    assert not p.wakeword.paused and not p._pending_farewell
+
+
+def test_reminders_only_speak():
+    asyncio.run(_reminders_only_speak())
+
+
+def test_hide_without_a_word():
+    asyncio.run(_hide_now())
+
+
 def test_conversation_mode():
     asyncio.run(_conversation())
 
@@ -253,4 +306,6 @@ if __name__ == "__main__":
     test_filler_when_switching_model()
     test_conversation_mode()
     test_activation_says_yes_then_listens()
+    test_reminders_only_speak()
+    test_hide_without_a_word()
     print("ok")

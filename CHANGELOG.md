@@ -30,6 +30,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- Los recordatorios ya no abren el micrófono después de avisar ni suenan encima de otra frase: Miku aparece, avisa y se oculta.
+- "Ocúltate", "escóndete", "ya puedes irte": se oculta al instante, sin hablar ni gastar petición. "Nada, nada", "no era nada", "olvídalo" o "me equivoqué" se despiden sin petición (antes "Nada, nada" iba a Gemini y respondía "¡De nada!").
+- Recordatorios: una sola herramienta `remind` (en N minutos o a una hora) que avisa "¡Oye, recuerda: X!"; antes "recordatorio en 5 minutos" anunciaba "tu temporizador ha terminado". "Recuérdame en un minuto tomar agua" (sin "que") va por el atajo local.
+- Cerrar muchas pestañas a la vez decía "Opera no respondió" aunque se cerraban: la extensión responde enseguida y Miku comprueba la lista de pestañas antes de dar algo por fallido.
 - "¿Estás segura que la guardaste?" hacía que Miku dijera "no llegué a hacerlo" aunque sí la había guardado (y la nota se duplicaba): hablar de la acción del turno anterior ya no cuenta como promesa falsa, y la misma nota no se guarda dos veces en 30 min.
 - "Ábreme la segunda opción" / "ese enlace": Miku mira la pantalla (captura en la misma petición) y abre ese resultado.
 - Buscar una pestaña por nombre tolera "T y T", "T&T", "TyT", "t-soluciones" o "Disney plus" (sin mayúsculas, tildes ni símbolos; o el título claramente más parecido).

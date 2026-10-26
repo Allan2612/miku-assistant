@@ -107,7 +107,9 @@ async def _timer_worker(timer_id: int, duration_seconds: float, label: str) -> N
     _TIMERS.pop(timer_id, None)
     _save()
     logger.info("Timer #%d '%s' expired!", timer_id, label)
-    msg = f"¡{label}!" if label.startswith("Recordatorio") else f"¡Tu temporizador de {label} ha terminado!"
+    # "Recordatorio: X" is how reminders are saved (also by older runs): said as a reminder, never as a timer
+    msg = (f"¡Oye, recuerda: {label.removeprefix('Recordatorio:').strip()}!" if label.startswith("Recordatorio")
+           else f"¡Tu temporizador de {label} ha terminado!")
     if _TIMER_NOTIFIER:
         try:
             await _TIMER_NOTIFIER(msg)
@@ -115,83 +117,79 @@ async def _timer_worker(timer_id: int, duration_seconds: float, label: str) -> N
             logger.error("Error triggering timer speech notification: %s", e)
 
 
-@tool(
-    name="set_timer",
-    description="Programa un temporizador en minutos con una etiqueta opcional (ej: minutes: 5, label: 'hacer café'). Al terminar, Miku te avisará con voz."
-)
-def set_timer(minutes: float, label: str = "Temporizador") -> Dict[str, Any]:
-    """Crea un temporizador asíncrono."""
+def _add(label: str, seconds: float) -> Dict[str, Any]:
+    """Registers and schedules one timer; returns its entry, or an error result if there are too many."""
     global _NEXT_TIMER_ID
-
-    if minutes <= 0:
-        return {"ok": False, "result": "La duración del temporizador debe ser mayor a 0 minutos."}
     if len(_TIMERS) >= MAX_TIMERS:
         return {"ok": False, "result": f"Ya hay {MAX_TIMERS} temporizadores activos; cancela alguno primero."}
-
-    duration_sec = minutes * 60.0
     timer_id = _NEXT_TIMER_ID
     _NEXT_TIMER_ID += 1
-
-    label = label.strip()
-    clean_label = label if label and label.lower() != "temporizador" else f"{minutes:g} minutos"
-    end_time = datetime.datetime.now() + datetime.timedelta(seconds=duration_sec)
-
+    end_time = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
     # Register before scheduling: a very short timer could finish (and pop itself) first (H-017)
     _TIMERS[timer_id] = {
         "id": timer_id,
-        "label": clean_label,
-        "minutes": minutes,
+        "label": label,
+        "minutes": round(seconds / 60.0, 1),
         "end_time": end_time.strftime("%H:%M"),
-        "due": time.time() + duration_sec,
+        "due": time.time() + seconds,
         "task": None,
     }
-    _TIMERS[timer_id]["task"] = _schedule_worker(timer_id, duration_sec, clean_label)
+    _TIMERS[timer_id]["task"] = _schedule_worker(timer_id, seconds, label)
     _save()
-
-    return {"ok": True, "result": f"Temporizador #{timer_id} de {minutes} minuto(s) para '{clean_label}' configurado (sonará a las {end_time.strftime('%H:%M')})."}
+    return _TIMERS[timer_id]
 
 
 @tool(
-    name="set_reminder",
-    description="Programa un recordatorio para una hora específica del día (formato HH:MM) con un texto (ej: time_str: '18:30', text: 'tomar agua')."
+    name="set_timer",
+    description=(
+        "Temporizador de cuenta atrás en minutos (ej: minutes: 5, label: 'el té'). Para que Miku le RECUERDE algo "
+        "al usuario ('recuérdame...', 'ponme un recordatorio...'), usa remind."
+    ),
 )
-def set_reminder(time_str: str, text: str) -> Dict[str, Any]:
-    """Programa un recordatorio a una hora fija en formato HH:MM."""
-    global _NEXT_TIMER_ID
-    clean_time = time_str.strip()
+def set_timer(minutes: float, label: str = "Temporizador") -> Dict[str, Any]:
+    """Crea un temporizador asíncrono."""
+    if minutes <= 0:
+        return {"ok": False, "result": "La duración del temporizador debe ser mayor a 0 minutos."}
+    label = label.strip()
+    clean_label = label if label and label.lower() != "temporizador" else f"{minutes:g} minutos"
+    t = _add(clean_label, minutes * 60.0)
+    if "id" not in t:
+        return t
+    return {"ok": True, "result": f"Temporizador #{t['id']} de {minutes:g} minuto(s) para '{clean_label}' configurado (sonará a las {t['end_time']})."}
 
-    if len(_TIMERS) >= MAX_TIMERS:
-        return {"ok": False, "result": f"Ya hay {MAX_TIMERS} temporizadores activos; cancela alguno primero."}
 
-    try:
-        parts = clean_time.split(":")
-        target_h = int(parts[0])
-        target_m = int(parts[1])
-    except Exception:
-        return {"ok": False, "result": f"Formato de hora '{time_str}' inválido. Usa el formato HH:MM (ej: '15:30')."}
-
+@tool(
+    name="remind",
+    description=(
+        "Recuerda algo al usuario más tarde. Usa minutes para 'en N minutos/horas' (horas = minutos x 60) o at "
+        "('HH:MM', 24 h) para una hora del día; no los dos. Ej: text: 'tomar agua', minutes: 1."
+    ),
+)
+def remind(text: str, minutes: float = 0, at: str = "") -> Dict[str, Any]:
+    """Programa un recordatorio en N minutos o a una hora (hoy, o mañana si ya pasó)."""
+    what = text.strip()
+    if not what:
+        return {"ok": False, "result": "¿Qué quieres que te recuerde?"}
     now = datetime.datetime.now()
-    target_dt = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
-    if target_dt <= now:
-        target_dt += datetime.timedelta(days=1)  # Tomorrow
-
-    diff_sec = (target_dt - now).total_seconds()
-    timer_id = _NEXT_TIMER_ID
-    _NEXT_TIMER_ID += 1
-
-    label = f"Recordatorio: {text}"
-    _TIMERS[timer_id] = {
-        "id": timer_id,
-        "label": label,
-        "minutes": round(diff_sec / 60.0, 1),
-        "end_time": target_dt.strftime("%H:%M"),
-        "due": time.time() + diff_sec,
-        "task": None,
-    }
-    _TIMERS[timer_id]["task"] = _schedule_worker(timer_id, diff_sec, label)
-    _save()
-
-    return {"ok": True, "result": f"Recordatorio #{timer_id} configurado para las {clean_time} ({round(diff_sec/60)} minutos a partir de ahora)."}
+    if minutes and minutes > 0:
+        seconds = minutes * 60.0
+    elif at:
+        try:
+            hour, minute = (int(x) for x in at.strip().split(":")[:2])
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        except ValueError:
+            return {"ok": False, "result": f"Hora '{at}' inválida. Usa HH:MM (ej: '15:30')."}
+        # The current minute is "now", not tomorrow: the model wrote 10:10 for "in a minute" at 10:09:41
+        if target <= now - datetime.timedelta(minutes=1):
+            target += datetime.timedelta(days=1)
+        seconds = max((target - now).total_seconds(), 1.0)
+    else:
+        return {"ok": False, "result": "Dime cuándo: en cuántos minutos o a qué hora."}
+    t = _add(f"Recordatorio: {what}", seconds)
+    if "id" not in t:
+        return t
+    day = " de mañana" if datetime.datetime.fromtimestamp(t["due"]).date() > now.date() else ""
+    return {"ok": True, "result": f"Recordatorio #{t['id']} para las {t['end_time']}{day}: {what}."}
 
 
 @tool(

@@ -12,6 +12,7 @@ import re
 import socket
 import subprocess
 import threading
+import time
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -23,6 +24,7 @@ from core.tools._win import find_opera_gx as _find_opera_gx
 
 logger = logging.getLogger("miku.tools.web")
 
+CLOSE_CHECK_S = 1.0  # the extension sends the tab list 400 ms after a change
 NO_EXTENSION = "Para manejar pestañas necesito la extensión de Miku en Opera (carpeta browser-extension)."
 
 
@@ -255,6 +257,11 @@ def browser_tabs(action: str, tab_ids: List[int]) -> Dict[str, Any]:
         return {"ok": False, "result": f"No hay pestañas con esos números ({unknown or 'ninguno'}); mira el estado."}
     titles = [bridge.tab(i).get("title", "") for i in ids]
     res = bridge.run("close", tab_ids=ids) if act == "close" else bridge.run(act, tab_id=ids[0])
+    if not res.get("ok") and act == "close":
+        # The reply can be lost while the tabs do close: trust the next tab list over the missing answer
+        time.sleep(CLOSE_CHECK_S)
+        if not any(bridge.tab(i) for i in ids):
+            res = {"ok": True}
     if not res.get("ok"):
         return {"ok": False, "result": f"Opera no pudo: {res.get('error', 'error desconocido')}"}
     what = f"{len(ids)} pestañas" if len(ids) > 1 else f"'{titles[0][:50]}'"

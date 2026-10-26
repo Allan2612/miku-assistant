@@ -37,8 +37,22 @@ def test_goodbye_is_local_unless_it_carries_an_order():
     assert farewell and len(models.requests) == 2, "the order still goes to Gemini, then she hides"
 
 
+def test_hide_phrases_cost_nothing():
+    # "Nada, nada." went to Gemini and got "¡De nada!" (log, 26-oct)
+    import asyncio
+    from tests.test_agent import brain
+    for text in ("Nada, nada.", "ya, ya", "no era nada", "olvídalo", "me equivoqué", "Escóndete, Miku", "eso era todo"):
+        assert is_farewell(text), text
+    b, models = brain()
+    for text in ("Ocúltate.", "Miku, escóndete", "ya puedes irte"):
+        assert asyncio.run(b.chat(text)) == ("happy", "", True), text  # empty answer: she hides without a word
+    assert asyncio.run(b.chat("nada, nada"))[1], "a plain goodbye still answers"
+    assert not models.requests
+
+
 if __name__ == "__main__":
     test_farewell()
     test_done_phrases_are_goodbyes_only_when_alone()
     test_goodbye_is_local_unless_it_carries_an_order()
+    test_hide_phrases_cost_nothing()
     print("ok")

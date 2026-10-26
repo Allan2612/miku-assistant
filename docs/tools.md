@@ -67,9 +67,11 @@ No hay herramientas para borrar, mover ni renombrar archivos.
 ## Tiempo — `tools/timers.py`
 | Función | Parámetros | Implementación |
 |---|---|---|
-| `set_timer` | `minutes: float, label: str?` | Tarea asyncio; al terminar, Miku aparece y avisa con voz |
-| `set_reminder` | `time: "HH:MM", text: str` | Igual, a una hora concreta |
+| `set_timer` | `minutes: float, label: str?` | Cuenta atrás ("5 minutos para el té"); al terminar: "¡Tu temporizador de el té ha terminado!" |
+| `remind` | `text, minutes? \| at: "HH:MM"?` | Recordatorio en N minutos o a una hora (hoy; mañana si ya pasó; el minuto actual cuenta como ahora). Avisa "¡Oye, recuerda: X!". Sustituye a `set_reminder`, que solo aceptaba una hora y llevaba al modelo a usar `set_timer` para "recuérdame en 5 minutos" |
 | `list_timers` / `cancel_timer` | `id?` | — |
+
+**Los avisos solo hablan:** Miku aparece, lo dice y se oculta; no abre el micrófono después (modo conversación). Si está hablando, espera a que termine.
 
 **Persistentes:** cada temporizador se guarda con su hora de vencimiento absoluta en `cache/timers.json` al crearse, cancelarse o sonar. `restore_timers()` los reprograma al arrancar. Los que vencieron con Miku apagada hace menos de 6 h se anuncian a los 15 s de arrancar; los más antiguos se descartan. Cerrar el backend no los borra.
 

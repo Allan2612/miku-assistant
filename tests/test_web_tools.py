@@ -121,6 +121,18 @@ def test_browser_tabs_reports_what_opera_said():
     assert not res["ok"] and "Tabs cannot be edited" in res["result"]
 
 
+def test_closing_trusts_the_tab_list_over_a_lost_reply():
+    # Log 26-oct: 8 tabs closed, but the reply came after the 6 s wait and Miku said it failed
+    web.CLOSE_CHECK_S = 0
+    b = connected_bridge(reply={"ok": False, "error": "Opera no respondió (TimeoutError)."})
+    b.update({"tabs": [t for t in TABS if t["id"] == 12]})  # the extension's next list: they are gone
+    assert web.browser_tabs("close", [12, 13])["ok"] is False, "tab 12 is still open: it did fail"
+    assert web.browser_tabs("close", [12])["ok"] is False
+    b.update({"tabs": [dict(t) for t in TABS]})
+    b.run = lambda cmd, **args: b.update({"tabs": [t for t in TABS if t["id"] == 12]}) or {"ok": False, "error": "x"}
+    assert web.browser_tabs("close", [11, 13, 21]) == {"ok": True, "result": "Cerré 3 pestañas."}
+
+
 def test_open_website_says_where_it_went():
     setup()
     b = connected_bridge()
@@ -176,6 +188,7 @@ if __name__ == "__main__":
     test_youtube_play_reuses_the_tab_she_opened()
     test_browser_tabs_by_id()
     test_browser_tabs_reports_what_opera_said()
+    test_closing_trusts_the_tab_list_over_a_lost_reply()
     test_open_website_says_where_it_went()
     test_describe_lists_tabs_by_window_with_their_ids_and_the_visible_results()
     test_command_round_trip_from_a_tool_thread()

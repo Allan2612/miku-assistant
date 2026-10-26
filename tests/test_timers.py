@@ -5,6 +5,7 @@ Run: core\\.venv\\Scripts\\python.exe -m tests.test_timers  (or with pytest)
 """
 
 import asyncio
+import datetime
 import json
 import tempfile
 import time
@@ -60,9 +61,34 @@ async def _restart():
     assert timers.cancel_timer(7)["ok"] and [t["label"] for t in saved()] == ["té"]
 
 
+async def _reminders():
+    heard = []
+
+    async def notify(msg):
+        heard.append(msg)
+
+    timers._TIMERS.clear()
+    timers.set_timer_notifier(notify, loop=asyncio.get_running_loop())
+    # Minutes or a clock time, one tool; announced as a reminder, never "tu temporizador de..." (log, 26-oct)
+    assert timers.remind("tomar agua", minutes=0.001)["ok"]
+    await asyncio.sleep(0.3)
+    assert heard == ["¡Oye, recuerda: tomar agua!"], heard
+
+    now = datetime.datetime.now()
+    this_minute = now.strftime("%H:%M")  # what the model wrote for "in a minute": now, not tomorrow
+    res = timers.remind("estirar", at=this_minute)
+    assert res["ok"] and "mañana" not in res["result"], res
+    passed = (now - datetime.timedelta(minutes=5)).strftime("%H:%M")
+    assert "de mañana" in timers.remind("cita", at=passed)["result"] or now.hour == 0
+    assert not timers.remind("x", at="25:99")["ok"] and not timers.remind("x")["ok"] and not timers.remind(" ", minutes=1)["ok"]
+    for tid in list(timers._TIMERS):
+        timers.cancel_timer(tid)
+
+
 def test_timers_persist():
     asyncio.run(_flow())
     asyncio.run(_restart())
+    asyncio.run(_reminders())
 
 
 if __name__ == "__main__":

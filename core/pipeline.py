@@ -39,6 +39,7 @@ ACK_WAIT_S = 3.0  # max wait for the frontend to finish playing the cue
 # Said when a Gemini model fails (per-minute quota, 503) and the next one is tried: the user knows she is on it
 # Conversation mode: the mic opens this long after she stops talking (her voice must not be recorded)
 FOLLOW_UP_DELAY_S = 0.35
+ANNOUNCE_WAIT_S = 30.0  # a reminder waits at most this long for her current answer to finish
 FILLER_PHRASES = ("Un momento...", "Mmm...", "Déjame pensar...", "Dame un segundito...", "A ver...")
 # Said before hiding on inactivity (fixed phrases: voice cached on disk, 0 Gemini requests)
 GOODBYE_PHRASES = ("¡Adiós!", "¡Chao!", "¡Nos vemos!", "¡Hasta luego!", "Me voy, ¡llámame si me necesitas!")
@@ -268,6 +269,14 @@ class MikuPipeline:
 
     async def _speak(self, text: str, emotion: str, farewell: bool = False, cache: bool = False) -> None:
         """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032)."""
+        if not text and farewell:
+            # "Ocúltate": she goes at once, without a word and without opening the mic again
+            self._pending_farewell = False
+            await self.server.broadcast({"type": "state", "value": "idle"})
+            await self.server.broadcast({"type": "hide"})
+            if self.wakeword is not None:
+                self.wakeword.resume()
+            return
         self._last_answer = text
         voice_res = await self._synthesize_voice(text, cache=cache)
         self.resources.touch()
@@ -302,10 +311,22 @@ class MikuPipeline:
         logger.info("Announcing timer: %s", message)
         # Wait for any ongoing conversation instead of talking over it (H-031)
         async with self._pipeline_lock:
-            self._new_activity()
+            # The lock is free once an answer is sent, not once it is heard: wait for her to finish talking
+            # (log 26-oct: the reminder played over "¡Con gusto!"), then for a goodbye's hide to go through
+            waited = False
+            for _ in range(int(ANNOUNCE_WAIT_S / 0.2)):
+                if not self._is_speaking:
+                    break
+                waited = True
+                await asyncio.sleep(0.2)
+            if waited:
+                await asyncio.sleep(1.5)
             self.resources.touch()
             await self.server.broadcast({"type": "show"})
-            await self._speak(message, "happy")
+            # A reminder only speaks: no conversation mode afterwards, she hides on its speak_done (log 26-oct:
+            # the mic opened after every reminder)
+            self._pending_farewell = True
+            await self._speak(message, "happy", farewell=True)
 
     async def handle_voice_activation(self) -> None:
         """

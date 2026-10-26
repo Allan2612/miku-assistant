@@ -131,7 +131,7 @@ def _to_wav(audio: np.ndarray, sample_rate: int = 16000) -> bytes:
 FAREWELL_KEYWORDS = [
     "adios", "adiós", "chao", "chau", "hasta luego", "nos vemos",
     "gracias, eso es todo", "eso es todo", "eso sería todo", "nada más", "vete", "duérmete", "duermete",
-    "ocúltate", "ocultate", "desaparece", "bye", "goodbye",
+    "ocúltate", "ocultate", "escóndete", "escondete", "desaparece", "bye", "goodbye", "eso era todo",
     "no te necesito", "ya no te necesito", "ya terminé", "ya termine", "puedes irte", "te puedes ir",
 ]
 # Goodbyes only when they are the WHOLE phrase: "¿ya está abierto Spotify?" or "gracias por abrirlo, ahora..."
@@ -140,7 +140,11 @@ FAREWELL_EXACT = {
     "ya está", "ya esta", "listo", "ya", "nada", "no nada", "gracias", "muchas gracias", "gracias miku",
     "listo gracias", "ok gracias", "vale gracias", "no gracias", "nada gracias", "ya está gracias", "ya esta gracias",
     "así está bien", "asi esta bien", "está bien gracias", "esta bien gracias",
+    "no era nada", "me equivoqué", "me equivoque", "olvídalo", "olvidalo", "déjalo", "dejalo", "no importa",
 }
+# Orders to hide: she just goes, without a word
+HIDE_NOW = {"ocúltate", "ocultate", "escóndete", "escondete", "vete", "desaparece", "ya vete", "puedes irte",
+            "ya puedes irte", "te puedes ir"}
 _ORDER_HINT = re.compile(
     r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
 )
@@ -166,6 +170,12 @@ OUT_OF_ENERGY_RESPONSES: List[Tuple[str, str]] = [
     ("sad", "Ay, maestro... se me agotó la energía mágica por ahora. ¿Podemos esperar un momentito antes de seguir?"),
     ("neutral", "¡Batería en cero coma uno por ciento! Necesito comerme un puerro virtual y recargarme unos minutos."),
 ]
+
+
+def _bare(text: str) -> str:
+    """Words only, without "Miku" and repeats: "Nada, nada, Miku." -> "nada" (log 26-oct: cost a request)."""
+    words = [w for w in re.findall(r"[\wáéíóúñü]+", text.lower()) if w != "miku"]
+    return " ".join(w for i, w in enumerate(words) if i == 0 or w != words[i - 1])
 
 
 class MikuBrain:
@@ -223,7 +233,7 @@ class MikuBrain:
         norm = user_text.lower().strip()
         if len(norm.split()) > 6:
             return False
-        bare = " ".join(w for w in re.findall(r"[\wáéíóúñü]+", norm) if w != "miku")
+        bare = _bare(norm)
         if bare in FAREWELL_EXACT:
             return True
         return any(re.search(r"\b" + re.escape(kw) + r"\b", norm) for kw in FAREWELL_KEYWORDS)
@@ -533,7 +543,8 @@ class MikuBrain:
         m_timer = re.match(
             rf"{_WAKE}(?:(?:recu[eé]rdame|av[ií]same)\s+en|(?:pon|ponme)\s+un\s+temporizador\s+de)\s+"
             r"(\d+(?:[.,]\d+)?|un|una|uno|dos|tres|cuatro|cinco|diez|quince|veinte|treinta|media)\s+"
-            r"(minutos?|horas?)(?:\s+(?:que|para|de)\s+(.+))?$",
+            # "...en un minuto tomar agua": the link word is optional (log, 26-oct: it went to Gemini)
+            r"(minutos?|horas?)(?:\s+(?:(?:que|para|de)\s+)?(.+))?$",
             low,
         )
         if m_timer:
@@ -541,7 +552,9 @@ class MikuBrain:
             amount = _SPOKEN_NUMBERS.get(m_timer.group(1)) or float(m_timer.group(1).replace(",", "."))
             minutes = amount * (60 if m_timer.group(2).startswith("hora") else 1)
             what = (m_timer.group(3) or "").strip()
-            res = set_timer(minutes, f"Recordatorio: {what}" if what else "Temporizador")
+            # "Recuérdame ... que X" is a reminder ("¡Oye, recuerda: X!"); "un temporizador ... para el té" is a timer
+            reminder = what and "temporizador" not in low
+            res = set_timer(minutes, f"Recordatorio: {what}" if reminder else (what or "Temporizador"))
             if res.get("ok"):
                 return ("happy", f"¡Listo! Te aviso en {minutes:g} minutos.", False)
             return ("sad", res.get("result", "No pude poner el temporizador."), False)
@@ -622,7 +635,10 @@ class MikuBrain:
         # in it ("adiós, cierra Spotify") Gemini still handles the order and the farewell flag hides her after
         if self.is_farewell(clean_input) and not _ORDER_HINT.search(clean_input.lower()):
             # "¡De nada!" answers a thanks, not an "Adiós" (log 06:17)
-            answer = random.choice(THANKS_ANSWERS if "gracias" in clean_input.lower() else GOODBYE_ANSWERS)
+            if _bare(clean_input) in HIDE_NOW:
+                answer = ""  # the pipeline hides her at once
+            else:
+                answer = random.choice(THANKS_ANSWERS if "gracias" in clean_input.lower() else GOODBYE_ANSWERS)
             self._remember(clean_input, f"[happy] {answer}")
             return "happy", answer, True
 

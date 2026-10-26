@@ -102,7 +102,9 @@ async function runCommand({ id, cmd, args = {} }) {
       await focusTab(tab);
       result = { tab_id: tab.id };
     } else if (cmd === "close") {
-      await chrome.tabs.remove(args.tab_ids);
+      // remove() can resolve only after every page has unloaded (8 tabs took over 6 s and Miku said it failed):
+      // a bad id still fails at once, so answer after a short wait at most
+      await Promise.race([chrome.tabs.remove(args.tab_ids), new Promise((r) => setTimeout(r, 1500))]);
     } else if (cmd === "activate") {
       await focusTab(await chrome.tabs.get(args.tab_id));
     } else if (cmd === "reload") {
