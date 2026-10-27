@@ -163,6 +163,15 @@ def test_spoken_shutdown_asks_then_runs_with_no_request():
     assert ran and ran[0][:2] == ["shutdown", "/s"] and not models.requests, (ran, models.requests)
 
 
+def test_gemini_can_mark_a_goodbye_the_lists_missed():
+    # A goodbye in words no list catches: Gemini ends with [adios], she says the rest and hides
+    b, _ = brain(reply("[happy] ¡De nada! Aquí estaré. [adios]"), reply("[adios] ¡Nos vemos!"), reply("[happy] Claro."))
+    assert asyncio.run(b.chat("me retiro por hoy, mil gracias por todo lo de hoy")) == ("happy", "¡De nada! Aquí estaré.", True)
+    assert asyncio.run(b.chat("bueno, me voy a dormir que mañana madrugo")) == ("happy", "¡Nos vemos!", True)
+    assert asyncio.run(b.chat("cuéntame un chiste corto")) == ("happy", "Claro.", False)
+    assert "[adios]" not in str(b._history_turns), "the tag never reaches the voice or the history"
+
+
 def test_goodbye_answer_fits_what_was_said():
     from core.llm import GOODBYE_ANSWERS, THANKS_ANSWERS
     b, _ = brain()
@@ -317,6 +326,7 @@ if __name__ == "__main__":
     test_shutdown_question_comes_from_the_model_and_the_yes_is_local()
     test_spoken_shutdown_asks_then_runs_with_no_request()
     test_goodbye_answer_fits_what_was_said()
+    test_gemini_can_mark_a_goodbye_the_lists_missed()
     test_jot_down_goes_through_fast_path()
     test_screenshot_only_when_asked_and_in_the_same_request()
     test_web_tools_rejected_are_dropped_and_retried_once()

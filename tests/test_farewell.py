@@ -37,6 +37,16 @@ def test_goodbye_is_local_unless_it_carries_an_order():
     assert farewell and len(models.requests) == 2, "the order still goes to Gemini, then she hides"
 
 
+def test_any_short_mix_of_goodbye_words_is_a_goodbye():
+    # Log 27-oct 15:02: "Olvíalo, muchas gracias." went to Gemini and she stayed
+    for text in ("Olvíalo, muchas gracias.", "Olvídalo, gracias", "Listo, eso era todo, gracias", "Ya no, gracias",
+                 "Nada, chao", "Bueno, gracias Miku", "Ok, listo, gracias"):
+        assert is_farewell(text), text
+    # Not a goodbye: an order after the thanks, or no goodbye word at all
+    for text in ("gracias, ahora abre spotify", "listo, pon la música", "ya no quiero música", "eso es", "no"):
+        assert not is_farewell(text), text
+
+
 def test_hide_phrases_cost_nothing():
     # "Nada, nada." went to Gemini and got "¡De nada!" (log, 26-oct)
     import asyncio
@@ -57,4 +67,5 @@ if __name__ == "__main__":
     test_done_phrases_are_goodbyes_only_when_alone()
     test_goodbye_is_local_unless_it_carries_an_order()
     test_hide_phrases_cost_nothing()
+    test_any_short_mix_of_goodbye_words_is_a_goodbye()
     print("ok")

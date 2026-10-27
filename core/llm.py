@@ -69,7 +69,7 @@ Estado del PC: cada mensaje del usuario trae un bloque "[Estado del PC ...]" con
 
 Correcciones: si el usuario dice que te equivocaste o que "era otra" web, búsqueda o canción, vuelve a llamar la herramienta con lo correcto y con tab_id = el número de la pestaña equivocada (la marcada "abierta por Miku"), para reutilizarla en vez de abrir otra.
 
-Si el usuario se despide ("adiós", "gracias, eso es todo", "vete", "chao"), responde con una despedida corta y la etiqueta [happy]; el sistema te ocultará.
+Si el usuario se despide o te dice que ya no te necesita, aunque lo diga con otras palabras o la transcripción salga rara ("olvídalo, gracias", "listo, eso era", "ya no, gracias", "nada, chao"), responde con una despedida corta y termina con la etiqueta [adios]: el sistema te ocultará. No la uses si además te pide otra cosa.
 
 Hora y fecha actuales: {current_time}
 Momento del día: {time_of_day}
@@ -156,8 +156,15 @@ FAREWELL_EXACT = {
 HIDE_NOW = {"ocúltate", "ocultate", "ocúltese", "ocultese", "cúltese", "cultese", "escóndete", "escondete",
             "escóndase", "escondase", "vete", "váyase", "vayase", "desaparece", "apágate", "apagate", "apáguese",
             "apaguese", "apaguece", "duérmete", "duermete", "puedes irte", "te puedes ir", "puede irse"}
+# A short phrase made only of these, with at least one goodbye word, is a goodbye: "listo, eso era todo, gracias"
+_BYE_WORDS = {"gracias", "chao", "chau", "adiós", "adios", "bye", "olvídalo", "olvidalo", "déjalo", "dejalo", "listo",
+              "nada"}
+_BYE_FILLER = {"ya", "no", "ok", "vale", "bueno", "muchas", "mil", "eso", "es", "era", "sería", "seria", "todo", "así",
+               "asi", "está", "esta", "bien", "por", "ahora", "de", "verdad", "entonces", "pues", "más", "mas"}
 # Words that do not change a hide order: "Nada, nada. Ocúltese", "Ya, Miku, vete"
 _HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor"}
+# Gemini ends its answer with this when the user says goodbye in words no list catches (system prompt)
+_BYE_TAG = re.compile(r"\s*\[adi[oó]s\]\s*", re.IGNORECASE)
 _ORDER_HINT = re.compile(
     r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
 )
@@ -253,6 +260,12 @@ class MikuBrain:
             return False
         bare = _bare(norm)
         if bare in FAREWELL_EXACT:
+            return True
+        # Any short mix of goodbye and filler words: "Olvídalo, muchas gracias" was not in the list and she stayed
+        # (log 27-oct). Whisper writes "olvídalo" as "olvíalo" too: any "olvi..." counts
+        words = bare.split()
+        bye = [w for w in words if w in _BYE_WORDS or w.startswith(("olvi", "olví"))]
+        if bye and all(w in _BYE_FILLER or w in bye for w in words):
             return True
         return any(re.search(r"\b" + re.escape(kw) + r"\b", norm) for kw in FAREWELL_KEYWORDS)
 
@@ -507,6 +520,8 @@ class MikuBrain:
         if match:
             emotion = match.group(1).lower()
             text = match.group(2).strip()
+            if emotion in ("adios", "adiós"):  # the goodbye tag where the emotion goes: keep it for chat()
+                emotion, text = "happy", f"{text} [adios]"
             if emotion not in VALID_EMOTIONS:
                 emotion = "happy"
             return emotion, self._sanitize_for_speech(text)
@@ -805,8 +820,11 @@ class MikuBrain:
         if not clean_text:
             emotion, clean_text = "thinking", "Perdona, no te entendí bien. ¿Me lo repites?"
 
+        # Gemini marks a goodbye our word lists missed ("Olvíalo, muchas gracias"): she hides after saying it
+        said_bye = bool(_BYE_TAG.search(clean_text))
+        clean_text = _BYE_TAG.sub(" ", clean_text).strip() or "¡Hasta luego!"
         self._remember(clean_input, f"[{emotion}] {clean_text}")
-        result = (emotion, clean_text, self.is_farewell(clean_input))
+        result = (emotion, clean_text, said_bye or self.is_farewell(clean_input))
         self._last_query_text = clean_input
         self._last_query_time = time.monotonic()
         self._last_result = result
