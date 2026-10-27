@@ -10,7 +10,7 @@ Run:
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 1
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 2 --model miku_power --voice es-ES-XimenaNeural
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 3
-Then open cache\\voice_ab\\roundN\\index.html in the browser (not in VS Code: its preview plays no local audio).
+Then open cache\\voice_ab\\roundN\\index.html: the audio is inside the page, so it plays anywhere.
 """
 
 import argparse
