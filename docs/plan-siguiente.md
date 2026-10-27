@@ -139,6 +139,11 @@ Resultado del paso 1 (26-oct): ganó `miku` + Dalia "sin comparación" (ronda 1)
 (RVC cambia el timbre, no el ritmo ni la forma de acentuar). Siguiente prueba posible: velocidad y tono base de
 edge-tts antes de convertir (ronda 3), o clonación con clips de Miku hablando (no cantando).
 
+Resultado final (27-oct): modelo **MikuDiva** (200 épocas, descargado por el usuario; el anterior `miku.pth` tenía
+30), Dalia a +15 % de velocidad y +30 Hz, RVC +6 semitonos e índice 0,5: "más chillona, como una niña". Probado y
+descartado: Dalia leyendo con acento japonés (voz japonesa + katakana, `scratch/kana.py`): Whisper solo entendía
+el 46 %. Los demás modelos y las páginas de prueba se borraron; `scratch/voice_ab.py tune` regenera variaciones.
+
 Pendiente de la fase E: prueba en vivo de `windows` (minimizar/mover/colocar con la escala de pantalla real).
 
 ## Orden
