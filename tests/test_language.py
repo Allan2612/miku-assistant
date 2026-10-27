@@ -67,6 +67,11 @@ FAST_PATH = [
     ("¡Listo, volumen al máximo!", ("set_volume", (100,))),  # what Gemini claimed: repaired locally
     ("bájale el volumen", ("change_volume", (-15,))),
     ("Subile al volumen", None),  # "al volumen" is not the pattern: Gemini decides
+    # The video's own volume (youtube_player), not Windows': Gemini picks, it sees the open tabs (27-oct)
+    ("sube el volumen del video", None),
+    ("súbele el volumen a YouTube", None),
+    ("bájale el volumen al reproductor", None),
+    ("silencia el video", None),
     ("súbele el volumen", ("change_volume", (15,))),
     ("Recuérdame en 10 minutos que saque la ropa de lavadora.", ("set_timer", (10.0, "Recordatorio: saque la ropa de lavadora"))),
     ("avísame en media hora", ("set_timer", (30.0, "Temporizador"))),

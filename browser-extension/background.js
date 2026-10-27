@@ -85,6 +85,65 @@ async function focusTab(tab) {
   await chrome.windows.update(tab.windowId, { focused: true });
 }
 
+// Runs inside the YouTube page ("MAIN" world: the player's own methods are not visible from the extension's
+// isolated world). Self-contained: executeScript sends only this function's source.
+async function youtubeControl(action, value) {
+  const p = document.getElementById("movie_player");
+  if (!p || typeof p.getVolume !== "function") return { error: "no hay un video de YouTube en esta pestaña" };
+  const LABELS = { tiny: "144p", small: "240p", medium: "360p", large: "480p", hd720: "720p", hd1080: "1080p",
+                   hd1440: "1440p", hd2160: "2160p (4K)", highres: "más de 4K" };
+  const levels = () => p.getAvailableQualityLevels().filter((q) => q !== "auto");
+  const captions = () => document.querySelector(".ytp-subtitles-button");
+  const n = Number(value);
+  switch (action) {
+    case "play": p.playVideo(); break;
+    case "pause": p.pauseVideo(); break;
+    case "volume": p.unMute(); p.setVolume(Math.max(0, Math.min(100, n))); break;
+    case "volume_up": p.unMute(); p.setVolume(Math.min(100, p.getVolume() + (n || 15))); break;
+    case "volume_down": p.setVolume(Math.max(0, p.getVolume() - (n || 15))); break;
+    case "mute": p.mute(); break;
+    case "unmute": p.unMute(); break;
+    case "quality": {
+      const available = levels();
+      if (!available.length) return { error: "este video no deja cambiar la calidad" };
+      const want = String(value || "max").toLowerCase().replace(/\s/g, "");
+      const byNumber = { "144": "tiny", "240": "small", "360": "medium", "480": "large", "720": "hd720",
+                         "1080": "hd1080", "1440": "hd1440", "2160": "hd2160", "4k": "hd2160" };
+      const q = want === "max" ? available[0] : want === "min" ? available[available.length - 1]
+        : byNumber[want.replace(/p$/, "")];
+      if (!available.includes(q)) {
+        return { error: `ese video solo tiene: ${available.map((k) => LABELS[k] || k).join(", ")}` };
+      }
+      p.setPlaybackQualityRange(q, q);
+      await new Promise((r) => setTimeout(r, 800)); // the switch is not instant
+      break;
+    }
+    case "captions_on":
+    case "captions_off": {
+      const b = captions();
+      if (!b || b.offsetParent === null) return { error: "este video no tiene subtítulos" };
+      const want = action === "captions_on";
+      if ((b.getAttribute("aria-pressed") === "true") !== want) b.click();
+      await new Promise((r) => setTimeout(r, 300));
+      // A video without captions keeps the button but ignores the click
+      if ((b.getAttribute("aria-pressed") === "true") !== want) return { error: "este video no tiene subtítulos" };
+      break;
+    }
+    case "speed": p.setPlaybackRate(Math.max(0.25, Math.min(2, n || 1))); break;
+    case "forward": p.seekTo(p.getCurrentTime() + (n || 10), true); break;
+    case "back": p.seekTo(Math.max(0, p.getCurrentTime() - (n || 10)), true); break;
+    case "next": p.nextVideo(); break;
+    default: return { error: `acción desconocida: ${action}` };
+  }
+  const q = p.getPlaybackQuality();
+  return {
+    volume: p.getVolume(), muted: p.isMuted(), quality: LABELS[q] || q, rate: p.getPlaybackRate(),
+    playing: [1, 3].includes(p.getPlayerState()), // 3 = buffering, right after play
+    captions: captions() ? captions().getAttribute("aria-pressed") === "true" : null,
+    qualities: levels().map((k) => LABELS[k] || k), title: document.title.replace(/ - YouTube$/, ""),
+  };
+}
+
 async function runCommand({ id, cmd, args = {} }) {
   try {
     let result = {};
@@ -113,6 +172,13 @@ async function runCommand({ id, cmd, args = {} }) {
       await chrome.tabs.goBack(args.tab_id);
     } else if (cmd === "forward") {
       await chrome.tabs.goForward(args.tab_id);
+    } else if (cmd === "youtube") {
+      const [run] = await chrome.scripting.executeScript({
+        target: { tabId: args.tab_id }, world: "MAIN", func: youtubeControl, args: [args.action, args.value ?? ""],
+      });
+      const state = run && run.result;
+      if (!state || state.error) throw new Error((state && state.error) || "el reproductor no respondió");
+      result = { state };
     } else {
       throw new Error(`comando desconocido: ${cmd}`);
     }

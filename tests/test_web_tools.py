@@ -133,6 +133,31 @@ def test_closing_trusts_the_tab_list_over_a_lost_reply():
     assert web.browser_tabs("close", [11, 13, 21]) == {"ok": True, "result": "Cerré 3 pestañas."}
 
 
+def test_youtube_player_picks_the_video_and_reports_its_state():
+    b = connected_bridge()
+    b.update({"tabs": [dict(t) for t in TABS] + [
+        {"id": 30, "window_id": 1, "index": 3, "title": "Otro video", "url": "https://www.youtube.com/watch?v=y"}]})
+    state = {"volume": 80, "muted": False, "quality": "1080p", "rate": 1.5, "playing": True, "captions": True}
+    b.run = lambda cmd, **args: b.sent.append((cmd, args)) or {"ok": True, "state": state}
+
+    # No tab named: the one playing (13 suena), not the other video
+    assert web.youtube_player("volume", "80")["result"] == "Volumen del video: 80%."
+    assert b.sent[-1] == ("youtube", {"tab_id": 13, "action": "volume", "value": "80"})
+    assert web.youtube_player("quality", "1080p")["result"] == "Calidad del video: 1080p."
+    assert web.youtube_player("captions_on")["result"] == "Subtítulos activados."
+    assert web.youtube_player("speed", "1.5", tab_id=30)["result"] == "Velocidad del video: 1.5x."
+    assert b.sent[-1][1]["tab_id"] == 30, "a named tab wins"
+
+    # What the page said goes back to the model ("ese video solo tiene: ...")
+    b.run = lambda cmd, **args: {"ok": False, "error": "ese video solo tiene: 720p, 480p"}
+    assert "720p, 480p" in web.youtube_player("quality", "1080p")["result"]
+    # Bad calls: unknown action, a tab that is not a video, no YouTube at all
+    assert not web.youtube_player("explode")["ok"]
+    assert not web.youtube_player("pause", tab_id=12)["ok"]
+    b.update({"tabs": [t for t in TABS if "youtube" not in t["url"]]})
+    assert web.youtube_player("pause")["result"] == "No hay ningún video de YouTube abierto en Opera."
+
+
 def test_open_website_says_where_it_went():
     setup()
     b = connected_bridge()
@@ -189,6 +214,7 @@ if __name__ == "__main__":
     test_browser_tabs_by_id()
     test_browser_tabs_reports_what_opera_said()
     test_closing_trusts_the_tab_list_over_a_lost_reply()
+    test_youtube_player_picks_the_video_and_reports_its_state()
     test_open_website_says_where_it_went()
     test_describe_lists_tabs_by_window_with_their_ids_and_the_visible_results()
     test_command_round_trip_from_a_tool_thread()

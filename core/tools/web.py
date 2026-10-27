@@ -266,3 +266,58 @@ def browser_tabs(action: str, tab_ids: List[int]) -> Dict[str, Any]:
         return {"ok": False, "result": f"Opera no pudo: {res.get('error', 'error desconocido')}"}
     what = f"{len(ids)} pestañas" if len(ids) > 1 else f"'{titles[0][:50]}'"
     return {"ok": True, "result": f"{_TAB_ACTIONS[act]} {what}."}
+
+
+_PLAYER_ACTIONS = {"play", "pause", "volume", "volume_up", "volume_down", "mute", "unmute", "quality", "captions_on",
+                   "captions_off", "speed", "forward", "back", "next"}
+
+
+def _youtube_tab() -> Optional[Dict[str, Any]]:
+    """The YouTube video meant when none is named: the one playing, then the one Miku opened, then the active one."""
+    videos = [t for t in bridge.tabs if "youtube.com/watch" in t.get("url", "")]
+    mine = [t for t in videos if t.get("id") == bridge.last_opened_tab]
+    return next(iter([t for t in videos if t.get("audible")] + mine + [t for t in videos if t.get("active")] + videos),
+                None)
+
+
+def _player_result(act: str, value: str, s: Dict[str, Any]) -> str:
+    if act in ("volume", "volume_up", "volume_down", "mute", "unmute"):
+        return f"Volumen del video: {s.get('volume')}%{' (silenciado)' if s.get('muted') else ''}."
+    if act == "quality":
+        return f"Calidad del video: {s.get('quality')}."
+    if act in ("captions_on", "captions_off"):
+        return "Subtítulos activados." if s.get("captions") else "Subtítulos desactivados."
+    if act == "speed":
+        return f"Velocidad del video: {s.get('rate')}x."
+    if act in ("forward", "back"):
+        return f"{'Adelanté' if act == 'forward' else 'Retrocedí'} {value or 10} segundos."
+    if act == "next":
+        return "Puse el siguiente video."
+    return "Video en reproducción." if s.get("playing") else "Video en pausa."
+
+
+@tool(
+    name="youtube_player",
+    description=(
+        "Controla el reproductor de un video de YouTube abierto en Opera (NO el volumen de Windows: para ese, "
+        "set_volume). action = play | pause | volume (value 0-100) | volume_up | volume_down (value = cuánto, "
+        "por defecto 15) | mute | unmute | quality (value: '1080p', '720p', 'max', 'min') | captions_on | "
+        "captions_off | speed (value 0.25-2) | forward | back (value = segundos) | next. tab_id: la pestaña de "
+        "YouTube del estado del PC; 0 = la que suena, o la que abrió Miku."
+    ),
+)
+def youtube_player(action: str, value: str = "", tab_id: int = 0) -> Dict[str, Any]:
+    """Volumen, calidad, subtítulos, velocidad, saltos y pausa del reproductor de YouTube."""
+    act = action.strip().lower()
+    if act not in _PLAYER_ACTIONS:
+        return {"ok": False, "result": f"No sé hacer '{action}' con el reproductor ({', '.join(sorted(_PLAYER_ACTIONS))})."}
+    if not bridge.connected:
+        return {"ok": False, "result": NO_EXTENSION}
+    tab = bridge.tab(int(tab_id)) if tab_id else _youtube_tab()
+    if not tab or "youtube.com/watch" not in tab.get("url", ""):
+        return {"ok": False, "result": "No hay ningún video de YouTube abierto en Opera."}
+    res = bridge.run("youtube", tab_id=tab["id"], action=act, value=str(value or ""))
+    if not res.get("ok"):
+        return {"ok": False, "result": f"El reproductor no pudo: {res.get('error', 'error desconocido')}"}
+    state = res.get("state") or {}
+    return {"ok": True, "result": _player_result(act, str(value or ""), state)}

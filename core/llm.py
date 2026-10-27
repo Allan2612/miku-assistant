@@ -559,9 +559,13 @@ class MikuBrain:
                 return ("happy", ok_text, False)
             return ("sad", res.get("result", "No pude hacerlo."), False)
 
+        # "Sube el volumen del video": YouTube's own volume (youtube_player), not Windows'. Gemini picks, seeing
+        # the open tabs; pause/play below are fine either way (the media keys reach YouTube too)
+        for_player = has_word("video", "vídeo", "youtube", "reproductor", "canción", "cancion")
+
         # An exact level first: "súbele el volumen a 100%" used to just add 15 (log 05:13). Also "al máximo",
         # "súbelo a tope", "volumen al mínimo"
-        m_level = re.search(
+        m_level = None if for_player else re.search(
             r"\b(?:volumen|sonido|s[uú]belo|s[uú]bele|b[aá]jalo|b[aá]jale)\b.*?\b(?:a|al|en)\s+"
             r"(\d{1,3})\s*(?:%|por\s*ciento)?(?!\w)|\b(?:volumen|sonido|s[uú]belo|s[uú]bele)\b.*?\b(al\s+m[aá]ximo|a\s+tope|a\s+full)\b"
             r"|\b(?:volumen|sonido|b[aá]jalo|b[aá]jale)\b.*?\b(al\s+m[ií]nimo)\b",
@@ -573,14 +577,14 @@ class MikuBrain:
             return confirm(set_volume(level), f"¡Listo, volumen al {min(level, 100)}%!")
 
         # Also voseo and enclitics, common in Costa Rica: "bajá el volumen", "subile", "bájale el volumen"
-        if re.search(r"\b(?:s[uú]b[eií](?:le|me)?|subir|aumenta(?:le)?|m[aá]s)\s+(?:el\s+)?volumen\b", low):
+        if not for_player and re.search(r"\b(?:s[uú]b[eií](?:le|me)?|subir|aumenta(?:le)?|m[aá]s)\s+(?:el\s+)?volumen\b", low):
             from core.tools.media import change_volume
             return confirm(change_volume(15), "¡Subí el volumen!")
-        if re.search(r"\b(?:b[aá]j[aeá](?:le|me)?|bajar|disminu(?:ye|í)(?:le)?|menos)\s+(?:el\s+)?volumen\b", low):
+        if not for_player and re.search(r"\b(?:b[aá]j[aeá](?:le|me)?|bajar|disminu(?:ye|í)(?:le)?|menos)\s+(?:el\s+)?volumen\b", low):
             from core.tools.media import change_volume
             return confirm(change_volume(-15), "¡Listo, bajé el volumen!")
         # "quita el silencio" asks for the opposite: leave unmuting to Gemini
-        if (has_word("silencio", "silencia", "mutea", "mutear", "mute")
+        if not for_player and (has_word("silencio", "silencia", "mutea", "mutear", "mute")
                 and not has_word("quita", "quitar", "desactiva", "desactivar", "desmutea", "unmute")):
             from core.tools.media import mute
             return confirm(mute(True), "¡Silenciado!")
