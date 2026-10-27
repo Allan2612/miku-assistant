@@ -3,12 +3,14 @@ Voice A/B for phase F (docs/plan-siguiente.md): the same phrases through every M
 edge-tts base voices, as one local page to listen to and pick from. Uses the GPU for a minute or two.
 
 Round 1 compares model x base voice at the current settings. Round 2 takes the winner and varies the pitch
-(f0_up_key) and how much the model's own timbre is pulled in (index_rate).
+(f0_up_key) and how much the model's own timbre is pulled in (index_rate). Round 3 makes the chosen voice
+higher and younger (base voice pitch and speed, RVC semitones).
 
 Run:
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 1
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 2 --model miku_power --voice es-ES-XimenaNeural
-Then open cache\\voice_ab\\round1\\index.html (or round2) in the browser.
+  core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 3
+Then open cache\\voice_ab\\roundN\\index.html in the browser (not in VS Code: its preview plays no local audio).
 """
 
 import argparse
@@ -40,9 +42,9 @@ MODELS = {  # name -> index ("" = none: v1 came without one)
 CURRENT = {"rate": "+5%", "pitch": "+10Hz", "f0_up_key": 0, "index_rate": 0.25}  # config.yaml today
 
 
-async def _base_voice(text: str, voice: str) -> bytes:
+async def _base_voice(text: str, voice: str, rate: str = CURRENT["rate"], pitch: str = CURRENT["pitch"]) -> bytes:
     audio = bytearray()
-    async for chunk in edge_tts.Communicate(text, voice, rate=CURRENT["rate"], pitch=CURRENT["pitch"]).stream():
+    async for chunk in edge_tts.Communicate(text, voice, rate=rate, pitch=pitch).stream():
         if chunk["type"] == "audio":
             audio.extend(chunk["data"])
     return bytes(audio)
@@ -104,9 +106,38 @@ def round2(out: Path, model: str, voice: str) -> None:
     _page(out, f"Ronda 2: {model} + {voice}, tono e índice", rows)
 
 
+# Round 3, from the winner (miku + Dalia, +4 semitones, index 0.25): higher and faster, toward a small girl's
+# voice. The base voice's pitch and RVC's semitones both raise the final pitch; speed makes it sound younger
+ROUND3 = [  # (label, edge-tts rate, edge-tts pitch, RVC semitones)
+    ("A: la actual", "+5%", "+10Hz", 4),
+    ("B: +6 semitonos", "+5%", "+10Hz", 6),
+    ("C: +8 semitonos", "+5%", "+10Hz", 8),
+    ("D: Dalia más aguda (+30 Hz), +4 semitonos", "+10%", "+30Hz", 4),
+    ("E: Dalia más aguda (+30 Hz), +6 semitonos", "+10%", "+30Hz", 6),
+    ("F: muy aguda (+50 Hz), +5 semitonos, más rápida", "+15%", "+50Hz", 5),
+    ("G: +7 semitonos, más rápida", "+15%", "+30Hz", 7),
+    ("H: la más chillona (+50 Hz, +8 semitonos, +20 %)", "+20%", "+50Hz", 8),
+]
+
+
+def round3(out: Path) -> None:
+    engine = RVCInferenceEngine()
+    _load(engine, "miku")
+    rows = []
+    for p_i, p in enumerate(PHRASES):
+        samples = []
+        for v_i, (label, rate, pitch, key) in enumerate(ROUND3):
+            base = asyncio.run(_base_voice(p, "es-MX-DaliaNeural", rate, pitch))
+            name = f"p{p_i}_v{v_i}.wav"
+            (out / name).write_bytes(engine.convert(base, f0_up_key=key, index_rate=0.25))
+            samples.append((f"{label}  [velocidad {rate}, tono base {pitch}, RVC +{key}]", name))
+        rows.append((p, samples))
+    _page(out, "Ronda 3: miku + Dalia, más aguda e infantil (A = la actual)", rows)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("round", type=int, choices=(1, 2))
+    ap.add_argument("round", type=int, choices=(1, 2, 3))
     ap.add_argument("--model", choices=list(MODELS))
     ap.add_argument("--voice", choices=VOICES)
     args = ap.parse_args()
@@ -114,6 +145,8 @@ if __name__ == "__main__":
     out.mkdir(parents=True, exist_ok=True)
     if args.round == 1:
         round1(out)
+    elif args.round == 3:
+        round3(out)
     else:
         if not (args.model and args.voice):
             ap.error("round 2 needs --model and --voice (the round 1 winner)")

@@ -6,7 +6,7 @@ El objetivo de diseño es **consumo casi nulo en reposo** y **respuesta en menos
 
 ## Cómo funciona
 
-Dos procesos que hablan por WebSocket local (`ws://127.0.0.1:8765`), más un subproceso de GPU que solo existe mientras se usa:
+Dos procesos que hablan por WebSocket local (`ws://127.0.0.1:8765`), más un subproceso de GPU para la voz y una extensión de Opera opcional:
 
 ```
 app/  (Tauri v2 + TypeScript)  ◄──── WebSocket ────►  core/  (Python 3.14, asyncio)
@@ -15,38 +15,42 @@ app/  (Tauri v2 + TypeScript)  ◄──── WebSocket ────►  core/ 
   Animaciones, lip sync, subtítulos                      Gemini con function calling
                                                          Herramientas del PC
                                                          edge-tts ──► rvc_worker.py (GPU)
+browser-extension/  (Opera) ◄─── WebSocket ───►  core/
+  Pestañas por número, resultados de búsqueda
 ```
 
 Flujo de una petición:
 
-1. **Activación** con `Ctrl+Alt+M` o la palabra clave "hey Miku".
-2. En ese mismo instante se precargan Whisper y el worker de RVC, mientras el usuario todavía habla.
-3. Se graba hasta detectar silencio y Whisper transcribe en CPU (`int8`).
-4. Gemini responde y, si hace falta, llama herramientas. Las acciones destructivas piden confirmación.
+1. **Activación** con `Ctrl+Alt+M` o la palabra clave "hey Miku". Whisper revisa en paralelo el audio de la palabra clave: una activación claramente falsa (silencio, o alguien hablando de otra cosa) se descarta sin gastar petición.
+2. En ese mismo instante se precarga el worker de RVC, mientras el usuario todavía habla.
+3. Se graba hasta detectar silencio y Whisper transcribe en CPU (`int8`). Las órdenes inequívocas (volumen, pausa, temporizadores, notas...) se resuelven en local, sin Gemini.
+4. Gemini recibe el audio y el **estado del PC** (ventanas y pestañas con su número, volumen, recordatorios, pendientes) y actúa como agente: llama herramientas, ve sus resultados y responde o da otro paso. Las acciones destructivas piden confirmación.
 5. edge-tts genera la voz base y RVC la convierte a la voz de Miku.
-6. El frontend la reproduce con lip sync, expresión y subtítulo.
-7. Tras un rato sin uso, Miku se oculta y deja de renderizar. Más tarde se mata el worker de RVC y se libera Whisper, volviendo a 0 MB de VRAM.
+6. El frontend la reproduce con lip sync, expresión y subtítulo. Tras la respuesta el micrófono sigue abierto unos segundos (modo conversación).
+7. Tras un rato sin uso, Miku se oculta y deja de renderizar. Más tarde se mata el worker de RVC (0 MB de VRAM) y queda otro en espera con las librerías ya cargadas, solo en RAM, para que la voz vuelva en 3-5 s. Whisper se queda cargado: solo ocupa RAM.
 
-Si TTS o RVC fallan, Miku responde con la voz base o solo con subtítulo; nunca se cuelga.
+Miku tiene una sola voz: si RVC está cargando, la respuesta espera; si falla, responde solo con subtítulo, nunca con otra voz. Nunca se cuelga.
 
 ### Decisiones clave
 
 - **Nada de `torch` en el proceso principal.** En Windows, inicializar CUDA deja 300–500 MB residentes que no se liberan. Por eso RVC corre en un subproceso aislado que se puede matar, y Whisper corre en CPU.
 - **Herramientas en lista cerrada** ([docs/tools.md](docs/tools.md)), registradas con el decorador `@tool`. El LLM nunca ejecuta comandos de shell arbitrarios.
 - **Sin frameworks de UI**: TypeScript + Vite en vanilla, para mantener baja la RAM de WebView2.
-- **Atajo local** para comandos frecuentes (volumen, media, etc.): se ejecutan sin pasar por Gemini.
+- **Atajo local solo para órdenes inequívocas** (volumen, media, temporizadores, notas): se ejecutan sin pasar por Gemini. Lo que depende de qué hay abierto (apps, webs, pestañas, ventanas) lo decide Gemini con el estado del PC.
+- **Ventanas y pestañas por número**, como objetos: el modelo ve la lista y actúa sobre un número concreto, en vez de adivinar por el título o simular teclas.
 
 ## Estructura
 
 | Ruta | Contenido |
 |---|---|
-| [core/](core/) | Backend: `server.py` (WebSocket), `pipeline.py` (orquestación), `llm.py` (Gemini), `stt.py`, `tts.py`, `rvc.py` + `rvc_worker.py`, `wakeword.py`, `audio_in.py`, `resources.py` |
-| [core/tools/](core/tools/) | Herramientas del PC: apps, archivos, media, notas, sistema, temporizadores, web |
+| [core/](core/) | Backend: `server.py` (WebSocket), `pipeline.py` (orquestación), `llm.py` (Gemini, bucle de agente), `state.py` (estado del PC), `browser.py` (puente con Opera), `stt.py`, `tts.py`, `rvc.py` + `rvc_worker.py`, `wakeword.py`, `audio_in.py`, `resources.py` |
+| [core/tools/](core/tools/) | Herramientas del PC: apps, ventanas, archivos, media, notas, memoria, rutinas, sistema, temporizadores, web |
+| [browser-extension/](browser-extension/) | Extensión de Opera (pestañas por número); instalación en su [README](browser-extension/README.md) |
 | [core/infer_pack/](core/infer_pack/) | Modelos de RVC (VITS, RMVPE) |
 | [app/src/](app/src/) | Frontend: `live2d.ts`, `animations.ts`, `clickthrough.ts`, `ui.ts`, `ws.ts`, `main.ts` |
 | [app/src-tauri/](app/src-tauri/) | Shell de Tauri en Rust (ventana, bandeja, atajo global) |
 | [docs/](docs/) | Arquitectura, roadmap, herramientas, persona y preparación |
-| [scratch/](scratch/) | Scripts de prueba y diagnóstico |
+| [scratch/](scratch/) | Scripts de prueba y diagnóstico; `voice_ab.py` compara voces de oído |
 | [config.yaml](config.yaml) | Toda la configuración ajustable |
 
 ## Requisitos
@@ -61,6 +65,7 @@ Recursos que **no** están en el repo y hay que conseguir aparte (detalles en [d
 - `live2dcubismcore.min.js` del Cubism SDK for Web en `app/public/lib/`
 - Modelo RVC de Miku (`.pth` y `.index`) en `models/rvc/`
 - (Opcional) wake word `hey_miku.onnx` en `models/wakeword/`
+- (Opcional) cargar `browser-extension/` en Opera GX para manejar pestañas
 
 ## Puesta en marcha
 
@@ -94,6 +99,7 @@ stop.bat
 - [docs/architecture.md](docs/architecture.md): arquitectura, protocolo WebSocket y presupuesto de recursos
 - [docs/roadmap.md](docs/roadmap.md): fases del proyecto
 - [docs/tools.md](docs/tools.md): herramientas disponibles
+- [docs/plan-siguiente.md](docs/plan-siguiente.md): plan actual (fases A-F) y lo que queda pendiente
 - [docs/persona.md](docs/persona.md): personalidad, emociones y frases fijas
 - [CHANGELOG.md](CHANGELOG.md): historial de cambios
 - [docs/auditoria/plan.md](docs/auditoria/plan.md): plan de auditoría total y sus [hallazgos](docs/auditoria/hallazgos/)
