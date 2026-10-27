@@ -44,7 +44,9 @@ def test_hide_phrases_cost_nothing():
     for text in ("Nada, nada.", "ya, ya", "no era nada", "olvídalo", "me equivoqué", "Escóndete, Miku", "eso era todo"):
         assert is_farewell(text), text
     b, models = brain()
-    for text in ("Ocúltate.", "Miku, escóndete", "ya puedes irte"):
+    # usted forms, Whisper's spellings and filler words (log 27-oct: "Nada, nada. Cúltese.", "Miku, apaguece!")
+    for text in ("Ocúltate.", "Miku, escóndete", "ya puedes irte", "Nada, nada. Cúltese.", "Miku, apaguece!",
+                 "Ocúltese, por favor", "Ya, apágate"):
         assert asyncio.run(b.chat(text)) == ("happy", "", True), text  # empty answer: she hides without a word
     assert asyncio.run(b.chat("nada, nada"))[1], "a plain goodbye still answers"
     assert not models.requests

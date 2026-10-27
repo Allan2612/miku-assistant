@@ -43,6 +43,7 @@ ACK_WAIT_S = 3.0  # max wait for the frontend to finish playing the cue
 FOLLOW_UP_DELAY_S = 0.35
 ANNOUNCE_WAIT_S = 30.0  # a reminder waits at most this long for her current answer to finish
 GREETING_VOICE_WAIT_S = 90.0  # the startup greeting waits this long for RVC (cold start)
+GOODBYE_WINDOW_S = 15.0  # a goodbye only if she answered the user within hide_after_s + this
 FILLER_PHRASES = ("Un momento...", "Mmm...", "Déjame pensar...", "Dame un segundito...", "A ver...")
 # Said before hiding on inactivity (fixed phrases: voice cached on disk, 0 Gemini requests)
 GOODBYE_PHRASES = ("¡Adiós!", "¡Chao!", "¡Nos vemos!", "¡Hasta luego!", "Me voy, ¡llámame si me necesitas!")
@@ -69,7 +70,9 @@ _SAYS_MIKU = re.compile(r"\bm[iíy]\s?[kcq]{1,2}[uúo]\b", re.IGNORECASE)
 # clip without "Miku" hid her from real calls. Only clear cases are false: near silence, or a sentence of
 # other talk (the user chatting while gaming: "cuatro más, el mejor de cinco")
 WAKE_CHECK_TIMEOUT_S = 6.0
-WAKE_SILENCE_RMS = 0.005  # loudest 0.2 s of the clip below this: nobody spoke (false ones: 0.002; real: 0.014+)
+# Loudest 0.2 s of the clip below this: nobody spoke. False ones measured 0.0008-0.002; a real, quiet "Hey Miku"
+# measured 0.0043 (27-oct 13:12, rejected at 0.005 while the user then gave a clear order)
+WAKE_SILENCE_RMS = 0.003
 WAKE_SENTENCE_WORDS = 3  # this many words without "Miku" is someone talking about something else
 
 
@@ -165,6 +168,11 @@ class MikuPipeline:
         Busy (listening, thinking, speaking): do nothing; the frontend hides on its own after a fallback wait.
         """
         if self._pipeline_lock.locked() or self._is_speaking or self._is_listening:
+            return
+        # Nothing said with the user this time (she shows up at startup, or was called and nobody spoke): a
+        # goodbye out of nowhere is odd (log 27-oct, 20 s after a restart). She just hides
+        if time.monotonic() - self._last_turn_at > self.hide_after_s + GOODBYE_WINDOW_S:
+            await self.server.broadcast({"type": "hide"})
             return
         async with self._pipeline_lock:
             self._pending_farewell = True

@@ -206,5 +206,5 @@ def windows(action: str, window_ids: List[int], monitor: int = 0) -> Dict[str, A
         except OSError as e:
             return {"ok": False, "result": f"No pude con {_app_name(w)}: {e}"}
     what = _app_name(targets[0]) if len(targets) == 1 else f"{len(targets)} ventanas"
-    where = f" en el monitor {monitor}" if act == "move" else ""
+    where = f" al monitor {monitor}" if act == "move" else ""
     return {"ok": True, "result": f"{_ACTIONS[act]} {what}{where}."}

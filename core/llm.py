@@ -100,7 +100,9 @@ CLAIMED_ACTION_RE = re.compile(
     # Promises that need a tool too (live test: "¡Hecho! Te avisaré en diez minutos" and no set_timer)
     r"|hecho|listo(?!\s+para)|te avisaré|te aviso|te recordaré|lo recordaré|no se me olvida"
     # "¡Entendido! Voy a apagar el equipo ahora mismo" with no shutdown_pc call (live test)
-    r"|voy a (?:apagar|reiniciar|suspender|abrir|cerrar|poner|subir|bajar|guardar|anotar|crear|copiar|minimizar)"
+    # "¡Voy a buscar quién es la abuela Sopita!" with no web_search (log, 27-oct)
+    r"|voy a (?:apagar|reiniciar|suspender|abrir|cerrar|poner|subir|bajar|guardar|anotar|crear|copiar|minimizar"
+    r"|buscar|mover|maximizar|reproducir|recordar)"
     # "¡Yatta! Reproduciendo More en YouTube" with no tool call (live, 24-oct)
     r"|reproduciendo|poniendo|abriendo|buscando|te pongo"
     # "Cierro las pestañas en este momento" with no tool call (live, 24-oct)
@@ -137,6 +139,9 @@ FAREWELL_KEYWORDS = [
     "adios", "adiós", "chao", "chau", "hasta luego", "nos vemos",
     "gracias, eso es todo", "eso es todo", "eso sería todo", "nada más", "vete", "duérmete", "duermete",
     "ocúltate", "ocultate", "escóndete", "escondete", "desaparece", "bye", "goodbye", "eso era todo",
+    # usted forms and how Whisper writes them (log 27-oct: "Nada, nada. Cúltese.", "Miku, apaguece!")
+    "ocúltese", "ocultese", "cúltese", "cultese", "escóndase", "escondase", "váyase", "vayase",
+    "apágate", "apagate", "apáguese", "apaguese", "apaguece",
     "no te necesito", "ya no te necesito", "ya terminé", "ya termine", "puedes irte", "te puedes ir",
 ]
 # Goodbyes only when they are the WHOLE phrase: "¿ya está abierto Spotify?" or "gracias por abrirlo, ahora..."
@@ -148,8 +153,11 @@ FAREWELL_EXACT = {
     "no era nada", "me equivoqué", "me equivoque", "olvídalo", "olvidalo", "déjalo", "dejalo", "no importa",
 }
 # Orders to hide: she just goes, without a word
-HIDE_NOW = {"ocúltate", "ocultate", "escóndete", "escondete", "vete", "desaparece", "ya vete", "puedes irte",
-            "ya puedes irte", "te puedes ir"}
+HIDE_NOW = {"ocúltate", "ocultate", "ocúltese", "ocultese", "cúltese", "cultese", "escóndete", "escondete",
+            "escóndase", "escondase", "vete", "váyase", "vayase", "desaparece", "apágate", "apagate", "apáguese",
+            "apaguese", "apaguece", "duérmete", "duermete", "puedes irte", "te puedes ir", "puede irse"}
+# Words that do not change a hide order: "Nada, nada. Ocúltese", "Ya, Miku, vete"
+_HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor"}
 _ORDER_HINT = re.compile(
     r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
 )
@@ -686,7 +694,7 @@ class MikuBrain:
         # in it ("adiós, cierra Spotify") Gemini still handles the order and the farewell flag hides her after
         if self.is_farewell(clean_input) and not _ORDER_HINT.search(clean_input.lower()):
             # "¡De nada!" answers a thanks, not an "Adiós" (log 06:17)
-            if _bare(clean_input) in HIDE_NOW:
+            if " ".join(w for w in _bare(clean_input).split() if w not in _HIDE_FILLER) in HIDE_NOW:
                 answer = ""  # the pipeline hides her at once
             else:
                 answer = random.choice(THANKS_ANSWERS if "gracias" in clean_input.lower() else GOODBYE_ANSWERS)

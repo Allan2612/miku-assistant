@@ -151,14 +151,22 @@ def test_pipeline_flows():
 
 
 async def _goodbye():
-    # Frontend auto-hide fired: Miku says a goodbye, and its speak_done hides her
+    import time
+    # Frontend auto-hide fired after a conversation: Miku says a goodbye, and its speak_done hides her
     p, server = _pipeline(FakeBrain())
+    p._last_turn_at = time.monotonic()
     await p.say_goodbye()
     assert server.sent.count("speak") == 1, server.sent
     assert p.handle_speak_done() is True, "the goodbye must end in a hide"
 
+    # Nothing said with the user (she showed up at startup): no goodbye out of nowhere, she just hides
+    p, server = _pipeline(FakeBrain())
+    await p.say_goodbye()
+    assert server.sent == ["hide"], server.sent
+
     # Barge-in on the goodbye: the user's answer must not hide Miku afterwards
     p, server = _pipeline(FakeBrain())
+    p._last_turn_at = time.monotonic()
     await p.say_goodbye()
     await p.handle_text_input("hola")
     assert p.handle_speak_done() is False

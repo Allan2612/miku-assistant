@@ -163,6 +163,7 @@ LIES = [
     "¡Hecho! Te avisaré en diez minutos.",
     "¡Listo!",
     "Ya no se me olvida que te encanta Frieren.",
+    "¡Voy a buscar quién es la abuela Sopita!",  # log 27-oct: no web_search followed
 ]
 NOT_LIES = [
     "¡Hola! ¿Qué tal tu día?",

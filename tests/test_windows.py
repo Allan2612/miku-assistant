@@ -57,7 +57,7 @@ def test_actions_by_number():
     assert win.windows("minimize", [11, 12, 13]) == {"ok": True, "result": "Minimicé 3 ventanas."}
     assert applied == [("minimize", 11, 0), ("minimize", 12, 0), ("minimize", 13, 0)]
     applied.clear()
-    assert win.windows("move", [12], monitor=1)["result"] == "Moví Discord en el monitor 1."
+    assert win.windows("move", [12], monitor=1)["result"] == "Moví Discord al monitor 1."
     assert win.windows("focus", [11, 12])["result"] == "Te puse delante Visual Studio Code.", "focus is one window"
     assert applied == [("move", 12, 1), ("focus", 11, 0)]
     applied.clear()
