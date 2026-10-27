@@ -211,8 +211,10 @@ class MikuPipeline:
         task.add_done_callback(self._bg_tasks.discard)
 
     def _ack_file(self, phrase: str) -> Path:
-        # The voice settings are part of the name: cues cached with another model must never be played (26-oct)
-        voice = f"{self.rvc.model_path}|{self.rvc.f0_up_key}|{self.rvc.index_rate}" if self.rvc is not None else ""
+        # Every voice setting is part of the name, base voice included: a cue cached with another model, pitch or
+        # speed must never be played (26-27 oct)
+        base = "|".join(str(getattr(self.tts, k, "")) for k in ("voice", "rate", "pitch"))
+        voice = f"{base}|{self.rvc.model_path}|{self.rvc.f0_up_key}|{self.rvc.index_rate}" if self.rvc is not None else base
         digest = hashlib.md5(f"{phrase}|{voice}".encode("utf-8")).hexdigest()
         return ROOT_DIR / "cache" / "voice" / f"ack_{digest}.wav"
 

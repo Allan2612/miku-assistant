@@ -396,7 +396,10 @@ async def _one_voice():
     assert await p._ack_audio("¿Sí?") is not None
     first = p._ack_file("¿Sí?")
     p.rvc.f0_up_key = 2
-    assert p._ack_file("¿Sí?") != first, "another voice setting must not reuse the cached cue"
+    second = p._ack_file("¿Sí?")
+    assert second != first, "another voice setting must not reuse the cached cue"
+    p.tts.rate = "+15%"  # the base voice's speed too (27-oct: "¿Sí?" kept the old speed)
+    assert p._ack_file("¿Sí?") != second
 
 
 def test_only_one_voice():

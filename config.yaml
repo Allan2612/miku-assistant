@@ -18,10 +18,12 @@ llm: {
   web_search: false  # Google search inside the single request: the free tier answers it with 429 (23-oct). Reading a web page (url_context) is always on
 }
 stt: { model: "small", device: "cpu", compute_type: "int8", cpu_threads: 8 }  # local, 0 requests: gates noise and feeds the fast path; Gemini hears the audio itself in its single request
-tts: { voice: "es-MX-DaliaNeural", rate: "+5%", pitch: "+10Hz" }
-# Previous voice, liked (26-oct): to go back, use this line instead of the next one
+# Miku's voice, chosen by ear on 27-oct: round 4 "H" (MikuDiva, higher and faster). scratch/voice_ab.py compares voices.
+# Previous voice, liked (26-oct): to go back, use these two lines instead of the next two
+# tts: { voice: "es-MX-DaliaNeural", rate: "+5%", pitch: "+10Hz" }
 # rvc: { enabled: true, model: "models/rvc/miku.pth", index: "models/rvc/miku.index", f0_up_key: 4, index_rate: 0.25 }
-rvc: { enabled: true, model: "models/rvc/miku_diva.pth", index: "models/rvc/miku_diva.index", f0_up_key: 4, index_rate: 0.25 }  # MikuDiva (200 epochs), on trial 27-oct: compare in cache/voice_ab/round4
+tts: { voice: "es-MX-DaliaNeural", rate: "+15%", pitch: "+30Hz" }
+rvc: { enabled: true, model: "models/rvc/miku_diva.pth", index: "models/rvc/miku_diva.index", f0_up_key: 6, index_rate: 0.5 }
 wakeword: { enabled: true, model: "models/wakeword/hey_miku.onnx", threshold: 0.35, patience: 1 }
 live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0, expressions: { happy: null, sad: null, surprised: null, angry: null, neutral: null } }
 tools: { confirm_destructive: true, file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }

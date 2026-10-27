@@ -12,6 +12,7 @@ Run:
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 3
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 4   (MikuDiva against the current voice)
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 5   (Spanish read by a Japanese voice, scratch/kana.py)
+  core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 6   (fine-tuning round 4's "H", the voice in use)
 Then open cache\\voice_ab\\roundN\\index.html: the audio is inside the page, so it plays anywhere.
 """
 
@@ -186,6 +187,23 @@ def round4(out: Path) -> None:
     _variants(out, "Ronda 4: MikuDiva (200 épocas) contra la voz actual (A)", ROUND4)
 
 
+# Round 6: small steps around round 4's "H", the voice chosen on 27-oct (A)
+ROUND6 = [
+    ("A: la elegida (H de la ronda 4)", "miku_diva", "+15%", "+30Hz", 6, 0.5),
+    ("B: índice 0,4 (más claro)", "miku_diva", "+15%", "+30Hz", 6, 0.4),
+    ("C: índice 0,6 (más timbre de Miku)", "miku_diva", "+15%", "+30Hz", 6, 0.6),
+    ("D: +5 semitonos (un poco más grave)", "miku_diva", "+15%", "+30Hz", 5, 0.5),
+    ("E: +7 semitonos (un poco más aguda)", "miku_diva", "+15%", "+30Hz", 7, 0.5),
+    ("F: un poco más lenta (+12 %)", "miku_diva", "+12%", "+30Hz", 6, 0.5),
+    ("G: un poco más rápida (+18 %)", "miku_diva", "+18%", "+30Hz", 6, 0.5),
+    ("H: Dalia un poco más aguda (+40 Hz)", "miku_diva", "+15%", "+40Hz", 6, 0.5),
+]
+
+
+def round6(out: Path) -> None:
+    _variants(out, "Ronda 6: afinando la H (A = la que tiene Miku ahora)", ROUND6)
+
+
 # Round 5: a Japanese voice (Nanami) reads the Spanish text, so Miku speaks Spanish with a Japanese accent.
 # Whisper understood 46 % of it with katakana and 36 % raw (Dalia: 100 %); the subtitles help a listener.
 # (label, base voice, katakana?, rate, base pitch, RVC model or None, semitones, index)
@@ -219,7 +237,7 @@ def round5(out: Path) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("round", type=int, choices=(1, 2, 3, 4, 5))
+    ap.add_argument("round", type=int, choices=(1, 2, 3, 4, 5, 6))
     ap.add_argument("--model", choices=list(MODELS))
     ap.add_argument("--voice", choices=VOICES)
     args = ap.parse_args()
@@ -233,6 +251,8 @@ if __name__ == "__main__":
         round4(out)
     elif args.round == 5:
         round5(out)
+    elif args.round == 6:
+        round6(out)
     else:
         if not (args.model and args.voice):
             ap.error("round 2 needs --model and --voice (the round 1 winner)")
