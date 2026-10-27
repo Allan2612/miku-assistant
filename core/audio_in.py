@@ -12,7 +12,7 @@ import asyncio
 from collections import deque
 import logging
 import time
-from typing import Optional, List
+from typing import Callable, List, Optional
 import numpy as np
 import sounddevice as sd
 
@@ -52,6 +52,7 @@ class AudioInput:
         max_seconds: int = 15,
         initial_timeout: float = 6.0,
         min_speech_duration: float = 0.35,
+        on_speech_start: Optional[Callable[[], None]] = None,
     ) -> Optional[np.ndarray]:
         """
         Opens the microphone, records audio until `silence_ms` of silence is detected
@@ -59,6 +60,7 @@ class AudioInput:
 
         Returns:
             np.ndarray: 1D float32 array normalized [-1, 1] at 16kHz, or None if no speech.
+        `on_speech_start` runs once when the user starts talking (Miku nods along while listening).
         """
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[np.ndarray] = asyncio.Queue()
@@ -138,6 +140,8 @@ class AudioInput:
                             silence_accumulated = 0.0
                             recorded_chunks.extend(list(pre_buffer))
                             logger.info("Speech start detected (VAD p=%.2f)", prob)
+                            if on_speech_start:
+                                on_speech_start()
                     else:
                         recorded_chunks.append(chunk)
                         speech_accumulated += chunk_duration
@@ -196,6 +200,8 @@ class AudioInput:
                         # Flush pre-buffer so first phoneme is fully intact
                         recorded_chunks.extend(list(pre_buffer))
                         logger.info("Speech start detected (RMS: %.4f > %.4f)", rms, energy_threshold)
+                        if on_speech_start:
+                            on_speech_start()
                 else:
                     recorded_chunks.append(chunk)
                     speech_accumulated += chunk_duration

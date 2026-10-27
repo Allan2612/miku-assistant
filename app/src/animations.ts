@@ -3,23 +3,6 @@
  * Complies with docs/architecture.md: no tween libraries, <= 20 temporary particles, auto-cleanup.
  */
 
-// Easing functions
-function easeOutBack(x: number): number {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
-}
-
-function easeInBack(x: number): number {
-  const c1 = 1.70158;
-  const c3 = c1 + 1;
-  return c3 * x * x * x - c1 * x * x;
-}
-
-function easeOutQuad(x: number): number {
-  return 1 - (1 - x) * (1 - x);
-}
-
 interface Particle {
   x: number;
   y: number;
@@ -38,8 +21,8 @@ export class AnimationManager {
   }
 
   /**
-   * Appear animation (~240 ms):
-   * Instant fade-in + crisp pop from bottom (20px) + snappy bounce scale (0.94 -> 1.0).
+   * Appear (~240 ms): a fade-in with sparkles. The movement is Miku's own "enter" gesture
+   * (motion.ts), so her hair and skirt follow it instead of the whole picture scaling.
    */
   async appear(element: HTMLElement, durationMs: number = 240): Promise<void> {
     if (this._isAnimating) return;
@@ -60,15 +43,6 @@ export class AnimationManager {
         const alpha = Math.min(progress * 2.8, 1);
         element.style.opacity = alpha.toFixed(3);
 
-        // Translate up from 20px below to 0
-        const translateY = (1 - easeOutQuad(progress)) * 20;
-
-        // Bounce scale: 0.94 -> 1.0 with subtle spring
-        const scaleProgress = easeOutBack(progress);
-        const scale = 0.94 + (1.0 - 0.94) * scaleProgress;
-
-        element.style.transform = `translateY(${translateY.toFixed(1)}px) scale(${scale.toFixed(3)})`;
-
         // Update sparkle particles
         this.renderSparkles(particles, progress);
 
@@ -88,8 +62,7 @@ export class AnimationManager {
   }
 
   /**
-   * Disappear animation (~220 ms):
-   * Quick shrink and fade out.
+   * Disappear (~220 ms): a fade-out with sparkles, after her "exit" gesture.
    */
   async disappear(element: HTMLElement, durationMs: number = 220): Promise<void> {
     if (this._isAnimating) return;
@@ -106,15 +79,6 @@ export class AnimationManager {
         // Fast fade out
         const alpha = Math.max(1 - progress * 1.5, 0);
         element.style.opacity = alpha.toFixed(3);
-
-        // Small upward bounce
-        const translateY = -10 * Math.sin(progress * Math.PI);
-
-        // Scale down with ease-in
-        const scaleProgress = easeInBack(progress);
-        const scale = Math.max(1.0 - scaleProgress, 0);
-
-        element.style.transform = `translateY(${translateY.toFixed(1)}px) scale(${scale.toFixed(3)})`;
 
         // Update sparkle particles
         this.renderSparkles(particles, progress);

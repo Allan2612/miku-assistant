@@ -44,7 +44,7 @@ Tus respuestas se convierten en voz, así que:
 - No uses markdown, listas, emojis, URLs ni símbolos que no se puedan leer en voz alta.
 - Escribe los números como se dirían si eso ayuda a la lectura.
 
-Empieza SIEMPRE tu respuesta con una etiqueta de emoción entre corchetes, una de: [happy] [neutral] [surprised] [sad] [angry] [thinking]. Ejemplo: "[happy] ¡Listo, abrí el Bloc de notas!"
+Empieza SIEMPRE tu respuesta con una etiqueta de emoción entre corchetes, una de: [happy] [neutral] [surprised] [sad] [angry] [thinking] [shy] [excited] [confused] [proud] [playful] [tired]. Elige la que de verdad corresponde: [shy] si te halagan, [excited] ante algo genial, [confused] si no entiendes, [proud] si lograste algo difícil, [playful] para bromear, [tired] si es muy tarde o algo fue pesado. Ejemplo: "[happy] ¡Listo, abrí el Bloc de notas!"
 
 REGLA CRÍTICA DE CONTROL DEL PC:
 Tienes herramientas disponibles para controlar el ordenador en tiempo real (abrir aplicaciones, cerrar aplicaciones, ajustar o cambiar volumen, pausar/reanudar música, buscar en Google/YouTube, ver estado del sistema, fecha/hora, temporizadores, notas, etc.).
@@ -75,7 +75,8 @@ Hora y fecha actuales: {current_time}
 Momento del día: {time_of_day}
 """
 
-VALID_EMOTIONS = {"happy", "neutral", "surprised", "sad", "angry", "thinking"}
+VALID_EMOTIONS = {"happy", "neutral", "surprised", "sad", "angry", "thinking", "shy", "excited", "confused", "proud",
+                  "playful", "tired"}
 
 # Ordered by free-tier capacity (requests per minute / per day, 24-oct): each model has its own bucket.
 # All probed live with Miku's real voice request. Gemini 2.5 is gone for new users (404).
@@ -242,6 +243,7 @@ class MikuBrain:
         # In-memory history turns for model transfer: [{"role": "user"|"model", "text": str}]
         self._history_turns: List[Dict[str, str]] = []
         self._acted_last_turn = False  # the previous turn ran a tool (local or Gemini's)
+        self.last_outcome: Optional[str] = None  # "ok"/"fail": how this turn's actions went (her body language)
         # On disk, so a restart does not leave her with no idea what was just said; None (tests) = memory only
         self.history_file = history_file
         self._load_history()
@@ -440,6 +442,8 @@ class MikuBrain:
             # Tools block (sleeps, process scans): run them off the event loop (H-025)
             results.append(await asyncio.to_thread(meta["function"], **dict(call.args or {})))
         self._acted_last_turn = True
+        failed = any(not r.get("ok") and not r.get("requires_confirmation") for r in results)
+        self.last_outcome = "fail" if failed or self.last_outcome == "fail" else "ok"
         return results
 
     async def _agent_loop(
@@ -692,6 +696,7 @@ class MikuBrain:
             return "neutral", "¿Sí? Dime qué necesitas.", False
         acted_before = self._acted_last_turn
         self._acted_last_turn = False
+        self.last_outcome = None
 
         # Only the user's own reply can confirm a pending destructive tool (H-001); the approved action
         # runs here, locally, so confirming costs no request
@@ -701,6 +706,7 @@ class MikuBrain:
             answer = self._sanitize_for_speech(str(res.get("result", "")))
             self._remember(clean_input, answer)
             self._acted_last_turn = True
+            self.last_outcome = "ok" if res.get("ok") else "fail"
             return ("happy" if res.get("ok") else "sad"), answer, False
 
         # In-memory deduplication: if exact same query arrives within 2.0s, reuse response with 0 extra API calls
@@ -729,6 +735,7 @@ class MikuBrain:
             # constancia..." because Gemini never knew what had been done (log, 24-oct)
             self._remember(clean_input, f"[{fast_res[0]}] {fast_res[1]}")
             self._acted_last_turn = True
+            self.last_outcome = "fail" if fast_res[0] == "sad" else "ok"
             self._last_query_text = clean_input
             self._last_query_time = now
             self._last_result = fast_res

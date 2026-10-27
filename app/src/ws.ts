@@ -10,13 +10,24 @@ export type ServerMessage =
   | { type: "subtitle"; who: "user" | "miku"; text: string }
   | { type: "expression"; name: string }
   | { type: "stop_speaking" }
-  | { type: "speak"; audio_b64: string; mime: string; text: string; emotion: string }
+  | {
+      type: "speak";
+      audio_b64: string;
+      mime: string;
+      text: string;
+      emotion: string;
+      words?: [number, number][]; // [start_ms, end_ms] of each word in the audio
+      farewell?: boolean;
+      gesture?: string; // "attention" (reminder), "greet"
+      outcome?: "ok" | "fail"; // how the actions of this turn went
+    }
+  | { type: "user_speech" } // the user started talking
   | { type: "confirm_request"; id: string; text: string };
 
 export type MessageHandler = (msg: ServerMessage) => void;
 
 const KNOWN_TYPES = new Set<string>([
-  "show", "hide", "state", "subtitle", "expression", "stop_speaking", "speak", "confirm_request",
+  "show", "hide", "state", "subtitle", "expression", "stop_speaking", "speak", "user_speech", "confirm_request",
 ]);
 
 export class WebSocketClient {

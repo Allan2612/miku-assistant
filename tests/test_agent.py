@@ -87,6 +87,7 @@ def test_action_results_go_back_and_the_answer_comes_from_them():
     # Its own function-call content goes back too (Gemini 3 needs the thought signatures in it)
     assert models.requests[1][-2].role == "model" and models.requests[1][-2].parts[0].function_call.name == "open_app"
     assert (emotion, text) == ("happy", "¡Listo! Spotify abierto y volumen al 30.") and len(models.requests) == 2
+    assert b.last_outcome == "ok", "her body language: a happy bounce"
 
 
 def test_failed_tool_is_seen_by_the_model():
@@ -94,6 +95,9 @@ def test_failed_tool_is_seen_by_the_model():
     b, models = brain(reply("", ("close_app", {"name": "discord"})), reply("[sad] Discord no estaba abierto."))
     _, text, _ = asyncio.run(b.chat("cierra discord porfa amiga"))
     assert responses_sent(models.requests[1])[0].response["ok"] is False and text == "Discord no estaba abierto."
+    assert b.last_outcome == "fail", "her body language: a shrug"
+    # The new emotions are kept, not turned into "happy"
+    assert b._parse_emotion("[shy] Ay, gracias.") == ("shy", "Ay, gracias.")
 
 
 def test_multi_step_task_and_the_round_limit():

@@ -45,7 +45,10 @@ class FakeStream:
 
 def test_music_does_not_keep_recording():
     audio_in.sd.InputStream = FakeStream
-    rec = asyncio.run(audio_in.AudioInput().record_phrase(silence_ms=700, max_seconds=60, initial_timeout=10))
+    started = []
+    rec = asyncio.run(audio_in.AudioInput().record_phrase(silence_ms=700, max_seconds=60, initial_timeout=10,
+                                                          on_speech_start=lambda: started.append(1)))
+    assert started == [1], "Miku is told once that the user started talking"
     got, expected = len(rec) / 16000, len(speech) / 16000
     print(f"recorded {got:.1f}s for {expected:.1f}s of speech (+8s of music after it)")
     assert rec is not None and expected - 0.3 < got < expected + 1.5, got

@@ -303,8 +303,12 @@ class MikuPipeline:
             return True
         return False
 
-    async def _speak(self, text: str, emotion: str, farewell: bool = False, cache: bool = False) -> None:
-        """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032)."""
+    async def _speak(
+        self, text: str, emotion: str, farewell: bool = False, cache: bool = False, gesture: Optional[str] = None,
+    ) -> None:
+        """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032).
+        `gesture` asks the avatar for a specific one ("attention" for a reminder, "greet"); otherwise she picks
+        from the emotion and from how this turn's actions went."""
         self._last_turn_at = float("-inf") if farewell else time.monotonic()
         if not text and farewell:
             # "Ocúltate": she goes at once, without a word and without opening the mic again
@@ -332,6 +336,11 @@ class MikuPipeline:
                 "mime": mime,
                 "text": text,
                 "emotion": emotion,
+                # Body language: word timings for the mouth and head beats, the goodbye wave, the gesture
+                "words": self.tts.words_for(text),
+                "farewell": farewell,
+                "gesture": gesture,
+                "outcome": getattr(self.brain, "last_outcome", None),
             })
             self._schedule_speak_done_watchdog(text)
         else:
@@ -365,7 +374,7 @@ class MikuPipeline:
             await self.server.broadcast({"type": "show"})
             self._pending_farewell = not talking
             self.brain.note_announcement(message)
-            await self._speak(message, "happy", farewell=not talking)
+            await self._speak(message, "happy", farewell=not talking, gesture="attention")
 
     async def handle_voice_activation(self, wake_clip: Optional[np.ndarray] = None) -> None:
         """
@@ -466,6 +475,7 @@ class MikuPipeline:
             silence_ms=self.silence_ms,
             max_seconds=self.max_record_seconds,
             initial_timeout=initial_timeout,
+            on_speech_start=lambda: self._spawn_bg(self.server.broadcast({"type": "user_speech"})),
         )
 
         if audio is None:
@@ -661,6 +671,6 @@ class MikuPipeline:
             logger.info("Playing startup greeting: %s", greeting)
             async with self._pipeline_lock:
                 await self.server.broadcast({"type": "show"})
-                await self._speak(greeting, "happy", cache=True)  # fixed phrase
+                await self._speak(greeting, "happy", cache=True, gesture="greet")  # fixed phrase
         except Exception:
             logger.exception("Startup greeting failed")

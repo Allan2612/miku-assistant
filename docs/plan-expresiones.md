@@ -137,6 +137,12 @@ brazos y manos articulados**. Opciones:
 
 Las fases 1 a 6 sirven igual con un modelo nuevo: el motor de capas usa los nombres estándar de parámetros de Live2D.
 
+**Estado (27-oct): fases 1 a 6 hechas.** Motor en `app/src/motion.ts`, conducta en `app/src/behavior.ts`, labios en
+`app/src/live2d.ts`; tiempos de palabra de edge-tts en `core/tts.py`. Para probar gestos: abrir la app con `?anim` (o
+`localStorage.mikuDebug = "1"`), teclas `1`-`0`, `q`-`p`, `n`, `m` = gestos (con Mayúscula, en espejo) y `a`-`l`, `;`,
+`z`, `x` = emociones. Hallazgo al implementarlo: los valores por defecto del modelo no son una pose de reposo (brazo
+izquierdo abierto, derecho pegado, sonrisa al máximo); el reposo se fija en `REST` de `motion.ts`.
+
 ## 4. Orden y esfuerzo
 
 | Fase | Qué | Esfuerzo |

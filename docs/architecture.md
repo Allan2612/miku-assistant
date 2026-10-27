@@ -90,7 +90,7 @@ Frontend → Backend:
 ## Animaciones
 - **Aparecer** (~600 ms): sube desde abajo + fade-in + escala con rebote (0.85 → 1.05 → 1) + unas pocas partículas/destellos (máx. ~20 sprites, se destruyen al terminar). Luego motion de saludo del modelo si existe.
 - **Desaparecer** (~500 ms): pequeño salto + escala a 0 + fade-out + destellos → `window.hide()` → `app.ticker.stop()`.
-- **Idle**: motions idle del modelo, parpadeo y respiración nativos de Live2D; la mirada sigue al cursor solo mientras está visible.
+- **Movimiento**: motor de capas propio (`app/src/motion.ts`: ambiente, parpadeo, mirada, emoción, gestos) y conducta por estado (`app/src/behavior.ts`); las motions del modelo, su parpadeo y el balanceo de su respiración están desactivados. No sigue al cursor.
 - Los easings se implementan a mano (sin librerías de tween).
 
 ## Estructura de carpetas
@@ -115,7 +115,7 @@ miku-assistant/
 │  │  └─ ui.ts             # subtítulos, caja de texto, confirmaciones
 │  ├─ public/
 │  │  ├─ lib/live2dcubismcore.min.js   # (gitignored, lo descarga el usuario)
-│  │  └─ models/miku/                  # (gitignored) *.model3.json y recursos
+│  │  └─ models/miku_official/         # (gitignored) *.model3.json y recursos
 │  └─ src-tauri/
 └─ core/
    ├─ requirements.txt
@@ -149,7 +149,7 @@ stt: { model: "small", device: "cpu", compute_type: "int8", cpu_threads: 4 }
 tts: { voice: "es-MX-DaliaNeural", rate: "+5%", pitch: "+20Hz" }
 rvc: { enabled: true, model: "models/rvc/miku.pth", index: "models/rvc/miku.index", f0_up_key: 6 }
 wakeword: { enabled: false, model: "models/wakeword/hey_miku.onnx", threshold: 0.5 }
-live2d: { model: "models/miku/miku.model3.json", scale: 0.25, expressions: { happy: "exp_01", sad: "exp_02", surprised: "exp_03", angry: "exp_04", neutral: null } }
+live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0, expressions: { ... } }
 tools: { confirm_destructive: true, file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }
 apps: { chrome: "chrome.exe", spotify: "spotify.exe", discord: "Discord" }  # alias extra; también se escanea el menú Inicio
 routines: { trabajo: [{ tool: "open_app", args: { app_name: "opera gx" } }] }  # "modo trabajo", 0 peticiones

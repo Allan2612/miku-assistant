@@ -61,7 +61,7 @@ Miku tiene una sola voz: si RVC está cargando, la respuesta espera; si falla, r
 
 Recursos que **no** están en el repo y hay que conseguir aparte (detalles en [docs/setup.md](docs/setup.md)):
 
-- Modelo Live2D de Miku en `app/public/models/miku/`
+- Modelo Live2D de Miku en `app/public/models/miku_official/`
 - `live2dcubismcore.min.js` del Cubism SDK for Web en `app/public/lib/`
 - Modelo RVC de Miku (`.pth` y `.index`) en `models/rvc/`
 - (Opcional) wake word `hey_miku.onnx` en `models/wakeword/`

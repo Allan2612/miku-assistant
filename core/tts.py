@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ import edge_tts
 logger = logging.getLogger("miku.tts")
 
 DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache" / "voice"
+WORDS_KEPT = 16  # timings of the last phrases only: each is read once, right after synthesis
 
 
 class TTSManager:
@@ -31,6 +33,17 @@ class TTSManager:
         self.pitch = pitch
         self.cache_dir = cache_dir or DEFAULT_CACHE_DIR
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self._words: dict[str, list[list[int]]] = {}
+
+    def words_for(self, text: str) -> list[list[int]]:
+        """[start_ms, end_ms] of each word of the last synthesis of `text` (the avatar's lip sync), or []."""
+        return self._words.get(text.strip(), [])
+
+    def _keep_words(self, text: str, words: list[list[int]]) -> None:
+        self._words.pop(text, None)
+        self._words[text] = words
+        while len(self._words) > WORDS_KEPT:
+            self._words.pop(next(iter(self._words)))
 
     def _get_cache_path(self, text: str) -> Path:
         """Computes a unique MD5 hash based on text and voice settings."""
@@ -55,6 +68,10 @@ class TTSManager:
         if cache_file.exists() and cache_file.stat().st_size > 0:
             try:
                 audio_bytes = cache_file.read_bytes()
+                try:
+                    self._keep_words(clean_text, json.loads(cache_file.with_suffix(".json").read_text("utf-8")))
+                except (OSError, ValueError):
+                    pass  # cached before word timings existed: the mouth follows the volume only
                 logger.debug("TTS Cache HIT for '%s' (%d bytes)", clean_text[:30], len(audio_bytes))
                 b64 = base64.b64encode(audio_bytes).decode("ascii")
                 return b64, "audio/mpeg"
@@ -69,12 +86,17 @@ class TTSManager:
                 voice=self.voice,
                 rate=self.rate,
                 pitch=self.pitch,
+                boundary="WordBoundary",
             )
 
             audio_data = bytearray()
+            words: list[list[int]] = []
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
                     audio_data.extend(chunk["data"])
+                elif chunk["type"] == "WordBoundary":
+                    start = chunk["offset"] // 10_000  # 100 ns units
+                    words.append([start, start + chunk["duration"] // 10_000])
 
             if not audio_data:
                 logger.warning("edge-tts returned empty audio data for: '%s'", clean_text)
@@ -86,9 +108,11 @@ class TTSManager:
                     tmp = cache_file.with_suffix(".tmp")
                     tmp.write_bytes(audio_data)
                     os.replace(tmp, cache_file)
+                    cache_file.with_suffix(".json").write_text(json.dumps(words), "utf-8")
                 except Exception as e:
                     logger.warning("Could not cache synthesized audio: %s", e)
 
+            self._keep_words(clean_text, words)
             b64 = base64.b64encode(audio_data).decode("ascii")
             return b64, "audio/mpeg"
 

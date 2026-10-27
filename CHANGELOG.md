@@ -6,6 +6,8 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ## [Unreleased]
 ### Cambiado (plan de mejoras, ver `docs/mejoras.md`)
+- Miku ya no sigue el mouse con la cabeza. La entrada y salida las hace el modelo (sube al cuadro / se va hacia abajo) y la ventana solo se desvanece con destellos.
+- Borrado el modelo RetrynowMiku (no era Miku y llevaba marca de agua) y su código.
 - Voz de Miku elegida de oído (`scratch/voice_ab.py`): modelo RVC `miku` (antes `miku_mellow`), +4 semitonos, índice 0,25, sobre Dalia. Se compararon 5 modelos x 4 voces base y luego tono x índice.
 - Cadena de respaldo de 6 modelos ordenada por cuota gratuita (cada modelo tiene su propio límite por minuto): `3.5-flash-lite` → `3.1-flash-lite` → `3-flash-preview` → `3.5-flash` → `3.8-flash` → `gemma-4-26b`. Al pasar al siguiente, Miku dice "Un momento...", "Mmm..." o similar (una vez por turno, voz cacheada). Gemma no acepta audio: recibe el texto de Whisper. Un modelo retirado (404) espera 1 h antes de reintentarse.
 - **Miku ve el resultado de lo que hace** (bucle de agente): los resultados de las herramientas vuelven a Gemini, que responde según lo que de verdad pasó o da otro paso (máx. 3 rondas). Charla = 1 petición, una acción = 2. Antes se pedía a ciegas en una sola petición y Miku decía "listo" sin saber si funcionó.
@@ -17,6 +19,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 
 ### Añadido
+- **Miku se mueve con vida propia** (`docs/plan-expresiones.md`, fases 1-6): motor de capas propio en lugar de las animaciones al azar del modelo. Respira y se balancea con ruido suave, cambia el peso cada 8-15 s, parpadea como una persona (a veces dos veces, y al mirar a otro lado), mueve los ojos a saltos y la cabeza los sigue; el pelo, la corbata y la falda reaccionan.
+- Conducta por momento: al aparecer sube al cuadro y sonríe; escuchando se queda atenta y asiente mientras hablas; pensando mira arriba a un lado, cambia de lado y suspira si tarda; hablando marca las palabras con la cabeza; si la acción salió bien da un saltito, si falló se encoge de hombros; los recordatorios llegan con un gesto de "¡oye!"; al despedirse levanta un brazo y, al irse, hace una reverencia; esperando mira alrededor, se estira o tararea; al tocarla se sorprende, se ríe y se sonroja.
+- Emociones nuevas que Gemini puede elegir: tímida, emocionada, confundida, orgullosa, juguetona (guiño) y cansada.
+- Labios con los tiempos de cada palabra (edge-tts): la boca se cierra entre palabras y cambia de forma en cada una; parpadea al terminar una frase.
 - Control del reproductor de YouTube (`youtube_player`, extensión 1.1.0): volumen del video, silenciar, calidad (hasta 4K o la que pidas), subtítulos, velocidad, adelantar/retroceder y siguiente video. "Sube el volumen del video" usa el del reproductor, no el de Windows.
 - **Ventanas por número**, como las pestañas: el estado del PC lista cada ventana (número, programa, título, activa/minimizada/maximizada, monitor) y la herramienta `windows` las activa, minimiza, maximiza, restaura, cierra (como la X), pone a la izquierda o derecha o mueve a otro monitor. "Minimiza todo menos el juego" o "pon Discord en el otro monitor" se deciden con datos. Minimizar no activa otra ventana (no le quita el foco a un juego). Sustituye a `focus_app` y `window_action`.
 - Recordatorios con fecha ("el viernes a las 8") y repetidos ("todos los días a las 9", "cada 2 horas"); la lista los dice hablados ("mañana a las 08:00"). Tras un aviso, "recuérdamelo en 10 minutos" funciona: el aviso queda en la conversación.

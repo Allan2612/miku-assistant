@@ -74,7 +74,7 @@ class WakewordConfig:
 
 @dataclass(slots=True)
 class Live2DConfig:
-    model: str = "models/miku/miku.model3.json"
+    model: str = "models/miku_official/miku_sample_t04.model3.json"
     scale: float = 0.25
     expressions: dict[str, Optional[str]] = field(default_factory=dict)
 
@@ -191,7 +191,7 @@ def load_config(
             vad_threshold=float(wakeword_data.get("vad_threshold", 0.0)),  # 0 = openWakeWord VAD off (previous behavior)
         ),
         live2d=Live2DConfig(
-            model=live2d_data.get("model", "models/miku/miku.model3.json"),
+            model=live2d_data.get("model", "models/miku_official/miku_sample_t04.model3.json"),
             scale=float(live2d_data.get("scale", 0.25)),
             expressions=live2d_data.get("expressions", {}),
         ),

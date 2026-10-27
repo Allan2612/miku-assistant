@@ -14,7 +14,7 @@
 - La capa gratuita tiene límites por minuto y por día; para uso personal suele bastar.
 
 ## Recursos que debes conseguir tú (no van al repo)
-1. **Modelo Live2D de Miku** en formato Cubism 3/4 (`*.model3.json` con texturas, `.moc3`, motions y expressions). También sirve Cubism 2 (`*.model.json`). Respeta los términos de su autor. Ponlo en `app/public/models/miku/` y ajusta la ruta en `config.yaml`.
+1. **Modelo Live2D de Miku** en formato Cubism 3/4 (`*.model3.json` con texturas, `.moc3`, motions y expressions). También sirve Cubism 2 (`*.model.json`). Respeta los términos de su autor. Ponlo en `app/public/models/<nombre>/` y ajusta la ruta en `config.yaml`.
    - *Consejo de recursos:* Si las texturas `.png` del modelo miden 4096×4096 px, redimensiónalas a 2048×2048 px para ahorrar hasta 100 MB de RAM en WebView2 sin pérdida visual a tamaño de escritorio.
    - Revisa qué expresiones trae (archivos `.exp3.json`) y mapéalas en `config.yaml → live2d.expressions`.
 2. **Cubism Core**: descarga el "Cubism SDK for Web" de la web oficial de Live2D y copia `live2dcubismcore.min.js` a `app/public/lib/`.

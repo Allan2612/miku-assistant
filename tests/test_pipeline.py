@@ -36,6 +36,9 @@ class FakeTTS:
     async def synthesize(self, text, cache=False):
         return "QUJD", "audio/mpeg"
 
+    def words_for(self, text):
+        return [[90, 340], [600, 850]]
+
 
 class FakeWake:
     def __init__(self):
@@ -410,6 +413,33 @@ async def _one_voice():
     assert p._ack_file("¿Sí?") != second
 
 
+class MsgServer(FakeServer):
+    async def broadcast(self, msg):
+        self.sent.append(msg)
+
+
+async def _body_language():
+    server = MsgServer()
+    brain = FakeBrain()
+    brain.last_outcome = "fail"
+    p = MikuPipeline(brain=brain, tts=FakeTTS(), stt=None, audio_in=None,
+                     resources=FakeResources(), server=server, rvc=None)
+    p.set_wakeword(FakeWake())
+    await p._speak("No pude, perdón.", "sad")
+    speak = next(m for m in server.sent if m["type"] == "speak")
+    assert speak["words"] == [[90, 340], [600, 850]] and speak["outcome"] == "fail" and not speak["farewell"], speak
+    server.sent.clear()
+    brain.note_announcement = lambda m: None
+    p._last_turn_at = float("-inf")  # hidden for a while
+    await p.announce_timer("Hora de la pastilla")
+    speak = next(m for m in server.sent if m["type"] == "speak")
+    assert speak["gesture"] == "attention" and speak["farewell"], "a reminder while hidden: attention, then goodbye"
+
+
+def test_speak_carries_body_language():
+    asyncio.run(_body_language())
+
+
 def test_only_one_voice():
     asyncio.run(_one_voice())
 
@@ -440,4 +470,5 @@ if __name__ == "__main__":
     test_hide_without_a_word()
     test_false_wake_words_never_reach_gemini()
     test_only_one_voice()
+    test_speak_carries_body_language()
     print("ok")

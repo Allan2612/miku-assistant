@@ -9,6 +9,7 @@ import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { live2d } from "./live2d";
+import { behavior } from "./behavior";
 import { animations } from "./animations";
 import { clickthrough } from "./clickthrough";
 import { ws, ServerMessage } from "./ws";
@@ -178,6 +179,7 @@ function handleServerMessage(msg: ServerMessage): void {
       if (msg.value === "listening") {
         clearAutoHideTimer();
         ui.showListening();
+        behavior.listening();
         if (!micOpen) earcon(true);
         micOpen = true;
         break;
@@ -188,11 +190,16 @@ function handleServerMessage(msg: ServerMessage): void {
       if (msg.value === "thinking") {
         clearAutoHideTimer();
         ui.showThinking();
+        behavior.thinking();
       } else if (msg.value === "idle") {
         // After a listen timeout the bubble kept saying "Escuchando..." with the mic already closed
         ui.clearStatus();
+        behavior.idle();
         resetAutoHideTimer();
       }
+      break;
+    case "user_speech":
+      behavior.userSpeech();
       break;
     case "expression":
       live2d.setExpression(msg.name);
@@ -204,10 +211,11 @@ function handleServerMessage(msg: ServerMessage): void {
     case "speak":
       clearAutoHideTimer();
       ui.showSubtitle("miku", msg.text, 15000);
-      live2d.setExpression(msg.emotion);
+      behavior.speak(msg);
       live2d
-        .speak(msg.audio_b64, msg.mime)
+        .speak(msg.audio_b64, msg.mime, msg.words)
         .then((completed) => {
+          behavior.speakEnd();
           // Interrupted (barge-in, hide, newer speak): the backend already moved on
           if (!completed) return;
           ws.send({ type: "speak_done" });
@@ -215,6 +223,7 @@ function handleServerMessage(msg: ServerMessage): void {
         })
         .catch((err) => {
           console.warn("[Speak] Playback error:", err);
+          behavior.speakEnd();
           ws.send({ type: "speak_done" });
           resetAutoHideTimer();
         });
@@ -227,6 +236,7 @@ function handleServerMessage(msg: ServerMessage): void {
  */
 // A show/hide that arrives mid-animation is applied when the animation ends, not dropped (H-044)
 let pendingVisibility: "show" | "hide" | null = null;
+let leaving = false; // her exit gesture plays before the fade, and is part of the animation too
 
 function applyPendingVisibility(): void {
   const next = pendingVisibility;
@@ -236,7 +246,7 @@ function applyPendingVisibility(): void {
 }
 
 export async function showMiku(): Promise<void> {
-  if (animations.isAnimating) {
+  if (animations.isAnimating || leaving) {
     pendingVisibility = "show";
     return;
   }
@@ -256,10 +266,9 @@ export async function showMiku(): Promise<void> {
     }
   }
 
-  // Resume Pixi ticker (capped at 30 FPS)
+  // Resume Pixi ticker (capped at 30 FPS); she comes up into the frame while the window fades in
   live2d.startTicker();
-
-  // Run appear animation (~600ms)
+  behavior.appear();
   await animations.appear(appEl);
 
   // Activate click-through hit-test loop
@@ -275,7 +284,7 @@ export async function showMiku(): Promise<void> {
  * Hide Miku with disappear animation and completely stop ticker (0% CPU / 0% GPU)
  */
 export async function hideMiku(): Promise<void> {
-  if (animations.isAnimating) {
+  if (animations.isAnimating || leaving) {
     pendingVisibility = "hide";
     return;
   }
@@ -291,7 +300,10 @@ export async function hideMiku(): Promise<void> {
   // Immediately stop click-through interval
   clickthrough.stop();
 
-  // Run disappear animation (~500ms)
+  // She leaves the frame (bowing first after a goodbye), then the window fades out
+  leaving = true;
+  await behavior.disappear();
+  leaving = false;
   await animations.disappear(appEl);
 
   // Completely freeze Pixi rendering to guarantee 0% GPU usage in background
@@ -432,7 +444,7 @@ async function bootstrap(): Promise<void> {
     canvas.addEventListener("pointerup", (e) => {
       const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
       if (dist < 8 && isVisible) {
-        live2d.onTapReaction();
+        behavior.tap();
         resetAutoHideTimer();
       }
     });

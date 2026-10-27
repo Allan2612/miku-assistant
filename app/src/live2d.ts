@@ -6,6 +6,7 @@
 
 import * as PIXI from "pixi.js";
 import { Live2DModel } from "pixi-live2d-display-lipsyncpatch/cubism4";
+import { GAIN, MotionEngine, OWNED, REST } from "./motion";
 
 // Expose PIXI globally as required by pixi-live2d-display
 (window as unknown as { PIXI: typeof PIXI }).PIXI = PIXI;
@@ -35,102 +36,80 @@ export interface Live2DManager {
   model: Live2DModel | null;
   canvas: HTMLCanvasElement | null;
   isModelReady: boolean;
+  /** Procedural motion: emotions, gaze, gestures (see motion.ts). */
+  motion: MotionEngine;
   init(canvas: HTMLCanvasElement, width: number, height: number, fps?: number): Promise<void>;
   loadModel(modelPath: string, scale?: number): Promise<Live2DModel>;
   setExpression(name: string): boolean;
-  onTapReaction(): void;
-  focus(x: number, y: number): void;
   startTicker(): void;
   stopTicker(): void;
-  startIdleGestures(): void;
-  stopIdleGestures(): void;
   hitTest(clientX: number, clientY: number): boolean;
-  /** Resolves true when playback ended (or failed), false when interrupted by stopSpeaking(). */
-  speak(audioB64: string, mime?: string): Promise<boolean>;
+  /** Resolves true when playback ended (or failed), false when interrupted by stopSpeaking().
+   *  `words`: [start_ms, end_ms] of each spoken word, to shape the mouth and the head beats. */
+  speak(audioB64: string, mime?: string, words?: [number, number][]): Promise<boolean>;
   stopSpeaking(): void;
   destroy(): void;
 }
+
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 class Live2DManagerImpl implements Live2DManager {
   app: PIXI.Application | null = null;
   model: Live2DModel | null = null;
   canvas: HTMLCanvasElement | null = null;
   isModelReady: boolean = false;
+  motion = new MotionEngine();
   private activeFallbackAudio: HTMLAudioElement | null = null;
   // Cleanup of the playing audio; stopSpeaking() must run it or the lip-sync interval leaks (H-045)
   private interruptActive: (() => void) | null = null;
-  private idleGestureTimer: number | null = null;
   private isSpeakingActive: boolean = false;
-
-  // --- Smooth parameter animation ---------------------------------------------------------
-  // Gestures used to set parameters once, instantly, outside the model update: they jumped,
-  // and the next frame's motion overwrote them. Now every gesture only sets a *target*; each
-  // frame (beforeModelUpdate) the value eases towards it and is ADDED on top of the idle
-  // motion, so Miku keeps breathing/blinking while she smiles or tilts her head.
-  private targets: Record<string, number> = {};
-  private current: Record<string, number> = {};
   private lastFrameMs = 0;
+  // Parameters the motion engine drives, with the model's resting value of each
+  private owned: { index: number; id: string; rest: number; gain: number }[] = [];
+  private basePivotY = 0;
   // Lip sync from the real audio level (was random values every 60 ms)
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private analyserBuf: Float32Array<ArrayBuffer> | null = null;
   private mouth = 0;
   private lipSyncFromAudio = false;
-  private gestureResetTimers: number[] = [];
+  private words: [number, number][] = [];
+  private wordIdx = -1;
 
-  /** Ease a parameter offset towards `value` (0 = back to the motion's own value). */
-  private setTarget(id: string, value: number): void {
-    this.targets[id] = value;
-  }
-
-  private setTargets(values: Record<string, number>): void {
-    for (const [id, v] of Object.entries(values)) this.setTarget(id, v);
-  }
-
-  /** Sets targets now and eases them back to 0 after `holdMs`. */
-  private pulse(values: Record<string, number>, holdMs: number): void {
-    this.setTargets(values);
-    const t = window.setTimeout(() => {
-      for (const id of Object.keys(values)) this.setTarget(id, 0);
-    }, holdMs);
-    this.gestureResetTimers.push(t);
-    if (this.gestureResetTimers.length > 20) this.gestureResetTimers.shift();
-  }
-
-  /** Runs every frame right before the model is drawn, after motions/physics. */
-  private animateParams(core: any): void {
+  /** Right after the (disabled) motions: every owned parameter is SET to rest + offset, so nothing
+   *  accumulates and physics (hair, tie, skirt) then reacts to the head and body moving. */
+  private applyMotion(core: any): void {
     const now = performance.now();
     const dt = this.lastFrameMs ? Math.min(0.1, (now - this.lastFrameMs) / 1000) : 1 / 30;
     this.lastFrameMs = now;
-
-    // Exponential easing: frame-rate independent, ~0.25 s to settle most of the way
-    const k = 1 - Math.exp(-dt / 0.18);
-    for (const id of Object.keys(this.targets)) {
-      const cur = this.current[id] ?? 0;
-      const next = cur + (this.targets[id] - cur) * k;
-      this.current[id] = next;
-      if (Math.abs(next) > 0.0005) {
-        try {
-          core.addParameterValueById(id, next);
-        } catch (_) {}
-      } else if (this.targets[id] === 0) {
-        delete this.targets[id];
-        delete this.current[id];
-      }
+    const frame = this.motion.update(dt);
+    const open = 1 - frame.blink;
+    for (const { index, id, rest, gain } of this.owned) {
+      let v = rest + (frame.params[id] ?? 0) * gain;
+      if (id === "ParamEyeLOpen" || id === "ParamEyeROpen") v *= open;
+      core.setParameterValueByIndex(index, v); // clamps to the parameter's range
     }
+    // Hops and bows move the whole model; the pivot keeps the user's drag position untouched
+    if (this.model) this.model.pivot.y = this.basePivotY - frame.y / this.model.scale.y;
+  }
 
-    // Mouth: fast to open, a bit slower to close, like real speech
+  /** Runs every frame right before the model is drawn: the mouth, from the voice's level. */
+  private animateMouth(core: any): void {
+    const dt = 1 / Math.max(10, this.app?.ticker.FPS || 30);
     let level = 0;
+    const audio = this.activeFallbackAudio;
     if (this.isSpeakingActive && this.lipSyncFromAudio && this.analyser && this.analyserBuf) {
       this.analyser.getFloatTimeDomainData(this.analyserBuf);
       let sum = 0;
       for (const s of this.analyserBuf) sum += s * s;
       level = Math.min(1, Math.sqrt(sum / this.analyserBuf.length) * 6);
-    } else if (this.isSpeakingActive && this.activeFallbackAudio && !this.activeFallbackAudio.paused) {
+    } else if (this.isSpeakingActive && audio && !audio.paused) {
       // No analyser: soft syllable-like rhythm (two mixed rates, never fully random jumps)
-      const t = now / 1000;
+      const t = performance.now() / 1000;
       level = 0.25 + 0.3 * Math.abs(Math.sin(t * 9.0)) * (0.6 + 0.4 * Math.sin(t * 2.3));
     }
+    if (this.isSpeakingActive && audio && this.words.length) level *= this.followWords(audio.currentTime * 1000);
+    // Fast to open, a bit slower to close, like real speech
     const km = 1 - Math.exp(-dt / (level > this.mouth ? 0.035 : 0.09));
     this.mouth += (level - this.mouth) * km;
     if (this.isSpeakingActive || this.mouth > 0.01) {
@@ -138,6 +117,22 @@ class Live2DManagerImpl implements Live2DManager {
         core.setParameterValueById("ParamMouthOpenY", this.mouth);
       } catch (_) {}
     }
+  }
+
+  /** Word timings: the mouth closes between words, each word gets its own mouth shape, a pause
+   *  before a word brings a head beat, and the end of a phrase a blink. Returns the mouth gain. */
+  private followWords(ms: number): number {
+    const w = this.words;
+    let i = this.wordIdx;
+    while (i + 1 < w.length && ms >= w[i + 1][0] - 40) i++;
+    if (i !== this.wordIdx) {
+      const gap = i > 0 ? w[i][0] - w[i - 1][1] : 1000;
+      this.wordIdx = i;
+      this.motion.mouthForm = rand(-0.3, 0.6);
+      if (gap > 160 || (i % 4 === 0 && w[i][1] - w[i][0] > 250)) this.motion.play("beat", { scale: rand(0.6, 1.3) });
+      if (gap > 350 && i > 0) this.motion.blink();
+    }
+    return i >= 0 && ms <= w[i][1] + 40 ? 1 : 0.3;
   }
 
   /** Routes an <audio> element through an analyser so the mouth follows its volume.
@@ -270,26 +265,22 @@ class Live2DManagerImpl implements Live2DManager {
         `[Live2D] Model loaded (${modelW}x${modelH}). Safe scale: ${appliedScale.toFixed(4)}. Position: (${appliedX.toFixed(1)}, ${appliedY.toFixed(1)})`
       );
 
-      // Parameter sanitization
-      const core = (model.internalModel as any)?.coreModel;
-      const sanitizeParams = () => {
-        if (!core) return;
-        try {
-          core.setParameterValueById("Watermark", 0);
-          core.setParameterValueById("HideDefault", 0);
-          core.setParameterValueById("PinkPaint", 0);
-          core.setParameterValueById("UniformMagicEyes", 0);
-          core.setParameterValueById("DeadEyes", 0);
-          core.setParameterValueById("DeadEyes2", 0);
-          core.setParameterValueById("dxyh", 0);
-        } catch (_) {}
-      };
-
-      sanitizeParams();
-      (model.internalModel as any)?.on("beforeModelUpdate", () => {
-        sanitizeParams();
-        if (core) this.animateParams(core);
-      });
+      // The motion engine replaces the model's idle clips (some opened her arms at random), its blink
+      // and the head sway of its breathing; only the chest breath stays
+      const internal = model.internalModel as any;
+      const core = internal.coreModel;
+      internal.motionManager.groups.idle = "__none__";
+      internal.motionManager.stopAllMotions();
+      internal.eyeBlink = undefined;
+      internal.breath?.setParameters(
+        internal.breath.getParameters().filter((b: any) => b.parameterId === internal.idParamBreath)
+      );
+      this.owned = OWNED.map((id) => ({ id, index: core.getParameterIndex(id) as number }))
+        .filter((p) => p.index < core.getParameterCount())
+        .map((p) => ({ ...p, rest: REST[p.id] ?? (core.getParameterDefaultValue(p.index) as number), gain: GAIN[p.id] ?? 1 }));
+      this.basePivotY = model.pivot.y;
+      internal.on("afterMotionUpdate", () => this.applyMotion(core));
+      internal.on("beforeModelUpdate", () => this.animateMouth(core));
 
       // Setup interactive drag, wheel zoom, double-click reset
       this.setupInteractiveControls(model, defaultX, defaultY, defaultScale, storageKey);
@@ -384,131 +375,20 @@ class Live2DManagerImpl implements Live2DManager {
     });
   }
 
-  /**
-   * Cute interactive tap reaction (Fase 8)
-   * Triggers a smile, cheek blush and plays a Tap motion when Miku is clicked.
-   */
-  onTapReaction(): void {
-    if (!this.model || !this.isModelReady) return;
-
-    // A click is a deliberate action: the model's own Tap motion fits here
-    try {
-      (this.model as any).motion?.("Tap");
-    } catch (_) {}
-
-    // Blush, smiling eyes and a small head tilt that ease in and back out
-    this.pulse(
-      { ParamCheek: 0.7, ParamEyeLSmile: 0.8, ParamEyeRSmile: 0.8, ParamAngleZ: (Math.random() < 0.5 ? -1 : 1) * 5 },
-      2200
-    );
-  }
-
   setExpression(name: string): boolean {
-    if (!this.model) return false;
-    // Use the model's own expression only if it defines one with this name. expression()
-    // is async and returns a Promise (always truthy), so the old "if (result) return" check
-    // returned early every time and no expression was ever shown.
-    const defs: any[] = (this.model.internalModel as any)?.motionManager?.expressionManager?.definitions ?? [];
-    if (defs.some((d) => (d.Name ?? d.name) === name)) {
-      void (this.model as any).expression(name);
-      return true;
-    }
-
-    // Every expression sets ALL these offsets, so switching between them always blends
-    // smoothly instead of leaving leftovers (e.g. raised brows after "surprised")
-    const neutral: Record<string, number> = {
-      ParamCheek: 0, ParamEyeLSmile: 0, ParamEyeRSmile: 0, ParamEyeLOpen: 0, ParamEyeROpen: 0,
-      ParamBrowLY: 0, ParamBrowRY: 0, ParamBrowLAngle: 0, ParamBrowRAngle: 0,
-      ParamAngleY: 0, ParamEyeBallY: 0,
-    };
-    const looks: Record<string, Record<string, number>> = {
-      happy: { ParamCheek: 0.5, ParamEyeLSmile: 0.7, ParamEyeRSmile: 0.7, ParamBrowLY: 0.15, ParamBrowRY: 0.15 },
-      thinking: { ParamBrowLY: 0.3, ParamBrowRY: -0.1, ParamEyeBallY: 0.35, ParamAngleY: 4 },
-      surprised: { ParamEyeLOpen: 0.25, ParamEyeROpen: 0.25, ParamBrowLY: 0.45, ParamBrowRY: 0.45 },
-      sad: { ParamBrowLAngle: -0.45, ParamBrowRAngle: -0.45, ParamBrowLY: -0.15, ParamBrowRY: -0.15, ParamAngleY: -5 },
-      angry: { ParamBrowLAngle: 0.4, ParamBrowRAngle: 0.4, ParamBrowLY: -0.25, ParamBrowRY: -0.25 },
-    };
-    this.setTargets({ ...neutral, ...(looks[name] ?? {}) });
+    this.motion.setEmotion(name);
     return true;
-  }
-
-  focus(clientX?: number, clientY?: number): void {
-    if (!this.model || !this.isModelReady || !this.canvas) return;
-
-    const rect = this.canvas.getBoundingClientRect();
-    const x = typeof clientX === "number" ? clientX - rect.left : rect.width / 2;
-    const y = typeof clientY === "number" ? clientY - rect.top : rect.height / 3;
-
-    // model.focus() turns any point into a full-length direction, so even a cursor slightly
-    // off-center made her look to the extreme (head roll up to 30°). Feed the focus controller
-    // directly with a damped vector instead: up to half the range, eased by the controller.
-    const b = this.model.getBounds();
-    const faceX = b.x + b.width / 2;
-    const faceY = b.y + b.height * 0.3;
-    const clamp = (v: number) => Math.max(-1, Math.min(1, v));
-    const nx = clamp(((x - faceX) / rect.width) * 1.5) * 0.5;
-    const ny = clamp(((faceY - y) / rect.height) * 1.5) * 0.5;
-    (this.model.internalModel as any).focusController?.focus(nx, ny);
   }
 
   startTicker(): void {
     if (this.app && !this.app.ticker.started) {
       this.app.ticker.start();
     }
-    this.startIdleGestures();
   }
 
   stopTicker(): void {
-    this.stopIdleGestures();
     if (this.app && this.app.ticker.started) {
       this.app.ticker.stop();
-    }
-  }
-
-  startIdleGestures(): void {
-    if (this.idleGestureTimer !== null) return;
-    this.scheduleNextGesture();
-  }
-
-  stopIdleGestures(): void {
-    if (this.idleGestureTimer !== null) {
-      clearTimeout(this.idleGestureTimer);
-      this.idleGestureTimer = null;
-    }
-    this.gestureResetTimers.forEach((t) => clearTimeout(t));
-    this.gestureResetTimers = [];
-    this.setTargets({ ParamAngleX: 0, ParamAngleZ: 0, ParamBodyAngleX: 0, ParamEyeBallX: 0 });
-  }
-
-  private scheduleNextGesture(): void {
-    const delay = 5000 + Math.random() * 4000;
-    this.idleGestureTimer = window.setTimeout(() => {
-      this.triggerRandomGesture();
-      if (this.idleGestureTimer !== null) {
-        this.scheduleNextGesture();
-      }
-    }, delay);
-  }
-
-  /**
-   * Small, slow idle gestures layered on the model's own idle motion (which keeps playing):
-   * no extra motions are triggered, so nothing snaps or restarts.
-   * Uses head/body/gaze params only, so it never cancels an expression's smile or brows.
-   */
-  private triggerRandomGesture(): void {
-    if (!this.model || !this.isModelReady || this.isSpeakingActive) return;
-
-    const side = Math.random() < 0.5 ? -1 : 1;
-    const r = Math.random();
-    if (r < 0.4) {
-      // Gentle head tilt with a little body sway
-      this.pulse({ ParamAngleZ: side * (3 + Math.random() * 3), ParamBodyAngleX: side * 2 }, 1800 + Math.random() * 1500);
-    } else if (r < 0.75) {
-      // Glance to one side, eyes first then a slight head turn
-      this.pulse({ ParamEyeBallX: side * 0.5, ParamAngleX: side * 6 }, 900 + Math.random() * 900);
-    } else {
-      // Thoughtful look slightly up
-      this.pulse({ ParamAngleY: 5, ParamEyeBallY: 0.3 }, 1500);
     }
   }
 
@@ -538,13 +418,15 @@ class Live2DManagerImpl implements Live2DManager {
     return URL.createObjectURL(blob);
   }
 
-  speak(audioB64: string, mime: string = "audio/wav"): Promise<boolean> {
+  speak(audioB64: string, mime: string = "audio/wav", words: [number, number][] = []): Promise<boolean> {
     if (!this.model) {
       return Promise.resolve(true);
     }
 
     this.stopSpeaking();
     this.isSpeakingActive = true;
+    this.words = words;
+    this.wordIdx = -1;
 
     const normalizedMime = !mime || mime === "audio/mp3" ? "audio/mpeg" : mime;
     let blobUrl = "";
@@ -562,13 +444,14 @@ class Live2DManagerImpl implements Live2DManager {
       audio.preload = "auto";
       this.activeFallbackAudio = audio;
 
-      // The mouth is driven every frame by animateParams() from this audio's level
+      // The mouth is driven every frame by animateMouth() from this audio's level
       this.lipSyncFromAudio = this.connectLipSync(audio);
 
       const cleanup = (completed: boolean = true) => {
         if (finished) return;
         finished = true;
         this.isSpeakingActive = false;
+        this.motion.mouthForm = 0;
         if (this.interruptActive === interrupt) {
           this.interruptActive = null;
         }
@@ -625,7 +508,8 @@ class Live2DManagerImpl implements Live2DManager {
   }
 
   stopSpeaking(): void {
-    this.isSpeakingActive = false; // the mouth eases closed in animateParams()
+    this.isSpeakingActive = false; // the mouth eases closed in animateMouth()
+    this.motion.mouthForm = 0;
     this.interruptActive?.();
     if (this.activeFallbackAudio) {
       try {
