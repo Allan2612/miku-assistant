@@ -10,6 +10,7 @@ Run:
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 1
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 2 --model miku_power --voice es-ES-XimenaNeural
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 3
+  core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 4   (MikuDiva against the current voice)
 Then open cache\\voice_ab\\roundN\\index.html: the audio is inside the page, so it plays anywhere.
 """
 
@@ -41,6 +42,7 @@ MODELS = {  # name -> index ("" = none: v1 came without one)
     "miku_power": "miku_power.index",
     "miku_v1_MikuAI_e210_s6300": "",
     "miku_v2_mikuindex": "miku_v2_mikuindex.index",
+    "miku_diva": "miku_diva.index",  # MikuDiva.zip (27-oct): 200 epochs; miku.pth has 30
 }
 CURRENT = {"rate": "+5%", "pitch": "+10Hz", "f0_up_key": 0, "index_rate": 0.25}  # config.yaml today
 
@@ -144,24 +146,48 @@ ROUND3 = [  # (label, edge-tts rate, edge-tts pitch, RVC semitones)
 ]
 
 
-def round3(out: Path) -> None:
+# Round 4: MikuDiva (200 epochs) against the current voice (A). (label, model, rate, base pitch, semitones, index)
+ROUND4 = [
+    ("A: la actual (miku)", "miku", "+5%", "+10Hz", 4, 0.25),
+    ("B: MikuDiva, mismos ajustes", "miku_diva", "+5%", "+10Hz", 4, 0.25),
+    ("C: MikuDiva, índice 0,5", "miku_diva", "+5%", "+10Hz", 4, 0.5),
+    ("D: MikuDiva, índice 0,75", "miku_diva", "+5%", "+10Hz", 4, 0.75),
+    ("E: MikuDiva, +2 semitonos, índice 0,5", "miku_diva", "+5%", "+10Hz", 2, 0.5),
+    ("F: MikuDiva, +6 semitonos, índice 0,5", "miku_diva", "+5%", "+10Hz", 6, 0.5),
+    ("G: MikuDiva, Dalia más aguda y rápida", "miku_diva", "+10%", "+30Hz", 4, 0.5),
+    ("H: MikuDiva, más chillona", "miku_diva", "+15%", "+30Hz", 6, 0.5),
+]
+
+
+def _variants(out: Path, title: str, variants: list) -> None:
+    """Each phrase through each (label, model, rate, base pitch, semitones, index) variant, on Dalia."""
     engine = RVCInferenceEngine()
-    _load(engine, "miku")
-    rows = []
-    for p_i, p in enumerate(PHRASES):
-        samples = []
-        for v_i, (label, rate, pitch, key) in enumerate(ROUND3):
-            base = asyncio.run(_base_voice(p, "es-MX-DaliaNeural", rate, pitch))
-            name = f"p{p_i}_v{v_i}.wav"
-            (out / name).write_bytes(engine.convert(base, f0_up_key=key, index_rate=0.25))
-            samples.append((f"{label}  [velocidad {rate}, tono base {pitch}, RVC +{key}]", name))
-        rows.append((p, samples))
-    _page(out, "Ronda 3: miku + Dalia, más aguda e infantil (A = la actual)", rows)
+    rendered = {}
+    for model in dict.fromkeys(v[1] for v in variants):  # one model load each, in order
+        _load(engine, model)
+        for v_i, (label, m, rate, pitch, key, index_rate) in enumerate(variants):
+            if m != model:
+                continue
+            for p_i, p in enumerate(PHRASES):
+                base = asyncio.run(_base_voice(p, "es-MX-DaliaNeural", rate, pitch))
+                name = f"p{p_i}_v{v_i}.wav"
+                (out / name).write_bytes(engine.convert(base, f0_up_key=key, index_rate=index_rate))
+                rendered[(p_i, v_i)] = (f"{label}  [velocidad {rate}, tono base {pitch}, RVC +{key}, índice {index_rate}]", name)
+    _page(out, title, [(p, [rendered[(p_i, v_i)] for v_i in range(len(variants))]) for p_i, p in enumerate(PHRASES)])
+
+
+def round3(out: Path) -> None:
+    _variants(out, "Ronda 3: miku + Dalia, más aguda e infantil (A = la actual)",
+              [(label, "miku", rate, pitch, key, 0.25) for label, rate, pitch, key in ROUND3])
+
+
+def round4(out: Path) -> None:
+    _variants(out, "Ronda 4: MikuDiva (200 épocas) contra la voz actual (A)", ROUND4)
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("round", type=int, choices=(1, 2, 3))
+    ap.add_argument("round", type=int, choices=(1, 2, 3, 4))
     ap.add_argument("--model", choices=list(MODELS))
     ap.add_argument("--voice", choices=VOICES)
     args = ap.parse_args()
@@ -171,6 +197,8 @@ if __name__ == "__main__":
         round1(out)
     elif args.round == 3:
         round3(out)
+    elif args.round == 4:
+        round4(out)
     else:
         if not (args.model and args.voice):
             ap.error("round 2 needs --model and --voice (the round 1 winner)")
