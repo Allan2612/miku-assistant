@@ -11,6 +11,7 @@ Run:
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 2 --model miku_power --voice es-ES-XimenaNeural
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 3
   core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 4   (MikuDiva against the current voice)
+  core\\.venv\\Scripts\\python.exe scratch\\voice_ab.py 5   (Spanish read by a Japanese voice, scratch/kana.py)
 Then open cache\\voice_ab\\roundN\\index.html: the audio is inside the page, so it plays anywhere.
 """
 
@@ -185,9 +186,40 @@ def round4(out: Path) -> None:
     _variants(out, "Ronda 4: MikuDiva (200 épocas) contra la voz actual (A)", ROUND4)
 
 
+# Round 5: a Japanese voice (Nanami) reads the Spanish text, so Miku speaks Spanish with a Japanese accent.
+# Whisper understood 46 % of it with katakana and 36 % raw (Dalia: 100 %); the subtitles help a listener.
+# (label, base voice, katakana?, rate, base pitch, RVC model or None, semitones, index)
+ROUND5 = [
+    ("A: la actual (Dalia + MikuDiva)", "es-MX-DaliaNeural", False, "+5%", "+10Hz", "miku_diva", 4, 0.25),
+    ("B: Nanami katakana + MikuDiva", "ja-JP-NanamiNeural", True, "+5%", "+0Hz", "miku_diva", 0, 0.25),
+    ("C: Nanami katakana + MikuDiva, +2, índice 0,5", "ja-JP-NanamiNeural", True, "+5%", "+0Hz", "miku_diva", 2, 0.5),
+    ("D: Nanami katakana + miku (la anterior), +2", "ja-JP-NanamiNeural", True, "+5%", "+0Hz", "miku", 2, 0.25),
+    ("E: Nanami texto en español + MikuDiva, +2", "ja-JP-NanamiNeural", False, "+5%", "+0Hz", "miku_diva", 2, 0.25),
+    ("F: Nanami katakana, sin RVC (voz japonesa pura)", "ja-JP-NanamiNeural", True, "+5%", "+0Hz", None, 0, 0),
+]
+
+
+def round5(out: Path) -> None:
+    from kana import to_katakana  # scratch/kana.py, next to this script
+    engine = RVCInferenceEngine()
+    loaded = None
+    rendered = {}
+    for v_i, (label, voice, kana, rate, pitch, model, key, index_rate) in enumerate(ROUND5):
+        if model and model != loaded:
+            _load(engine, model)
+            loaded = model
+        for p_i, p in enumerate(PHRASES):
+            base = asyncio.run(_base_voice(to_katakana(p) if kana else p, voice, rate, pitch))
+            name = f"p{p_i}_v{v_i}." + ("wav" if model else "mp3")
+            (out / name).write_bytes(engine.convert(base, f0_up_key=key, index_rate=index_rate) if model else base)
+            rendered[(p_i, v_i)] = (label, name)
+    _page(out, "Ronda 5: Miku hablando español con acento japonés (A = la actual)",
+          [(p, [rendered[(p_i, v_i)] for v_i in range(len(ROUND5))]) for p_i, p in enumerate(PHRASES)])
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("round", type=int, choices=(1, 2, 3, 4))
+    ap.add_argument("round", type=int, choices=(1, 2, 3, 4, 5))
     ap.add_argument("--model", choices=list(MODELS))
     ap.add_argument("--voice", choices=VOICES)
     args = ap.parse_args()
@@ -199,6 +231,8 @@ if __name__ == "__main__":
         round3(out)
     elif args.round == 4:
         round4(out)
+    elif args.round == 5:
+        round5(out)
     else:
         if not (args.model and args.voice):
             ap.error("round 2 needs --model and --voice (the round 1 winner)")
