@@ -15,10 +15,13 @@ Then open cache\\voice_ab\\roundN\\index.html in the browser (not in VS Code: it
 
 import argparse
 import asyncio
+import base64
 import html
+import io
 import sys
 from pathlib import Path
 
+import av
 import edge_tts
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,15 +59,36 @@ def _load(engine: RVCInferenceEngine, model: str) -> None:
     assert engine.load_models(f"models/rvc/{model}.pth", f"models/rvc/{index}" if index else ""), model
 
 
+def _mp3(wav: bytes) -> bytes:
+    """WAV -> MP3 (44.1 kHz mono), about 10x smaller to embed in the page."""
+    src, buf = av.open(io.BytesIO(wav)), io.BytesIO()
+    dst = av.open(buf, "w", format="mp3")
+    stream = dst.add_stream("mp3", rate=44100)
+    resampler = av.AudioResampler(format="fltp", layout="mono", rate=44100)
+    for frame in src.decode(audio=0):
+        frame.pts = None
+        for f in resampler.resample(frame):
+            dst.mux(stream.encode(f))
+    for f in resampler.resample(None):
+        dst.mux(stream.encode(f))
+    dst.mux(stream.encode(None))
+    dst.close()
+    return buf.getvalue()
+
+
 def _page(out: Path, title: str, rows: list) -> None:
-    """rows: (phrase, [(label, file)])"""
+    """rows: (phrase, [(label, file)]). The audio goes inside the page (data: URIs): VS Code's preview, and
+    some browsers, refused the separate files next to it ("no puedo darle reproducir")."""
     parts = [f"<!doctype html><meta charset='utf-8'><title>{html.escape(title)}</title>",
              "<style>body{font-family:sans-serif;max-width:900px;margin:2em auto}td{padding:4px 12px}</style>",
              f"<h1>{html.escape(title)}</h1>"]
     for phrase, samples in rows:
         parts.append(f"<h2>{html.escape(phrase)}</h2><table>")
-        parts += [f"<tr><td>{html.escape(label)}</td><td><audio controls preload='none' src='{f}'></audio></td></tr>"
-                  for label, f in samples]
+        for label, f in samples:
+            data = (out / f).read_bytes()
+            data = data if f.endswith(".mp3") else _mp3(data)
+            src = "data:audio/mpeg;base64," + base64.b64encode(data).decode("ascii")
+            parts.append(f"<tr><td>{html.escape(label)}</td><td><audio controls src='{src}'></audio></td></tr>")
         parts.append("</table>")
     (out / "index.html").write_text("\n".join(parts), encoding="utf-8")
 
