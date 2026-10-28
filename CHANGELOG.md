@@ -44,6 +44,11 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- Charla tras una orden ("¿cómo estás hoy?", "gracias, te amo") repetía la orden anterior (pausó la música, volvió a poner el volumen al 75 %): Gemini recibe ahora también la transcripción junto al audio, y la regla de responder solo al último mensaje.
+- "Hey Miku" dicho bajito y luego una orden ("Cierra me OBS Studio") se descartaba como activación falsa: un clip silencioso seguido de una orden o una despedida ya cuenta como llamada real.
+- Etiquetas sueltas en la respuesta ("un [yatta] café") ya no salen en el subtítulo ni en la voz.
+- "Dale play" decía "listo" aunque el video seguía en pausa: play y pausa esperan a que el reproductor cambie y, si no cambia, Miku lo dice (extensión 1.1.1).
+- Ante algo sin herramienta (elegir una película dentro de Disney+) dice que no puede en vez de "dame un segundo que lo busco".
 - Activaciones sin querer: los 4 audios guardados de activaciones falsas no decían "Miku" (un vídeo, Discord, casi silencio) aunque el detector les dio hasta 0,99. Ahora Whisper transcribe los 2 s del "Hey Miku" mientras ella dice "¿Sí?" y escucha; se oculta en silencio solo si es claramente falsa: casi silencio, o una frase de 3+ palabras sin "Miku" (alguien hablando de otra cosa). Un clip vacío o de una o dos palabras se acepta: Whisper oye mal un "Hey Miku" corto ("Maes.", nada) y la primera versión ocultaba llamadas reales. Sin retraso para las activaciones reales; con el atajo de teclado o un clic no se comprueba.
 - "A veces habla con otra voz": tras 10 min sin uso se descargaba RVC y recargarlo tardaba 10-48 s (casi todo, importar torch), en los que Miku hablaba con la voz base de edge-tts. Ahora queda un proceso en espera con todo importado (RAM, 0 MB de VRAM) y la recarga tarda 3-5 s. **Una sola voz:** la respuesta espera a que cargue en vez de usar la voz base; si RVC falla, sale solo el subtítulo; "¿Sí?" y "Un momento..." se omiten si aún no existen en su voz, y su caché depende del modelo y el tono (antes quedaban frases con el modelo viejo).
 - Los recordatorios ya no abren el micrófono después de avisar ni suenan encima de otra frase: si Miku estaba oculta, aparece, avisa y se oculta; si estabas hablando con ella, avisa y la conversación sigue.

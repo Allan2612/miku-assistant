@@ -7,6 +7,7 @@ import asyncio
 
 import numpy as np
 
+from core.llm import MikuBrain
 from core.pipeline import _SAYS_MIKU, FILLER_PHRASES, FOLLOW_UP_DELAY_S, MikuPipeline
 
 
@@ -22,6 +23,9 @@ class FakeServer:
 class FakeBrain:
     def __init__(self, fail=False):
         self.fail = fail
+
+    def is_farewell(self, text):
+        return MikuBrain.is_farewell(None, text)
 
     async def chat(self, text, audio=None):
         if self.fail:
@@ -351,8 +355,12 @@ def test_false_wake_words_never_reach_gemini():
     # Clearly false (clips of 26-oct): a sentence of other talk, or near silence
     server, brain, p = asyncio.run(_wake("Cuatro más, el mejor de cinco.", "abre spotify"))
     assert brain.heard == [] and "hide" in server.sent and not p.wakeword.paused, server.sent
-    server, brain, _ = asyncio.run(_wake("", "abre spotify", loud=False))
-    assert brain.heard == [] and "hide" in server.sent, "nobody spoke"
+    server, brain, _ = asyncio.run(_wake("", "y entonces le dije que no", loud=False))
+    assert brain.heard == [] and "hide" in server.sent, "nobody spoke to her"
+    # A quiet "Hey Miku" then an order or a goodbye is a real call (log 27-oct: "Cierra me OBS Studio." dropped)
+    for heard in ("Cierra me OBS Studio.", "Abreme Opera y cierro todas las pestañas.", "Adiós."):
+        _, brain, _ = asyncio.run(_wake("", heard, loud=False))
+        assert brain.heard == [heard], heard
     server, brain, _ = asyncio.run(_wake("", "", mic_cls=SilentMic, loud=False))
     assert brain.heard == [] and "hide" in server.sent, "a false one with silence after hides too"
 

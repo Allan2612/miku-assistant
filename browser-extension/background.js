@@ -95,9 +95,14 @@ async function youtubeControl(action, value) {
   const levels = () => p.getAvailableQualityLevels().filter((q) => q !== "auto");
   const captions = () => document.querySelector(".ytp-subtitles-button");
   const n = Number(value);
+  const playing = () => [1, 3].includes(p.getPlayerState()); // 3 = buffering, right after play
+  // Play and pause take a moment: report the state they reached, not the one before (log 27-oct)
+  const settle = async (want) => {
+    for (let i = 0; i < 10 && playing() !== want; i++) await new Promise((r) => setTimeout(r, 150));
+  };
   switch (action) {
-    case "play": p.playVideo(); break;
-    case "pause": p.pauseVideo(); break;
+    case "play": p.playVideo(); await settle(true); break;
+    case "pause": p.pauseVideo(); await settle(false); break;
     case "volume": p.unMute(); p.setVolume(Math.max(0, Math.min(100, n))); break;
     case "volume_up": p.unMute(); p.setVolume(Math.min(100, p.getVolume() + (n || 15))); break;
     case "volume_down": p.setVolume(Math.max(0, p.getVolume() - (n || 15))); break;
@@ -138,7 +143,7 @@ async function youtubeControl(action, value) {
   const q = p.getPlaybackQuality();
   return {
     volume: p.getVolume(), muted: p.isMuted(), quality: LABELS[q] || q, rate: p.getPlaybackRate(),
-    playing: [1, 3].includes(p.getPlayerState()), // 3 = buffering, right after play
+    playing: playing(),
     captions: captions() ? captions().getAttribute("aria-pressed") === "true" : null,
     qualities: levels().map((k) => LABELS[k] || k), title: document.title.replace(/ - YouTube$/, ""),
   };

@@ -320,4 +320,7 @@ def youtube_player(action: str, value: str = "", tab_id: int = 0) -> Dict[str, A
     if not res.get("ok"):
         return {"ok": False, "result": f"El reproductor no pudo: {res.get('error', 'error desconocido')}"}
     state = res.get("state") or {}
+    if act in ("play", "pause") and bool(state.get("playing")) != (act == "play"):
+        # "Video en pausa." came back ok after a play, and she said "ya le di play" (log, 27-oct)
+        return {"ok": False, "result": f"Lo intenté, pero el video sigue {'en pausa' if act == 'play' else 'sonando'}."}
     return {"ok": True, "result": _player_result(act, str(value or ""), state)}

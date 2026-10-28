@@ -74,6 +74,13 @@ WAKE_CHECK_TIMEOUT_S = 6.0
 # measured 0.0043 (27-oct 13:12, rejected at 0.005 while the user then gave a clear order)
 WAKE_SILENCE_RMS = 0.003
 WAKE_SENTENCE_WORDS = 3  # this many words without "Miku" is someone talking about something else
+# An order in the first words of the phrase: said to her even when the clip came out silent (log 27-oct: a quiet
+# "Hey Miku" then "Cierra me OBS Studio" was dropped as a false wake word)
+_ORDER_START = re.compile(
+    r"^\W*(?:\w+\W+){0,2}?(?:abr|cierr|pon|apag|sub|baj|busc|reproduc|minimiz|maximiz|anot|apunt|recu[eé]rd|copi"
+    r"|silenci|paus|quit)\w*",
+    re.IGNORECASE,
+)
 
 
 def _trim_silence(wav_bytes: bytes, threshold: float = 0.01, keep_s: float = 0.08) -> bytes:
@@ -455,6 +462,8 @@ class MikuPipeline:
         if _SAYS_MIKU.search(clip_text) or _SAYS_MIKU.search(heard):
             return True
         silent = peak < WAKE_SILENCE_RMS
+        if silent and (_ORDER_START.search(heard) or self.brain.is_farewell(heard)):
+            return True
         if not silent and len(re.findall(r"\w+", clip_text)) < WAKE_SENTENCE_WORDS:
             return True  # empty or a word or two: what a misheard "Hey Miku" looks like
         logger.info("False wake word (%s): the clip said %r. Hiding without answering.",

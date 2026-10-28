@@ -61,7 +61,11 @@ Memoria: si el usuario te cuenta algo de sí mismo que valga la pena recordar (g
 
 Pendientes: el estado del PC trae los pendientes del usuario. "Apunta X" llama a take_note; "ya hice X" llama a complete_note con las palabras del pendiente; "bórralo" llama a delete_note. Recordatorios con fecha ("mañana", "el viernes") o repetidos ("todos los días"): remind con date y every_minutes; "recuérdamelo en 10 minutos" tras un aviso es un remind nuevo con el mismo texto.
 
-Si el mensaje del usuario llega como audio, escúchalo tú: la transcripción automática se equivoca a menudo.
+Si el mensaje del usuario llega como audio, escúchalo tú: la transcripción automática que lo acompaña se equivoca a menudo.
+
+Responde SOLO al último mensaje. Las órdenes de mensajes anteriores ya se hicieron: no las repitas ni llames herramientas por ellas salvo que el usuario lo pida otra vez. Si el mensaje es charla ("¿cómo estás?", "gracias", "te quiero"), contesta sin herramientas.
+
+Si no tienes una herramienta para lo que pide (elegir o reproducir algo dentro de una web como Disney+ o Netflix, pulsar botones de una página), dilo con sinceridad en una frase y ofrece lo que sí puedes (abrir la web, buscarlo). Nunca digas "dame un segundo" ni prometas hacerlo después: no hay un después.
 
 Deletreo: si el usuario deletrea una dirección o un nombre letra por letra ("te, i griega, te soluciones punto net"), escribe exactamente esas letras juntas ("tytsoluciones.net"): no inventes ni quites letras. "i griega" o "ye" es y; "punto" es ".".
 
@@ -166,6 +170,7 @@ _BYE_FILLER = {"ya", "no", "ok", "vale", "bueno", "muchas", "mil", "eso", "es", 
 _HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor"}
 # Gemini ends its answer with this when the user says goodbye in words no list catches (system prompt)
 _BYE_TAG = re.compile(r"\s*\[adi[oó]s\]\s*", re.IGNORECASE)
+TRANSCRIPT_HINT = "(Transcripción automática, puede tener errores: "
 _ORDER_HINT = re.compile(
     r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
 )
@@ -301,6 +306,9 @@ class MikuBrain:
         else:
             user_part = types.Part.from_text(text=clean_input)
         parts = [user_part]
+        if audio is not None:
+            # Audio alone: flash-lite misheard "¿Cómo estás hoy?" and replayed the previous order (log, 27-oct)
+            parts.append(types.Part.from_text(text=f"{TRANSCRIPT_HINT}«{clean_input}»)"))
         if state:
             # Only in this request, never in the history: an old snapshot would contradict the new one
             parts.append(types.Part.from_text(text=state))
@@ -348,6 +356,7 @@ class MikuBrain:
                 types.Part.from_text(text=clean_input)
                 if p.inline_data and (p.inline_data.mime_type or "").startswith("audio") else p
                 for p in contents[-1].parts
+                if not (p.text or "").startswith(TRANSCRIPT_HINT)  # the text itself replaces the audio
             ]
             contents = contents[:-1] + [types.Content(role="user", parts=parts)]
             tools = [t for t in (config.tools or []) if not isinstance(t, types.Tool)]
@@ -512,6 +521,8 @@ class MikuBrain:
         text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
         text = re.sub(r"https?://\S+|www\.\S+", "", text)
         text = re.sub(r"[*_`~#]", "", text)
+        # "[yatta]" mid-answer: tags are never read out (log, 27-oct); [adios] stays for chat() to see
+        text = re.sub(r"\s*\[(?!adi[oó]s\])[^\]]*\]", "", text, flags=re.IGNORECASE)
         text = re.sub(r"\s+", " ", text).strip()
         return text
 

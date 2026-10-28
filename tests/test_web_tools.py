@@ -147,6 +147,12 @@ def test_youtube_player_picks_the_video_and_reports_its_state():
     assert web.youtube_player("captions_on")["result"] == "Subtítulos activados."
     assert web.youtube_player("speed", "1.5", tab_id=30)["result"] == "Velocidad del video: 1.5x."
     assert b.sent[-1][1]["tab_id"] == 30, "a named tab wins"
+    # Play that left the video paused is a failure, not "ya le di play" (log 27-oct)
+    assert web.youtube_player("play")["ok"]
+    state["playing"] = False
+    res = web.youtube_player("play")
+    assert not res["ok"] and "en pausa" in res["result"], res
+    assert web.youtube_player("pause")["ok"]
 
     # What the page said goes back to the model ("ese video solo tiene: ...")
     b.run = lambda cmd, **args: {"ok": False, "error": "ese video solo tiene: 720p, 480p"}

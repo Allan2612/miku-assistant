@@ -80,6 +80,8 @@ def test_action_results_go_back_and_the_answer_comes_from_them():
                       reply("[happy] ¡Listo! Spotify abierto y volumen al 30."))
     emotion, text, _ = asyncio.run(b.chat("abre es poti y pon el volumen al 30", audio=AUDIO))
     assert models.requests[0][-1].parts[0].inline_data.mime_type == "audio/wav", "Gemini must hear the audio"
+    # ...with Whisper's text beside it: audio alone, flash-lite replayed the previous order (log 27-oct)
+    assert "abre es poti" in models.requests[0][-1].parts[1].text
     assert ran == [("open_app", {"app_name": "spotify"}), ("set_volume", {"level": 30})], ran
     sent = responses_sent(models.requests[1])
     assert [(r.id, r.name, r.response["result"]) for r in sent] == [
@@ -98,6 +100,9 @@ def test_failed_tool_is_seen_by_the_model():
     assert b.last_outcome == "fail", "her body language: a shrug"
     # The new emotions are kept, not turned into "happy"
     assert b._parse_emotion("[shy] Ay, gracias.") == ("shy", "Ay, gracias.")
+    # Tags mid-answer are never read out (log 27-oct: "un [yatta] café"); the goodbye tag survives for chat()
+    assert b._parse_emotion("[happy] ¿Qué necesitas, un [yatta] café?") == ("happy", "¿Qué necesitas, un café?")
+    assert b._parse_emotion("[happy] ¡Nos vemos! [adios]")[1].endswith("[adios]")
 
 
 def test_multi_step_task_and_the_round_limit():
