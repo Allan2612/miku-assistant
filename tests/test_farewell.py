@@ -58,7 +58,17 @@ def test_hide_phrases_cost_nothing():
     assert not models.requests
 
 
+def test_her_goodbye_without_the_tag_still_hides_her():
+    # Log 2-nov: "Apague ese, Miku." got "¡Hasta luego, que descanses!" with no [adios], and the mic opened again
+    import asyncio
+    from tests.test_agent import brain, reply
+    b, _ = brain(reply("[happy] ¡Hasta luego, que descanses!"), reply("[happy] ¡Claro! El primer KFC abrió en 1952."))
+    assert asyncio.run(b.chat("bueno, me tengo que ir a hacer otra cosa"))[2]
+    assert not asyncio.run(b.chat("cuéntame un dato de KFC"))[2]
+
+
 if __name__ == "__main__":
+    test_her_goodbye_without_the_tag_still_hides_her()
     test_farewell()
     test_done_phrases_are_goodbyes_only_when_alone()
     test_goodbye_is_local_unless_it_carries_an_order()

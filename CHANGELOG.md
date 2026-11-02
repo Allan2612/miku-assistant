@@ -18,6 +18,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - La ventana arranca sin `--js-flags=--lite-mode`: ahorraba 1 MB, pero Live2D gastaba 5 veces más CPU y Miku tardaba en aparecer.
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
 - **Todas las reglas de palabras en un solo sitio** (`core/intent.py`): si una frase es ruido, el eco de su voz, una orden de ocultarse, una despedida, una orden o charla. Antes había unas 20 listas repartidas entre `pipeline.py` y `llm.py` que decidían cada una por su cuenta. Una frase mal oída en un log se arregla ahora con una línea en la tabla de `tests/test_intent.py`, que trae las frases reales que fallaron.
+- **Si se despide, se va**: cuando su propia respuesta es una despedida ("¡Hasta luego, que descanses!", "Me voy a dormir un rato") se oculta aunque Gemini no ponga `[adios]`; antes volvía a abrir el micrófono. También se va si tu frase termina en despedida ("Te amo. Ya eso es todo. ¡Chau!"): Gemini contesta y luego se oculta. "Apáquese", "apágate un rato" o "Apague ese, Miku" la ocultan al instante, y el prompt trata como despedida las señales de que no quieres hablar ("me tienes loco", "déjame en paz", "estoy jugando").
 - Las órdenes con tilde ("súbele", "ábreme", "póngale") cuentan como orden al comprobar una activación dudosa, y "Gracias, cierre Spotify" ya no se toma por una despedida: las formas de usted valen igual en todas las reglas.
 
 ### Añadido

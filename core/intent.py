@@ -50,8 +50,18 @@ _BYE_WORDS = {"gracias", "chao", "chau", "adiós", "adios", "bye", "olvídalo", 
               "nada"}
 _BYE_FILLER = {"ya", "no", "ok", "vale", "bueno", "muchas", "mil", "eso", "es", "era", "sería", "seria", "todo", "así",
                "asi", "está", "esta", "bien", "por", "ahora", "de", "verdad", "entonces", "pues", "más", "mas"}
-# Words that do not change a hide order: "Nada, nada. Ocúltese", "Ya, Miku, vete"
-_HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor"}
+# Words that do not change a hide order: "Nada, nada. Ocúltese", "Ya, Miku, vete", "apágate un rato"
+_HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor", "un", "rato"}
+# Every way Whisper writes "apágate" / "apáguese": "Apáquese", "apagase", "Apague ese, Miku" (logs 2-nov: she stayed,
+# or took it for "turn off the PC")
+_TURN_YOURSELF_OFF = re.compile(r"ap[aá]n?[gq][uü]?[aeé]?(?:te|se|ce)|apag[uü]e ese")
+# Her own answer is a goodbye when a sentence starts with one: "¡Hasta luego, que descanses!" or "¡Entendido! Me voy a
+# dormir un rato" without the [adios] tag kept the mic open (log 2-nov). "Sayonara significa adiós" is not one
+_HER_GOODBYE = re.compile(
+    r"(?:^|[.!?¡¿]\s*)(?:adi[oó]s|hasta (?:luego|pronto|mañana|la próxima)|nos vemos|chao|chau|bye|me voy"
+    r"|que descanses|aquí estaré|aqui estare|llámame (?:si|cuando)|bueno, me retiro)",
+    re.IGNORECASE,
+)
 
 # Orders as said to her, whole words. Usted forms and Whisper's spellings with a pronoun too: "Póngale pausa y
 # sérame todas las ventanas" only paused (log 1-nov)
@@ -106,9 +116,20 @@ def says_miku(text: str) -> bool:
     return bool(_SAYS_MIKU.search(text))
 
 
+def _sentences(text: str) -> list:
+    return [s for s in re.split(r"[.!?¡¿]+", text) if s.strip()]
+
+
 def is_farewell(text: str) -> bool:
-    """A short goodbye, by whole words: "vete a la configuración y..." is not one (H-027). True even with an order
-    in it ("adiós, cierra Spotify"): she does the order, then hides."""
+    """A short goodbye, a hide order, or a longer phrase whose last sentence is one: "Te amo. Ya eso es todo. Chau!"
+    kept her listening (log 2-nov). True even with an order in it ("adiós, cierra Spotify"): she does the order,
+    then hides."""
+    last = _sentences(text)[-1:]
+    return _short_goodbye(text) or is_hide_order(text) or bool(last and _short_goodbye(last[0]))
+
+
+def _short_goodbye(text: str) -> bool:
+    """A short goodbye, by whole words: "vete a la configuración y..." is not one (H-027)."""
     norm = text.lower().strip()
     if len(norm.split()) > 6:
         return False
@@ -125,8 +146,18 @@ def is_farewell(text: str) -> bool:
 
 
 def is_hide_order(text: str) -> bool:
-    """"Ocúltate", "Nada, nada. Cúltese": she goes without a word ("¡De nada!" answered an "Adiós", log 06:17)."""
-    return " ".join(w for w in bare(text).split() if w not in _HIDE_FILLER) in HIDE_NOW
+    """"Ocúltate", "Nada, nada. Cúltese", or a last sentence like that ("Miku, ella. Apáquese."): she goes without
+    a word ("¡De nada!" answered an "Adiós", log 06:17)."""
+    for part in (text, *_sentences(text)[-1:]):
+        rest = " ".join(w for w in bare(part).split() if w not in _HIDE_FILLER)
+        if rest in HIDE_NOW or _TURN_YOURSELF_OFF.fullmatch(rest):
+            return True
+    return False
+
+
+def says_goodbye(answer: str) -> bool:
+    """Her own answer says goodbye, so she must hide after it, tag or no tag."""
+    return bool(_HER_GOODBYE.search(answer.strip()))
 
 
 def mentions_order(text: str) -> bool:
@@ -166,9 +197,13 @@ def classify(text: str, cues: Iterable[str] = (), last_answer: str = "") -> str:
         return "echo"
     if len(heard.split()) >= 2 and heard in normalize(last_answer):
         return "echo"
-    # A plain goodbye; with an order in it ("adiós, cierra Spotify") the order comes first
-    if is_farewell(text) and not mentions_order(text):
-        return "hide" if is_hide_order(text) else "farewell"
+    # A plain goodbye; with an order in it ("adiós, cierra Spotify") the order comes first. A longer phrase that ends
+    # in a goodbye is chat: Gemini answers it, then she hides (is_farewell)
+    if not mentions_order(text):
+        if is_hide_order(text):
+            return "hide"
+        if _short_goodbye(text):
+            return "farewell"
     if mentions_order(text) or starts_with_order(text):
         return "order"
     return "chat"

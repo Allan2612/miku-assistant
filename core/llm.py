@@ -74,7 +74,7 @@ Estado del PC: cada mensaje del usuario trae un bloque "[Estado del PC ...]" con
 
 Correcciones: si el usuario dice que te equivocaste o que "era otra" web, búsqueda o canción, vuelve a llamar la herramienta con lo correcto y con tab_id = el número de la pestaña equivocada (la marcada "abierta por Miku"), para reutilizarla en vez de abrir otra.
 
-Si el usuario se despide o te dice que ya no te necesita, aunque lo diga con otras palabras o la transcripción salga rara ("olvídalo, gracias", "listo, eso era", "ya no, gracias", "nada, chao"), responde con una despedida corta y termina con la etiqueta [adios]: el sistema te ocultará. No la uses si además te pide otra cosa.
+Si el usuario se despide o da señales de que ya no quiere hablar, aunque lo diga con otras palabras o la transcripción salga rara ("olvídalo, gracias", "listo, eso era", "ya no, gracias", "nada, chao", "apágate un rato", "me tienes loco", "déjame en paz", "cállate", "luego hablamos", "estoy jugando"), responde con una despedida corta y termina con la etiqueta [adios]: el sistema te ocultará. "Apágate", "apáguese" o "apague ese" a secas es para ti, no para el PC ni la música: es una despedida, no llames herramientas. Si se despide y además pide algo, hazlo y termina igual con [adios]. Si tu respuesta es una despedida, termina SIEMPRE con [adios].
 
 Hora y fecha actuales: {current_time}
 Momento del día: {time_of_day}
@@ -771,7 +771,8 @@ class MikuBrain:
         said_bye = bool(_BYE_TAG.search(clean_text))
         clean_text = _BYE_TAG.sub(" ", clean_text).strip() or "¡Hasta luego!"
         self._remember(clean_input, f"[{emotion}] {clean_text}")
-        result = (emotion, clean_text, said_bye or intent.is_farewell(clean_input))
+        # A goodbye in her own words hides her too: without the tag she said "¡Hasta luego!" and kept listening
+        result = (emotion, clean_text, said_bye or intent.is_farewell(clean_input) or intent.says_goodbye(clean_text))
         self._last_query_text = clean_input
         self._last_query_time = time.monotonic()
         self._last_result = result

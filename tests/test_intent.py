@@ -4,7 +4,7 @@ one line here, next to what it should have been.
 Run: core\\.venv\\Scripts\\python.exe -m tests.test_intent  (or with pytest)
 """
 
-from core.intent import classify, has_chained_orders, starts_with_order
+from core.intent import classify, has_chained_orders, is_farewell, says_goodbye, starts_with_order
 
 CUES = ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!")
 
@@ -21,12 +21,18 @@ TABLE = [
     ("Apángese Miku.", "hide"),
     ("Ya, Miku, vete", "hide"),
     ("ya puedes irte", "hide"),
+    # "Turn yourself off" as Whisper writes it (log 2-nov: Gemini paused the music or asked to shut down the PC)
+    ("Miku, ella. Apáquese.", "hide"),
+    ("Apague ese, Miku.", "hide"),
+    ("apágate un rato", "hide"),
     # Goodbyes in other words (log 27-oct: "Olvíalo, muchas gracias" kept her listening)
     ("Olvíalo, muchas gracias.", "farewell"),
     ("Ya está, gracias", "farewell"),
     ("Nada, nada.", "farewell"),
     ("Listo, eso era todo, gracias", "farewell"),
     ("No te necesito", "farewell"),
+    # A longer phrase ending in a goodbye: Gemini answers it, then she hides (log 2-nov: she stayed)
+    ("Estás bien linda, mi amigo. Te amo. Ya eso es todo. Chau!", "chat"),
     # A goodbye with an order: the order first, then she hides
     ("adiós, cierra spotify", "order"),
     ("gracias, ahora abre spotify", "order"),
@@ -72,7 +78,23 @@ def test_order_shapes():
         assert not has_chained_orders(text), text
 
 
+def test_goodbyes_that_hide_her():
+    # Said by the user: the last sentence counts, an order after a goodbye does not end it
+    assert is_farewell("Estás bien linda, mi amigo. Te amo. Ya eso es todo. Chau!")
+    assert is_farewell("Cierra Spotify. Gracias.")
+    assert not is_farewell("Gracias. Ahora abre Spotify")
+    assert not is_farewell("Abre la carpeta de descargas, por favor")
+    # Said by her without the [adios] tag (log 2-nov: the mic stayed open after these)
+    for answer in ("¡Hasta luego, que descanses!", "¡Entendido, mi amor! Me voy a dormir un rato.", "¡Nos vemos!",
+                   "¡Vale! Aquí estaré si me necesitas."):
+        assert says_goodbye(answer), answer
+    for answer in ("Sayonara significa adiós en japonés.", "¡Aquí estoy! ¿Qué necesitas?", "¡Listo, ya lo pauso!",
+                   "¡Buenas noches! ¿Qué necesitas antes de descansar?"):
+        assert not says_goodbye(answer), answer
+
+
 if __name__ == "__main__":
+    test_goodbyes_that_hide_her()
     test_table()
     test_her_own_voice_is_an_echo()
     test_order_shapes()
