@@ -51,6 +51,10 @@ def test_no_hijacking():
     _setup()
     fast("pon la música")
     assert calls == [("media_control", ("play",))], calls
+    # Two orders, the second in usted form or misheard: all of it goes to Gemini, not just the pause (log 1-nov)
+    _setup()
+    assert fast("Póngale pausa y sérame todas las ventanas que tengo abiertas, excepto la de Opera.") is None
+    assert calls == [], calls
 
 
 def test_reports_tool_failure():

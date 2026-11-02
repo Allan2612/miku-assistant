@@ -44,6 +44,17 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- Órdenes dobles con la segunda en "usted" o mal transcrita ("Póngale pausa y sérame todas las ventanas"): el atajo local solo pausaba; ahora toda la frase va a Gemini.
+- "¡Sí!" respondiendo a una pregunta suya se descartaba como eco del "¿Sí?" de activación, y ella se iba: ese filtro solo aplica justo después del aviso.
+- Llamadas reales descartadas como activación falsa: un "Hey Miku" transcrito como tres palabras ya no basta para descartarla, y una orden justo después siempre cuenta.
+- El saludo de inicio cortaba la primera respuesta cuando hablabas antes de que la voz terminara de cargar: si ya hablaste, no saluda.
+- "Apángese" (cómo Whisper escribe "apáguese") la oculta al instante en vez de ir a Gemini.
+- "En la pantalla derecha" ya no adjunta una captura de pantalla (era un monitor, no "mira mi pantalla"); las capturas de más de 1920 px se envían a la mitad.
+- Gemini colgado: se pasa al siguiente modelo a los 10 s (antes 15 s, y pasó dos veces).
+- Repetir un video de YouTube (`youtube_player` loop, extensión 1.2.0): decía "ya la puse en bucle" sin poder hacerlo.
+
+### Añadido
+- Cada turno deja en el log cuánto tardó cada parte: "Turn timing: transcription, answer, voice".
 - Charla tras una orden ("¿cómo estás hoy?", "gracias, te amo") repetía la orden anterior (pausó la música, volvió a poner el volumen al 75 %): Gemini recibe ahora también la transcripción junto al audio, y la regla de responder solo al último mensaje.
 - "Hey Miku" dicho bajito y luego una orden ("Cierra me OBS Studio") se descartaba como activación falsa: un clip silencioso seguido de una orden o una despedida ya cuenta como llamada real.
 - Etiquetas sueltas en la respuesta ("un [yatta] café") ya no salen en el subtítulo ni en la voz.

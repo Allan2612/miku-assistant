@@ -353,7 +353,7 @@ def test_false_wake_words_never_reach_gemini():
         assert _SAYS_MIKU.search(text), text
 
     # Clearly false (clips of 26-oct): a sentence of other talk, or near silence
-    server, brain, p = asyncio.run(_wake("Cuatro más, el mejor de cinco.", "abre spotify"))
+    server, brain, p = asyncio.run(_wake("Cuatro más, el mejor de cinco.", "y entonces ganamos la partida"))
     assert brain.heard == [] and "hide" in server.sent and not p.wakeword.paused, server.sent
     server, brain, _ = asyncio.run(_wake("", "y entonces le dije que no", loud=False))
     assert brain.heard == [] and "hide" in server.sent, "nobody spoke to her"
@@ -373,6 +373,19 @@ def test_false_wake_words_never_reach_gemini():
     assert brain.heard == ["abre spotify"]
     _, brain, _ = asyncio.run(_wake("Tenía que explotar la", "Miku, abre spotify"))  # the name is in the phrase
     assert brain.heard == ["Miku, abre spotify"]
+    # Log 1-nov: "Hey Miku" heard as three words, then the order
+    _, brain, _ = asyncio.run(_wake("¡Granza de la...", "qué hora es"))
+    assert brain.heard == ["qué hora es"]
+    # An order right after, whatever the clip said
+    _, brain, _ = asyncio.run(_wake("Cuatro más, el mejor de cinco.", "abre spotify"))
+    assert brain.heard == ["abre spotify"]
+    # Right after her "¿Sí?" cue a "sí" is its echo; in a conversation it answers her question (log 1-nov)
+    _, brain, _ = asyncio.run(_wake("", "¡Sí!", clip=False))
+    assert brain.heard == []
+    _, brain, p = asyncio.run(_wake("", "abre spotify", clip=False))
+    p.stt = FakeSTT("¡Sí!")
+    asyncio.run(p._listen_and_answer(initial_timeout=1.0))
+    assert brain.heard == ["abre spotify", "¡Sí!"], brain.heard
     server, brain, _ = asyncio.run(_wake("", "abre spotify", clip=False))  # hotkey or click: no check
     assert brain.heard == ["abre spotify"] and "hide" not in server.sent
 

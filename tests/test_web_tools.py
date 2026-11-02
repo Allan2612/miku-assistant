@@ -153,6 +153,9 @@ def test_youtube_player_picks_the_video_and_reports_its_state():
     res = web.youtube_player("play")
     assert not res["ok"] and "en pausa" in res["result"], res
     assert web.youtube_player("pause")["ok"]
+    # Repeat: she said "ya la puse en bucle" with no way to do it (log 1-nov)
+    state["loop"] = True
+    assert web.youtube_player("loop")["result"].startswith("Repetición activada")
 
     # What the page said goes back to the model ("ese video solo tiene: ...")
     b.run = lambda cmd, **args: {"ok": False, "error": "ese video solo tiene: 720p, 480p"}

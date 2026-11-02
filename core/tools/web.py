@@ -269,7 +269,7 @@ def browser_tabs(action: str, tab_ids: List[int]) -> Dict[str, Any]:
 
 
 _PLAYER_ACTIONS = {"play", "pause", "volume", "volume_up", "volume_down", "mute", "unmute", "quality", "captions_on",
-                   "captions_off", "speed", "forward", "back", "next"}
+                   "captions_off", "speed", "forward", "back", "next", "loop"}
 
 
 def _youtube_tab() -> Optional[Dict[str, Any]]:
@@ -293,6 +293,8 @@ def _player_result(act: str, value: str, s: Dict[str, Any]) -> str:
         return f"{'Adelanté' if act == 'forward' else 'Retrocedí'} {value or 10} segundos."
     if act == "next":
         return "Puse el siguiente video."
+    if act == "loop":
+        return "Repetición activada: el video vuelve a empezar al terminar." if s.get("loop") else "Repetición desactivada."
     return "Video en reproducción." if s.get("playing") else "Video en pausa."
 
 
@@ -302,7 +304,8 @@ def _player_result(act: str, value: str, s: Dict[str, Any]) -> str:
         "Controla el reproductor de un video de YouTube abierto en Opera (NO el volumen de Windows: para ese, "
         "set_volume). action = play | pause | volume (value 0-100) | volume_up | volume_down (value = cuánto, "
         "por defecto 15) | mute | unmute | quality (value: '1080p', '720p', 'max', 'min') | captions_on | "
-        "captions_off | speed (value 0.25-2) | forward | back (value = segundos) | next. tab_id: la pestaña de "
+        "captions_off | speed (value 0.25-2) | forward | back (value = segundos) | next | loop (repetir el video; "
+        "value 'off' lo quita). tab_id: la pestaña de "
         "YouTube del estado del PC; 0 = la que suena, o la que abrió Miku."
     ),
 )

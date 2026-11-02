@@ -87,4 +87,8 @@ def capture_screen_png() -> bytes:
         if old_ctx:
             user32.SetThreadDpiAwarenessContext(old_ctx)
     bgra = np.frombuffer(buf.raw, np.uint8).reshape(h, w, 4)
+    if w > 1920:
+        # Half size: a 2560x1440 game screen was a 3.6 MB upload (log 1-nov); Gemini scales images down anyway
+        h, w = h // 2 * 2, w // 2 * 2
+        bgra = bgra[:h, :w].reshape(h // 2, 2, w // 2, 2, 4).mean(axis=(1, 3)).astype(np.uint8)
     return encode_png(bgra[:, :, 2::-1])  # BGR(A) -> RGB

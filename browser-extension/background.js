@@ -94,6 +94,7 @@ async function youtubeControl(action, value) {
                    hd1440: "1440p", hd2160: "2160p (4K)", highres: "más de 4K" };
   const levels = () => p.getAvailableQualityLevels().filter((q) => q !== "auto");
   const captions = () => document.querySelector(".ytp-subtitles-button");
+  const video = () => document.querySelector("video.html5-main-video") || {};
   const n = Number(value);
   const playing = () => [1, 3].includes(p.getPlayerState()); // 3 = buffering, right after play
   // Play and pause take a moment: report the state they reached, not the one before (log 27-oct)
@@ -138,13 +139,14 @@ async function youtubeControl(action, value) {
     case "forward": p.seekTo(p.getCurrentTime() + (n || 10), true); break;
     case "back": p.seekTo(Math.max(0, p.getCurrentTime() - (n || 10)), true); break;
     case "next": p.nextVideo(); break;
+    case "loop": video().loop = !/^(off|no|0|false)$/i.test(String(value)); break;
     default: return { error: `acción desconocida: ${action}` };
   }
   const q = p.getPlaybackQuality();
   return {
     volume: p.getVolume(), muted: p.isMuted(), quality: LABELS[q] || q, rate: p.getPlaybackRate(),
     playing: playing(),
-    captions: captions() ? captions().getAttribute("aria-pressed") === "true" : null,
+    captions: captions() ? captions().getAttribute("aria-pressed") === "true" : null, loop: Boolean(video().loop),
     qualities: levels().map((k) => LABELS[k] || k), title: document.title.replace(/ - YouTube$/, ""),
   };
 }

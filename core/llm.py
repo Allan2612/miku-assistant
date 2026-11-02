@@ -117,7 +117,9 @@ CLAIMED_ACTION_RE = re.compile(
 
 # The user asks about the screen: a screenshot rides in the same single request (never taken otherwise)
 SCREEN_RE = re.compile(
-    r"\b(?:(?:mi |la |esta |en )?pantalla|qu[eé] ves|mira (?:esto|esta|este|aqu[ií])|este error|esta ventana)\b",
+    # "la pantalla derecha" is a monitor, not "look at my screen": that screenshot cost 3.6 MB and seconds (log 1-nov)
+    r"\b(?:(?:mi |la |esta |en )?pantalla(?!\s+(?:de\s+la\s+)?(?:derecha|izquierda|principal|secundaria|uno|dos|\d))"
+    r"|qu[eé] ves|mira (?:esto|esta|este|aqu[ií])|este error|esta ventana)\b",
     re.IGNORECASE,
 )
 # Something on screen by position: "ábreme la segunda opción" (log 06:13: it searched again, blind). The
@@ -146,7 +148,7 @@ FAREWELL_KEYWORDS = [
     "ocúltate", "ocultate", "escóndete", "escondete", "desaparece", "bye", "goodbye", "eso era todo",
     # usted forms and how Whisper writes them (log 27-oct: "Nada, nada. Cúltese.", "Miku, apaguece!")
     "ocúltese", "ocultese", "cúltese", "cultese", "escóndase", "escondase", "váyase", "vayase",
-    "apágate", "apagate", "apáguese", "apaguese", "apaguece",
+    "apágate", "apagate", "apáguese", "apaguese", "apaguece", "apángese", "apangese", "apángate", "apangate",
     "no te necesito", "ya no te necesito", "ya terminé", "ya termine", "puedes irte", "te puedes ir",
 ]
 # Goodbyes only when they are the WHOLE phrase: "¿ya está abierto Spotify?" or "gracias por abrirlo, ahora..."
@@ -160,7 +162,7 @@ FAREWELL_EXACT = {
 # Orders to hide: she just goes, without a word
 HIDE_NOW = {"ocúltate", "ocultate", "ocúltese", "ocultese", "cúltese", "cultese", "escóndete", "escondete",
             "escóndase", "escondase", "vete", "váyase", "vayase", "desaparece", "apágate", "apagate", "apáguese",
-            "apaguese", "apaguece", "duérmete", "duermete", "puedes irte", "te puedes ir", "puede irse"}
+            "apaguese", "apaguece", "apángese", "apangese", "apángate", "apangate", "duérmete", "duermete", "puedes irte", "te puedes ir", "puede irse"}
 # A short phrase made only of these, with at least one goodbye word, is a goodbye: "listo, eso era todo, gracias"
 _BYE_WORDS = {"gracias", "chao", "chau", "adiós", "adios", "bye", "olvídalo", "olvidalo", "déjalo", "dejalo", "listo",
               "nada"}
@@ -178,6 +180,9 @@ _ORDER_HINT = re.compile(
 _ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
 # Follow-up requests after the first one: tool results back to the model, a nudge, or a second tool step
 MAX_TOOL_ROUNDS = 3
+# A request that hangs waits this long before the next model in the chain: 15 s twice per 504 (log 1-nov), when a
+# normal answer takes 1-6 s
+GEMINI_TIMEOUT_MS = 10_000
 HISTORY_MAX_AGE_S = 12 * 3600  # a saved conversation older than this comes back marked as a past one
 NUDGE_TEXT = (
     "(Aviso del sistema) Dijiste que hiciste una acción, pero no llamaste ninguna herramienta, así que no ocurrió. "
@@ -186,7 +191,10 @@ NUDGE_TEXT = (
 _CHAINED_ORDER = re.compile(
     r"(?:\by\b|,|\bluego\b|\bdespu[eé]s\b|\btambi[eé]n\b)\s*(?:me\s+)?"
     r"(?:abre|[aá]breme|cierra|pon|ponme|sube|s[uú]bele|baja|b[aá]jale|busca|reproduce|minimiza|anota|apunta"
-    r"|recu[eé]rdame|copia|silencia|pausa|apaga|quita)\b"
+    r"|recu[eé]rdame|copia|silencia|pausa|apaga|quita"
+    # Usted forms and Whisper's spellings with a pronoun: "Póngale pausa y sérame todas las ventanas" only paused
+    # (log 1-nov)
+    r"|cierre|abra|ponga|suba|baje|busque|minimice|maximice|quite|\w{2,}(?:ame|eme|ale|ele))\b"
 )
 GOODBYE_ANSWERS = ("¡Vale! Aquí estaré si me necesitas.", "¡Hasta luego!", "¡Nos vemos!", "¡Chao, chao!")
 THANKS_ANSWERS = ("¡De nada! Llámame cuando quieras.", "¡Con gusto! Aquí estaré.")
@@ -236,7 +244,7 @@ class MikuBrain:
             logger.warning("GEMINI_API_KEY is not set in environment!")
 
         # 15 s per HTTP request: a hung connection must fail so the model fallback can kick in (H-026)
-        self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=15_000))
+        self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS))
         self.tools = get_registered_tools()
         self.total_api_calls = 0
         self._last_query_text = ""

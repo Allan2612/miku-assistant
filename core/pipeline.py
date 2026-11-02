@@ -73,8 +73,10 @@ WAKE_CHECK_TIMEOUT_S = 6.0
 # Loudest 0.2 s of the clip below this: nobody spoke. False ones measured 0.0008-0.002; a real, quiet "Hey Miku"
 # measured 0.0043 (27-oct 13:12, rejected at 0.005 while the user then gave a clear order)
 WAKE_SILENCE_RMS = 0.003
-WAKE_SENTENCE_WORDS = 3  # this many words without "Miku" is someone talking about something else
-# An order in the first words of the phrase: said to her even when the clip came out silent (log 27-oct: a quiet
+# This many words without "Miku" is someone talking about something else. 3 dropped a real call: a "Hey Miku" heard
+# as "¡Granza de la..." (log 1-nov)
+WAKE_SENTENCE_WORDS = 4
+# An order in the first words of the phrase is said to her, whatever the clip sounded like (log 27-oct: a quiet
 # "Hey Miku" then "Cierra me OBS Studio" was dropped as a false wake word)
 _ORDER_START = re.compile(
     r"^\W*(?:\w+\W+){0,2}?(?:abr|cierr|pon|apag|sub|baj|busc|reproduc|minimiz|maximiz|anot|apunt|recu[eé]rd|copi"
@@ -132,6 +134,7 @@ class MikuPipeline:
         # still on screen, talking with the user
         self.hide_after_s = hide_after_s
         self._last_turn_at = float("-inf")
+        self._heard_user = False  # someone already talked to her: the startup greeting is skipped
         self.wakeword: Optional[Any] = None
 
         self._pipeline_lock = asyncio.Lock()
@@ -430,7 +433,8 @@ class MikuPipeline:
                 await self.server.broadcast({"type": "expression", "name": "neutral"})
 
                 # 8 s: at 5.5 s the user often started late, and what they said went nowhere
-                await self._listen_and_answer(initial_timeout=8.0, stt_warmup=stt_warmup, wake_check=wake_check)
+                await self._listen_and_answer(
+                    initial_timeout=8.0, stt_warmup=stt_warmup, wake_check=wake_check, after_cue=True)
 
             except Exception:
                 logger.exception("Error in voice activation pipeline")
@@ -461,9 +465,9 @@ class MikuPipeline:
         # "Miku, abre Spotify" in one breath: the name may land in the phrase instead of the clip
         if _SAYS_MIKU.search(clip_text) or _SAYS_MIKU.search(heard):
             return True
-        silent = peak < WAKE_SILENCE_RMS
-        if silent and (_ORDER_START.search(heard) or self.brain.is_farewell(heard)):
+        if _ORDER_START.search(heard) or self.brain.is_farewell(heard):
             return True
+        silent = peak < WAKE_SILENCE_RMS
         if not silent and len(re.findall(r"\w+", clip_text)) < WAKE_SENTENCE_WORDS:
             return True  # empty or a word or two: what a misheard "Hey Miku" looks like
         logger.info("False wake word (%s): the clip said %r. Hiding without answering.",
@@ -475,7 +479,8 @@ class MikuPipeline:
         return False
 
     async def _listen_and_answer(
-        self, initial_timeout: float, stt_warmup: Optional[asyncio.Task] = None, wake_check: Optional[asyncio.Task] = None
+        self, initial_timeout: float, stt_warmup: Optional[asyncio.Task] = None, wake_check: Optional[asyncio.Task] = None,
+        after_cue: bool = False,
     ) -> None:
         """Records one phrase, transcribes it and answers it. Runs under the pipeline lock, mic state already shown."""
         # 3. Capture phrase from microphone with VAD
@@ -497,6 +502,7 @@ class MikuPipeline:
             return
 
         # 4. Indicate thinking state to UI
+        heard_at = time.monotonic()
         await self.server.broadcast({"type": "state", "value": "thinking"})
         await self.server.broadcast({"type": "expression", "name": "thinking"})
 
@@ -515,7 +521,8 @@ class MikuPipeline:
         if heard in WHISPER_HALLUCINATIONS or "amaraorg" in heard.replace(" ", ""):
             logger.info("Transcription is a known Whisper hallucination (%r). Ignoring.", transcribed_text)
             transcribed_text = ""
-        elif heard in _ACK_NORMALIZED:
+        # Only right after the cue: in a conversation "¡Sí!" is the answer to her question (log 1-nov: ignored, she left)
+        elif after_cue and heard in _ACK_NORMALIZED:
             logger.info("Transcription is just the acknowledgement cue (%r). Ignoring.", transcribed_text)
             transcribed_text = ""
         # Conversation mode opens the mic right after she speaks: the tail of her own answer must not
@@ -541,12 +548,19 @@ class MikuPipeline:
         })
 
         # 7. One Gemini request hears the audio itself (Whisper's text only gates and drives the fast path)
+        self._heard_user = True
         self.resources.touch()
+        brain_at = time.monotonic()
         emotion, answer, is_farewell = await self.brain.chat(transcribed_text, audio=audio)
         self._pending_farewell = is_farewell
 
         # 8. Synthesize speech (edge-tts -> RVC) and speak
+        voice_at = time.monotonic()
         await self._speak(answer, emotion, farewell=is_farewell)
+        # Where the wait goes, turn by turn ("tarda mucho en responder", 2-nov)
+        done = time.monotonic()
+        logger.info("Turn timing: transcription %.1fs, answer %.1fs, voice %.1fs = %.1fs from the end of speech.",
+                    brain_at - heard_at, voice_at - brain_at, done - voice_at, done - heard_at)
 
     async def _follow_up(self) -> None:
         """Conversation mode: after an answer the mic stays open a few seconds, no wake word needed."""
@@ -677,8 +691,12 @@ class MikuPipeline:
             else:
                 greeting = "¡Buenas noches! ¿Qué necesitas hoy?"
 
-            logger.info("Playing startup greeting: %s", greeting)
             async with self._pipeline_lock:
+                # Called before the greeting was ready: the greeting would cut her answer off (log 1-nov)
+                if self._heard_user:
+                    logger.info("Startup greeting skipped: the user already talked to her.")
+                    return
+                logger.info("Playing startup greeting: %s", greeting)
                 await self.server.broadcast({"type": "show"})
                 await self._speak(greeting, "happy", cache=True, gesture="greet")  # fixed phrase
         except Exception:
