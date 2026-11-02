@@ -43,7 +43,7 @@ Miku tiene una sola voz: si RVC está cargando, la respuesta espera; si falla, r
 
 | Ruta | Contenido |
 |---|---|
-| [core/](core/) | Backend: `server.py` (WebSocket), `pipeline.py` (orquestación), `llm.py` (Gemini, bucle de agente), `state.py` (estado del PC), `browser.py` (puente con Opera), `stt.py`, `tts.py`, `rvc.py` + `rvc_worker.py`, `wakeword.py`, `audio_in.py`, `resources.py` |
+| [core/](core/) | Backend: `server.py` (WebSocket), `pipeline.py` (orquestación), `llm.py` (Gemini, bucle de agente), `intent.py` (qué es cada frase oída), `state.py` (estado del PC), `browser.py` (puente con Opera), `stt.py`, `tts.py`, `rvc.py` + `rvc_worker.py`, `wakeword.py`, `audio_in.py`, `resources.py` |
 | [core/tools/](core/tools/) | Herramientas del PC: apps, ventanas, archivos, media, notas, memoria, rutinas, sistema, temporizadores, web |
 | [browser-extension/](browser-extension/) | Extensión de Opera (pestañas por número); instalación en su [README](browser-extension/README.md) |
 | [core/infer_pack/](core/infer_pack/) | Modelos de RVC (VITS, RMVPE) |

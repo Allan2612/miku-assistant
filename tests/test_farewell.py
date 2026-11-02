@@ -3,11 +3,7 @@
 Run: core\\.venv\\Scripts\\python.exe -m tests.test_farewell  (or with pytest)
 """
 
-from core.llm import MikuBrain
-
-
-def is_farewell(text):
-    return MikuBrain.is_farewell(None, text)
+from core.intent import is_farewell
 
 
 def test_farewell():

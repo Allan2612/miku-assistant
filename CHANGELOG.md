@@ -17,6 +17,8 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Modelo principal `gemini-3.5-flash-lite`, con el pensamiento al mínimo: los tokens de pensamiento agotaban el límite y dejaban respuestas vacías.
 - La ventana arranca sin `--js-flags=--lite-mode`: ahorraba 1 MB, pero Live2D gastaba 5 veces más CPU y Miku tardaba en aparecer.
 - Leer notas y temporizadores suena natural: sin fechas, viñetas ni `#`.
+- **Todas las reglas de palabras en un solo sitio** (`core/intent.py`): si una frase es ruido, el eco de su voz, una orden de ocultarse, una despedida, una orden o charla. Antes había unas 20 listas repartidas entre `pipeline.py` y `llm.py` que decidían cada una por su cuenta. Una frase mal oída en un log se arregla ahora con una línea en la tabla de `tests/test_intent.py`, que trae las frases reales que fallaron.
+- Las órdenes con tilde ("súbele", "ábreme", "póngale") cuentan como orden al comprobar una activación dudosa, y "Gracias, cierre Spotify" ya no se toma por una despedida: las formas de usted valen igual en todas las reglas.
 
 ### Añadido
 - **Miku se mueve con vida propia** (`docs/plan-expresiones.md`, fases 1-6): motor de capas propio en lugar de las animaciones al azar del modelo. Respira y se balancea con ruido suave, cambia el peso cada 8-15 s, parpadea como una persona (a veces dos veces, y al mirar a otro lado), mueve los ojos a saltos y la cabeza los sigue; el pelo, la corbata y la falda reaccionan.

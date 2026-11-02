@@ -16,7 +16,8 @@ import core.tools.routines as routines
 import core.tools.system as system
 import core.tools.timers as timers
 import core.tools.web as web
-from core.llm import CLAIMED_ACTION_RE, POSITION_RE, SCREEN_RE, MikuBrain
+from core.intent import asks_about_screen, points_at_screen
+from core.llm import CLAIMED_ACTION_RE, MikuBrain
 from core.tools.apps import _spoken_app_list
 
 calls = []
@@ -193,17 +194,17 @@ def test_claimed_action_detector():
 def test_screenshot_trigger():
     for text in ("qué ves en mi pantalla", "¿Qué ves?", "mira esto", "ayúdame con este error",
                  "qué hay en la pantalla", "lee lo que dice esta ventana"):
-        assert SCREEN_RE.search(text), text
+        assert asks_about_screen(text), text
     for text in ("abre spotify", "cuéntame un chiste", "me mandaron un pantallazo", "ves la tele?", "qué hora es"):
-        assert not SCREEN_RE.search(text), text
+        assert not asks_about_screen(text), text
 
 
 def test_position_references():
     # Log 06:13: "ármeme la segunda opción" repeated the search: she could not see the results
     for text in ("Muy bien, ábreme la segunda opción.", "abre el primer resultado", "dale a ese enlace", "la tercera opción"):
-        assert POSITION_RE.search(text), text
+        assert points_at_screen(text), text
     for text in ("primero abre spotify", "esta es mi opinión", "segundo plano"):
-        assert not POSITION_RE.search(text), text
+        assert not points_at_screen(text), text
 
 
 def test_answer_parsing():

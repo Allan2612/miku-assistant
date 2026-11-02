@@ -125,6 +125,7 @@ miku-assistant/
    ├─ pipeline.py          # orquesta el flujo y dispara el pre-calentamiento
    ├─ audio_in.py          # mic + VAD
    ├─ stt.py               # faster-whisper (CPU int8, descargable)
+   ├─ intent.py            # qué es una frase oída (ruido, eco, ocultarse, despedida, orden, charla): todas las listas de palabras
    ├─ llm.py               # Gemini: una petición por turno, atajo local, historial, memoria
    ├─ screen.py            # captura de pantalla (GDI, sin Pillow) para "¿qué ves?"
    ├─ tts.py               # edge-tts

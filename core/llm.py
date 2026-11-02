@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+from core import intent
 from core.tools import get_registered_tools, get_tool_metadata, note_user_reply
 from core.browser import bridge
 from core.screen import capture_screen_png
@@ -94,8 +95,7 @@ DEFAULT_FALLBACKS = (
 # Rejects thinking_level MINIMAL (400)
 THINKING_LOW_MODELS = {"gemini-3.8-flash"}
 
-# Start of a fast-path command: Whisper often keeps the wake phrase ("Hey Miku, abre...")
-_WAKE = r"^(?:(?:hey|oye|ey)\s+)?(?:miku\s*[,.]?\s*)?"
+_WAKE = intent.WAKE_PREFIX  # start of a fast-path command
 _SPOKEN_NUMBERS = {"un": 1, "una": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "diez": 10,
                    "quince": 15, "veinte": 20, "treinta": 30, "media": 0.5}
 
@@ -115,23 +115,6 @@ CLAIMED_ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 
-# The user asks about the screen: a screenshot rides in the same single request (never taken otherwise)
-SCREEN_RE = re.compile(
-    # "la pantalla derecha" is a monitor, not "look at my screen": that screenshot cost 3.6 MB and seconds (log 1-nov)
-    r"\b(?:(?:mi |la |esta |en )?pantalla(?!\s+(?:de\s+la\s+)?(?:derecha|izquierda|principal|secundaria|uno|dos|\d))"
-    r"|qu[eé] ves|mira (?:esto|esta|este|aqu[ií])|este error|esta ventana)\b",
-    re.IGNORECASE,
-)
-# Something on screen by position: "ábreme la segunda opción" (log 06:13: it searched again, blind). The
-# extension's visible results answer it without an image; a screenshot is the fallback
-POSITION_RE = re.compile(
-    r"\b(?:(?:primer|segund|tercer|cuart|quint|últim|ultim)[oa]?\s+(?:opci[oó]n|resultado|enlace|link|v[ií]deo)"
-    r"|(?:ese|esa|este|esta)\s+(?:enlace|link|resultado|opci[oó]n|bot[oó]n))\b",
-    re.IGNORECASE,
-)
-
-
-
 def _to_wav(audio: np.ndarray, sample_rate: int = 16000) -> bytes:
     """Encodes 16 kHz float32 mono audio as 16-bit PCM WAV bytes."""
     buf = io.BytesIO()
@@ -142,40 +125,9 @@ def _to_wav(audio: np.ndarray, sample_rate: int = 16000) -> bytes:
         w.writeframes((np.clip(np.asarray(audio, dtype=np.float32).flatten(), -1.0, 1.0) * 32767).astype(np.int16).tobytes())
     return buf.getvalue()
 
-FAREWELL_KEYWORDS = [
-    "adios", "adiós", "chao", "chau", "hasta luego", "nos vemos",
-    "gracias, eso es todo", "eso es todo", "eso sería todo", "nada más", "vete", "duérmete", "duermete",
-    "ocúltate", "ocultate", "escóndete", "escondete", "desaparece", "bye", "goodbye", "eso era todo",
-    # usted forms and how Whisper writes them (log 27-oct: "Nada, nada. Cúltese.", "Miku, apaguece!")
-    "ocúltese", "ocultese", "cúltese", "cultese", "escóndase", "escondase", "váyase", "vayase",
-    "apágate", "apagate", "apáguese", "apaguese", "apaguece", "apángese", "apangese", "apángate", "apangate",
-    "no te necesito", "ya no te necesito", "ya terminé", "ya termine", "puedes irte", "te puedes ir",
-]
-# Goodbyes only when they are the WHOLE phrase: "¿ya está abierto Spotify?" or "gracias por abrirlo, ahora..."
-# are not (punctuation and "Miku" are ignored)
-FAREWELL_EXACT = {
-    "ya está", "ya esta", "listo", "ya", "nada", "no nada", "gracias", "muchas gracias", "gracias miku",
-    "listo gracias", "ok gracias", "vale gracias", "no gracias", "nada gracias", "ya está gracias", "ya esta gracias",
-    "así está bien", "asi esta bien", "está bien gracias", "esta bien gracias",
-    "no era nada", "me equivoqué", "me equivoque", "olvídalo", "olvidalo", "déjalo", "dejalo", "no importa",
-}
-# Orders to hide: she just goes, without a word
-HIDE_NOW = {"ocúltate", "ocultate", "ocúltese", "ocultese", "cúltese", "cultese", "escóndete", "escondete",
-            "escóndase", "escondase", "vete", "váyase", "vayase", "desaparece", "apágate", "apagate", "apáguese",
-            "apaguese", "apaguece", "apángese", "apangese", "apángate", "apangate", "duérmete", "duermete", "puedes irte", "te puedes ir", "puede irse"}
-# A short phrase made only of these, with at least one goodbye word, is a goodbye: "listo, eso era todo, gracias"
-_BYE_WORDS = {"gracias", "chao", "chau", "adiós", "adios", "bye", "olvídalo", "olvidalo", "déjalo", "dejalo", "listo",
-              "nada"}
-_BYE_FILLER = {"ya", "no", "ok", "vale", "bueno", "muchas", "mil", "eso", "es", "era", "sería", "seria", "todo", "así",
-               "asi", "está", "esta", "bien", "por", "ahora", "de", "verdad", "entonces", "pues", "más", "mas"}
-# Words that do not change a hide order: "Nada, nada. Ocúltese", "Ya, Miku, vete"
-_HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor"}
 # Gemini ends its answer with this when the user says goodbye in words no list catches (system prompt)
 _BYE_TAG = re.compile(r"\s*\[adi[oó]s\]\s*", re.IGNORECASE)
 TRANSCRIPT_HINT = "(Transcripción automática, puede tener errores: "
-_ORDER_HINT = re.compile(
-    r"\b(?:abre|cierra|pon|ponme|apaga|sube|baja|busca|reproduce|minimiza|anota|apunta|recu[eé]rdame|copia)\b"
-)
 # The user asks whether the last action happened: answering "sí, lo apunté" is then not a claim
 _ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
 # Follow-up requests after the first one: tool results back to the model, a nudge, or a second tool step
@@ -188,14 +140,6 @@ NUDGE_TEXT = (
     "(Aviso del sistema) Dijiste que hiciste una acción, pero no llamaste ninguna herramienta, así que no ocurrió. "
     "Si el usuario pidió una acción, llama ahora la herramienta adecuada. Si no, responde sin decir que la hiciste."
 )
-_CHAINED_ORDER = re.compile(
-    r"(?:\by\b|,|\bluego\b|\bdespu[eé]s\b|\btambi[eé]n\b)\s*(?:me\s+)?"
-    r"(?:abre|[aá]breme|cierra|pon|ponme|sube|s[uú]bele|baja|b[aá]jale|busca|reproduce|minimiza|anota|apunta"
-    r"|recu[eé]rdame|copia|silencia|pausa|apaga|quita"
-    # Usted forms and Whisper's spellings with a pronoun: "Póngale pausa y sérame todas las ventanas" only paused
-    # (log 1-nov)
-    r"|cierre|abra|ponga|suba|baje|busque|minimice|maximice|quite|\w{2,}(?:ame|eme|ale|ele))\b"
-)
 GOODBYE_ANSWERS = ("¡Vale! Aquí estaré si me necesitas.", "¡Hasta luego!", "¡Nos vemos!", "¡Chao, chao!")
 THANKS_ANSWERS = ("¡De nada! Llámame cuando quieras.", "¡Con gusto! Aquí estaré.")
 
@@ -205,12 +149,6 @@ OUT_OF_ENERGY_RESPONSES: List[Tuple[str, str]] = [
     ("sad", "Ay, maestro... se me agotó la energía mágica por ahora. ¿Podemos esperar un momentito antes de seguir?"),
     ("neutral", "¡Batería en cero coma uno por ciento! Necesito comerme un puerro virtual y recargarme unos minutos."),
 ]
-
-
-def _bare(text: str) -> str:
-    """Words only, without "Miku" and repeats: "Nada, nada, Miku." -> "nada" (log 26-oct: cost a request)."""
-    words = [w for w in re.findall(r"[\wáéíóúñü]+", text.lower()) if w != "miku"]
-    return " ".join(w for i, w in enumerate(words) if i == 0 or w != words[i - 1])
 
 
 class MikuBrain:
@@ -267,22 +205,6 @@ class MikuBrain:
             self.primary_model,
             self.models_fallback,
         )
-
-    def is_farewell(self, user_text: str) -> bool:
-        # Short goodbyes only, whole words: "vete a la configuración y..." is not a farewell (H-027)
-        norm = user_text.lower().strip()
-        if len(norm.split()) > 6:
-            return False
-        bare = _bare(norm)
-        if bare in FAREWELL_EXACT:
-            return True
-        # Any short mix of goodbye and filler words: "Olvídalo, muchas gracias" was not in the list and she stayed
-        # (log 27-oct). Whisper writes "olvídalo" as "olvíalo" too: any "olvi..." counts
-        words = bare.split()
-        bye = [w for w in words if w in _BYE_WORDS or w.startswith(("olvi", "olví"))]
-        if bye and all(w in _BYE_FILLER or w in bye for w in words):
-            return True
-        return any(re.search(r"\b" + re.escape(kw) + r"\b", norm) for kw in FAREWELL_KEYWORDS)
 
     def _build_system_instruction(self) -> str:
         now = datetime.now()
@@ -562,8 +484,7 @@ class MikuBrain:
 
         # Several orders in one phrase ("abre Spotify y pon el volumen al 30"): the unanchored rules (volume,
         # music) would do only one of them. Gemini does all of them in its single request
-        # (minus the wake phrase: the comma in "Hey Miku, abre..." is not a second order)
-        if _CHAINED_ORDER.search(re.sub(_WAKE, "", low)):
+        if intent.has_chained_orders(low):
             return None
 
         # 0. Greetings with time-of-day awareness (0ms cloud latency, 0 API quota used)
@@ -736,9 +657,9 @@ class MikuBrain:
 
         # A plain goodbye ("ya está", "eso es todo", "gracias") hides her at once and costs no request; with an order
         # in it ("adiós, cierra Spotify") Gemini still handles the order and the farewell flag hides her after
-        if self.is_farewell(clean_input) and not _ORDER_HINT.search(clean_input.lower()):
-            # "¡De nada!" answers a thanks, not an "Adiós" (log 06:17)
-            if " ".join(w for w in _bare(clean_input).split() if w not in _HIDE_FILLER) in HIDE_NOW:
+        kind = intent.classify(clean_input)
+        if kind in ("hide", "farewell"):
+            if kind == "hide":
                 answer = ""  # the pipeline hides her at once
             else:
                 answer = random.choice(THANKS_ANSWERS if "gracias" in clean_input.lower() else GOODBYE_ANSWERS)
@@ -779,7 +700,7 @@ class MikuBrain:
 
         last_error = None
         screenshot = None
-        if SCREEN_RE.search(clean_input) or (POSITION_RE.search(clean_input) and not bridge.results):
+        if intent.asks_about_screen(clean_input) or (intent.points_at_screen(clean_input) and not bridge.results):
             try:
                 screenshot = await asyncio.to_thread(capture_screen_png)
                 logger.info("Attaching a screenshot (%.0f KB) to the request.", len(screenshot) / 1024)
@@ -850,7 +771,7 @@ class MikuBrain:
         said_bye = bool(_BYE_TAG.search(clean_text))
         clean_text = _BYE_TAG.sub(" ", clean_text).strip() or "¡Hasta luego!"
         self._remember(clean_input, f"[{emotion}] {clean_text}")
-        result = (emotion, clean_text, said_bye or self.is_farewell(clean_input))
+        result = (emotion, clean_text, said_bye or intent.is_farewell(clean_input))
         self._last_query_text = clean_input
         self._last_query_time = time.monotonic()
         self._last_result = result

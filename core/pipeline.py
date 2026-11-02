@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional, Any, Tuple
 import numpy as np
 
+from core import intent
 from core.llm import MikuBrain
 from core.tts import TTSManager
 from core.stt import STTManager
@@ -49,22 +50,6 @@ FILLER_PHRASES = ("Un momento...", "Mmm...", "Déjame pensar...", "Dame un segun
 GOODBYE_PHRASES = ("¡Adiós!", "¡Chao!", "¡Nos vemos!", "¡Hasta luego!", "Me voy, ¡llámame si me necesitas!")
 
 
-def _normalize(text: str) -> str:
-    return "".join(c for c in text.lower() if c.isalnum() or c == " ").strip()
-
-
-_ACK_NORMALIZED = {_normalize(p) for p in ACK_PHRASES} | {"si"}
-
-# What Whisper writes for noise or silence: it learned it from YouTube subtitles (seen twice in the log: 05:13 and
-# 05:23, both "¡Suscríbete!"). Never a real request
-WHISPER_HALLUCINATIONS = {_normalize(p) for p in (
-    "¡Suscríbete!", "Suscríbete al canal", "¡Suscríbete al canal!", "Gracias por ver", "Gracias por ver el video",
-    "Gracias por ver el vídeo", "¡Gracias por ver!", "Subtítulos por la comunidad de Amara.org",
-    "Subtítulos realizados por la comunidad de Amara.org", "Gracias por su atención", "Hasta la próxima",
-)}
-
-# "Miku" as Whisper writes it ("Hey Miku", "Ey, Micu", "Miko"); not "Mike" nor "mi cuerpo"
-_SAYS_MIKU = re.compile(r"\bm[iíy]\s?[kcq]{1,2}[uúo]\b", re.IGNORECASE)
 # False wake word activations score up to 0.99, so Whisper checks the 2 s clip while she listens. But it often
 # mishears a short real "Hey Miku" ("Maes.", "Más", nothing): 22 clips of 26-oct showed that rejecting every
 # clip without "Miku" hid her from real calls. Only clear cases are false: near silence, or a sentence of
@@ -76,13 +61,6 @@ WAKE_SILENCE_RMS = 0.003
 # This many words without "Miku" is someone talking about something else. 3 dropped a real call: a "Hey Miku" heard
 # as "¡Granza de la..." (log 1-nov)
 WAKE_SENTENCE_WORDS = 4
-# An order in the first words of the phrase is said to her, whatever the clip sounded like (log 27-oct: a quiet
-# "Hey Miku" then "Cierra me OBS Studio" was dropped as a false wake word)
-_ORDER_START = re.compile(
-    r"^\W*(?:\w+\W+){0,2}?(?:abr|cierr|pon|apag|sub|baj|busc|reproduc|minimiz|maximiz|anot|apunt|recu[eé]rd|copi"
-    r"|silenci|paus|quit)\w*",
-    re.IGNORECASE,
-)
 
 
 def _trim_silence(wav_bytes: bytes, threshold: float = 0.01, keep_s: float = 0.08) -> bytes:
@@ -463,9 +441,11 @@ class MikuPipeline:
         except Exception:
             return True
         # "Miku, abre Spotify" in one breath: the name may land in the phrase instead of the clip
-        if _SAYS_MIKU.search(clip_text) or _SAYS_MIKU.search(heard):
+        if intent.says_miku(clip_text) or intent.says_miku(heard):
             return True
-        if _ORDER_START.search(heard) or self.brain.is_farewell(heard):
+        # An order in the first words, or a goodbye, is said to her whatever the clip sounded like (log 27-oct: a
+        # quiet "Hey Miku" then "Cierra me OBS Studio" was dropped as a false wake word)
+        if intent.starts_with_order(heard) or intent.is_farewell(heard):
             return True
         silent = peak < WAKE_SILENCE_RMS
         if not silent and len(re.findall(r"\w+", clip_text)) < WAKE_SENTENCE_WORDS:
@@ -514,21 +494,12 @@ class MikuPipeline:
         # 5. Transcribe audio with faster-whisper on CPU
         transcribed_text = await self.stt.transcribe(audio)
 
-        # Miku's own cue picked up by the mic must never reach Gemini: "sí" would confirm
+        # Noise, or her own voice picked up by the mic, must never reach Gemini: her cue "¿Sí?" would confirm
         # a pending destructive action
-        heard = _normalize(transcribed_text)
-        # Whisper "hears" YouTube outros in noise: "¡Suscríbete!" made Gemini reopen the last web page (log, 24-oct)
-        if heard in WHISPER_HALLUCINATIONS or "amaraorg" in heard.replace(" ", ""):
-            logger.info("Transcription is a known Whisper hallucination (%r). Ignoring.", transcribed_text)
-            transcribed_text = ""
-        # Only right after the cue: in a conversation "¡Sí!" is the answer to her question (log 1-nov: ignored, she left)
-        elif after_cue and heard in _ACK_NORMALIZED:
-            logger.info("Transcription is just the acknowledgement cue (%r). Ignoring.", transcribed_text)
-            transcribed_text = ""
-        # Conversation mode opens the mic right after she speaks: the tail of her own answer must not
-        # come back as the user's next question
-        elif len(heard.split()) >= 2 and heard in _normalize(self._last_answer):
-            logger.info("Transcription is Miku's own last answer (%r). Ignoring.", transcribed_text)
+        kind = intent.classify(transcribed_text, cues=ACK_PHRASES if after_cue else (), last_answer=self._last_answer)
+        if transcribed_text and kind in ("noise", "echo"):
+            logger.info("Transcription is %s (%r). Ignoring.",
+                        "a known Whisper hallucination" if kind == "noise" else "Miku's own voice", transcribed_text)
             transcribed_text = ""
 
         if not await self._wake_was_real(wake_check, transcribed_text):

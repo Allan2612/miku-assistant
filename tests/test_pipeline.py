@@ -8,7 +8,8 @@ import asyncio
 import numpy as np
 
 from core.llm import MikuBrain
-from core.pipeline import _SAYS_MIKU, FILLER_PHRASES, FOLLOW_UP_DELAY_S, MikuPipeline
+from core.intent import says_miku
+from core.pipeline import FILLER_PHRASES, FOLLOW_UP_DELAY_S, MikuPipeline
 
 
 class FakeServer:
@@ -23,9 +24,6 @@ class FakeServer:
 class FakeBrain:
     def __init__(self, fail=False):
         self.fail = fail
-
-    def is_farewell(self, text):
-        return MikuBrain.is_farewell(None, text)
 
     async def chat(self, text, audio=None):
         if self.fail:
@@ -348,9 +346,9 @@ async def _wake(clip_text, phrase, mic_cls=FakeMic, clip=True, loud=True):
 
 def test_false_wake_words_never_reach_gemini():
     for text in ("¡Suscríbete!", "Discrúan", "Mike, que buena corta", "", "mi cuerpo", "Mikel"):
-        assert not _SAYS_MIKU.search(text), text
+        assert not says_miku(text), text
     for text in ("Hey Miku.", "Ey, Micu", "Oye Miko", "¡Hey, Mikú!", "En Miku necesito"):
-        assert _SAYS_MIKU.search(text), text
+        assert says_miku(text), text
 
     # Clearly false (clips of 26-oct): a sentence of other talk, or near silence
     server, brain, p = asyncio.run(_wake("Cuatro más, el mejor de cinco.", "y entonces ganamos la partida"))
