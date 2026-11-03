@@ -180,7 +180,7 @@ class MikuBrain:
         if not api_key:
             logger.warning("GEMINI_API_KEY is not set in environment!")
 
-        # 15 s per HTTP request: a hung connection must fail so the model fallback can kick in (H-026)
+        # GEMINI_TIMEOUT_MS per HTTP request: a hung connection must fail so the model fallback can kick in (H-026)
         self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS))
         self.tools = get_registered_tools()
         self.total_api_calls = 0
@@ -269,7 +269,7 @@ class MikuBrain:
             max_output_tokens=300,
             # Thinking tokens count against max_output_tokens: left on, they ate the 300 and the answer came back empty
             thinking_config=types.ThinkingConfig(thinking_level="MINIMAL"),
-            # The user's quota allows ONE request per turn: we run the tools locally and never send results back
+            # Off: our own agent loop runs the tools locally and decides when a result must go back to Gemini
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
 
@@ -487,7 +487,8 @@ class MikuBrain:
             return None
 
         # 0. Greetings with time-of-day awareness (0ms cloud latency, 0 API quota used)
-        if low in (
+        # Without punctuation: Whisper writes "Hola, Miku." and "Hola, ¿qué tal?", which went to Gemini
+        if " ".join(re.findall(r"\w+", low)) in (
             "hola", "hola miku", "hey miku", "buenos dias", "buenos días",
             "buenas tardes", "buenas noches", "saludos", "hola que tal", "hola qué tal"
         ):
@@ -541,15 +542,21 @@ class MikuBrain:
         if not for_player and re.search(r"\b(?:b[aá]j[aeá](?:le|me)?|bajar|disminu(?:ye|í)(?:le)?|menos)\s+(?:el\s+)?volumen\b", low):
             from core.tools.media import change_volume
             return confirm(change_volume(-15), "¡Listo, bajé el volumen!")
-        # "quita el silencio" asks for the opposite: leave unmuting to Gemini
-        if not for_player and (has_word("silencio", "silencia", "mutea", "mutear", "mute")
-                and not has_word("quita", "quitar", "desactiva", "desactivar", "desmutea", "unmute")):
+        # Mute, pause and play: the whole phrase only. A word anywhere acted on questions: "¿qué significa pausa
+        # en inglés?" paused the music, "¿cómo se dice silencio en japonés?" muted the PC (audit 3-nov).
+        # "quita el silencio" and "silencia el video" don't match: Gemini decides
+        if re.match(rf"{_WAKE}(?:(?:pon|activa(?:r)?)\s+(?:el\s+)?)?(?:silencio|silencia(?:r|lo)?|mutea(?:r|lo)?|mute)"
+                    r"(?:\s+(?:el\s+|la\s+)?(?:pc|computadora|sonido|todo))?$", low):
             from core.tools.media import mute
             return confirm(mute(True), "¡Silenciado!")
-        if has_word("pausa la música", "pausar música", "pausa la cancion", "pausa la canción", "pausa"):
+        # Log: "Pausa la música.", "Ponle pausa la canción.", "¡Pom pausa!"
+        if re.match(rf"{_WAKE}(?:(?:p[oó][nm](?:le|gale)?|dale)\s+)?pausa(?:r)?"
+                    r"(?:\s+(?:a\s+)?(?:la|el)\s+(?:m[uú]sica|canci[oó]n|v[ií]deo))?$", low):
             from core.tools.media import media_control
             return confirm(media_control("pause"), "Música pausada.")
-        if has_word("reanuda la música", "reproduce la música", "reproducir música", "pon la música", "play"):
+        if re.match(rf"{_WAKE}(?:(?:(?:dale|d[eé]le|pon(?:le)?)\s+)?(?:play|reanuda(?:r)?)"
+                    r"(?:\s+otra\s+vez|\s+(?:a\s+)?(?:la|el)\s+(?:m[uú]sica|canci[oó]n|v[ií]deo))?"
+                    r"|(?:reproduce|reproducir|pon|contin[uú]a)\s+la\s+m[uú]sica)$", low):
             from core.tools.media import media_control
             return confirm(media_control("play"), "¡Música reproduciéndose!")
 
@@ -618,7 +625,9 @@ class MikuBrain:
             return ("neutral", notes_res.get("result", "No tienes notas."), False)
 
         # 7. Desktop / System
-        if any(w in low for w in ["muestra el escritorio", "mostrar escritorio", "minimiza todo", "minimizar todo"]):
+        # The whole phrase: "minimiza todo menos Opera" minimized Opera too
+        if re.match(rf"{_WAKE}(?:(?:mu[eé]stra(?:me)?|mostrar|ens[eé][nñ]ame)\s+(?:el\s+)?escritorio"
+                    r"|minimiza(?:r|me)?\s+(?:todo|todas\s+las\s+ventanas))$", low):
             from core.tools.apps import show_desktop
             show_desktop()
             return ("happy", "¡Listo, te mostré el escritorio!", False)

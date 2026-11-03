@@ -22,7 +22,6 @@ declare const __APP_CONFIG__: {
   window?: {
     width?: number;
     height?: number;
-    anchor?: string;
     margin?: number;
     fps_visible?: number;
   };
@@ -35,7 +34,6 @@ declare const __APP_CONFIG__: {
   live2d?: {
     model?: string;
     scale?: number;
-    expressions?: Record<string, string | null>;
   };
 };
 
@@ -118,7 +116,11 @@ export function resetAutoHideTimer(): void {
     }
     // The backend says goodbye ("¡Adiós!") and then sends "hide"; hide anyway if that never comes
     ws.send({ type: "idle_timeout" });
-    autoHideTimer = window.setTimeout(() => hideMiku(), GOODBYE_FALLBACK_MS);
+    // The backend must know, or an answer still on its way plays (and opens the mic) with her hidden
+    autoHideTimer = window.setTimeout(() => {
+      ws.sendDismiss();
+      hideMiku();
+    }, GOODBYE_FALLBACK_MS);
   }, HIDE_AFTER_SECONDS * 1000);
 }
 

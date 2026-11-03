@@ -49,7 +49,15 @@ def test_no_hijacking():
     # A word of a local order inside another question (audit 2-nov)
     assert fast("¿A qué hora cierra el súper?") is None
     assert fast("borra mis pendientes") is None
+    # The same with media and desktop words (audit 3-nov)
+    for phrase in ("¿Qué significa pausa en inglés?", "¿Cómo se dice silencio en japonés?", "Minimiza todo menos Opera",
+                   "¿Qué es el modo play?"):
+        assert fast(phrase) is None, phrase
+    assert not calls, calls
     assert fast("¿Qué hora es?")[1].startswith("Son las")
+    # Greetings as Whisper writes them, with commas (3-nov)
+    for phrase in ("Hola, Miku.", "Hola, ¿qué tal?"):
+        assert fast(phrase) and fast(phrase)[0] == "happy", phrase
     fast("abre mi playlist favorita")
     assert not any(c[0] == "media_control" for c in calls), calls
     _setup()

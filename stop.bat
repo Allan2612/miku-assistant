@@ -15,7 +15,9 @@ echo [*] Cerrando backend de Miku y su worker de RVC...
 :: core\__main__.py writes its PID; /T also ends its child rvc_worker
 set "CORE_PID="
 if exist "cache\core.pid" set /p CORE_PID=<"cache\core.pid"
-if defined CORE_PID taskkill /PID %CORE_PID% /T /F >nul 2>&1
+:: Only if that PID is still our Python: after a reboot or a crash the file is stale, and the PID may now
+:: belong to any other program (taskkill /T would close it and its children)
+if defined CORE_PID powershell -NoProfile -Command "$p = Get-CimInstance Win32_Process -Filter 'ProcessId=%CORE_PID%'; if ($p -and $p.Name -match '^pythonw?\.exe$' -and $p.CommandLine -like '*-m core*') { taskkill /PID %CORE_PID% /T /F | Out-Null }"
 if exist "cache\core.pid" del "cache\core.pid"
 
 echo [*] Cerrando trabajadores de RVC huerfanos (si quedara alguno)...

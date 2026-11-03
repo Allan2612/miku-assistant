@@ -1,6 +1,6 @@
 hotkey: "Ctrl+Alt+M"
 language: "es"
-window: { width: 420, height: 620, anchor: "bottom-right", margin: 12, fps_visible: 30 }
+window: { width: 420, height: 620, margin: 12, fps_visible: 30 }
 behavior: { hide_after_seconds: 20, max_record_seconds: 10, silence_ms: 700, unload_after_minutes: 10, follow_up_seconds: 6 }  # follow_up: mic stays open after each answer, no "Hey Miku" (0 = off)
 llm: {
   model: "gemini-3.5-flash-lite",
@@ -22,8 +22,8 @@ stt: { model: "small", device: "cpu", compute_type: "int8", cpu_threads: 8 }  # 
 tts: { voice: "es-MX-DaliaNeural", rate: "+15%", pitch: "+30Hz" }
 rvc: { enabled: true, model: "models/rvc/miku_diva.pth", index: "models/rvc/miku_diva.index", f0_up_key: 6, index_rate: 0.5 }
 wakeword: { enabled: true, model: "models/wakeword/hey_miku.onnx", threshold: 0.35, patience: 1 }
-live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0, expressions: { happy: null, sad: null, surprised: null, angry: null, neutral: null } }
-tools: { confirm_destructive: true, file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }
+live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0 }
+tools: { file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }
 apps: {
   opera: "opera.exe",
   "opera gx": "opera.exe",

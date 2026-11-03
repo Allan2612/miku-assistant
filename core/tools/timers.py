@@ -108,28 +108,18 @@ def set_timer_notifier(callback: Callable[[str], Awaitable[None]], loop: Optiona
 
 
 def _schedule_worker(timer_id: int, duration_sec: float, label: str) -> Any:
-    global _MAIN_LOOP
-    target_loop = _MAIN_LOOP
-    if target_loop is None or target_loop.is_closed():
-        try:
-            target_loop = asyncio.get_running_loop()
-            _MAIN_LOOP = target_loop
-        except RuntimeError:
-            try:
-                target_loop = asyncio.get_event_loop()
-                _MAIN_LOOP = target_loop
-            except RuntimeError:
-                target_loop = None
-
-    if target_loop is not None and not target_loop.is_closed():
-        try:
-            curr = asyncio.get_running_loop()
-            if curr is target_loop:
-                return target_loop.create_task(_timer_worker(timer_id, duration_sec, label))
-        except RuntimeError:
-            pass
-        return asyncio.run_coroutine_threadsafe(_timer_worker(timer_id, duration_sec, label), target_loop)
-    return None
+    # Tools run in worker threads (asyncio.to_thread): from there the worker goes to the pipeline's loop
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    loop = _MAIN_LOOP if _MAIN_LOOP is not None and not _MAIN_LOOP.is_closed() else running
+    if loop is None:
+        return None
+    coro = _timer_worker(timer_id, duration_sec, label)
+    if loop is running:
+        return loop.create_task(coro)
+    return asyncio.run_coroutine_threadsafe(coro, loop)
 
 
 async def _timer_worker(timer_id: int, duration_seconds: float, label: str) -> None:

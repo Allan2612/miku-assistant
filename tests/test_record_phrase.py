@@ -21,6 +21,8 @@ SIGNAL = np.concatenate([np.zeros(8000, np.float32), speech, music])
 
 
 class FakeStream:
+    signal = SIGNAL
+
     def __init__(self, callback, blocksize, **_):
         self.callback, self.block, self.running = callback, blocksize, False
 
@@ -28,10 +30,11 @@ class FakeStream:
         self.running = True
 
         def feed():
-            for i in range(0, len(SIGNAL) - self.block, self.block):
+            sig = self.signal
+            for i in range(0, len(sig) - self.block, self.block):
                 if not self.running:
                     return
-                self.callback(SIGNAL[i:i + self.block].reshape(-1, 1), self.block, None, None)
+                self.callback(sig[i:i + self.block].reshape(-1, 1), self.block, None, None)
                 time.sleep(0.002)  # faster than real time; durations are counted per chunk
 
         threading.Thread(target=feed, daemon=True).start()
@@ -54,6 +57,17 @@ def test_music_does_not_keep_recording():
     assert rec is not None and expected - 0.3 < got < expected + 1.5, got
 
 
+def test_max_seconds_counts_from_speech_start():
+    # The user starts talking 5 s after the mic opens: max_seconds must not include that wait
+    audio_in.sd.InputStream = type("LateStart", (FakeStream,), {"signal": np.concatenate(
+        [np.zeros(16000 * 5, np.float32), speech, np.zeros(16000 * 2, np.float32)])})
+    rec = asyncio.run(audio_in.AudioInput().record_phrase(silence_ms=700, max_seconds=2, initial_timeout=8))
+    got = len(rec) / 16000
+    print(f"recorded {got:.1f}s with max_seconds=2 after a 5 s wait")
+    assert 1.8 < got < 2.6, got
+
+
 if __name__ == "__main__":
     test_music_does_not_keep_recording()
+    test_max_seconds_counts_from_speech_start()
     print("ok")

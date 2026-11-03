@@ -27,7 +27,7 @@ Hora y fecha actuales: {datetime}
 Si la respuesta corresponde a una despedida (detectada por palabras clave en lo que dijo el usuario), tras terminar de hablar se ejecuta `hide` inmediatamente, sin esperar el temporizador.
 
 ## Mapeo emoción → modelo
-**Pendiente:** el frontend aún no lee `config.yaml → live2d.expressions`. Hoy llama a la expresión del modelo con el nombre de la emoción y, si no existe, mueve parámetros fijos (`live2d.ts → setExpression`).
+El frontend llama a la expresión del modelo con el nombre de la emoción y, si no existe, mueve parámetros fijos (`live2d.ts → setExpression`).
 
 ## Frases fijas (sin LLM, para ahorrar tokens y latencia)
 - Al activarla (wake word, atajo o clic): una frase corta al azar ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!") y después escucha. El micrófono se abre cuando termina la frase. Se generan al arrancar con la voz de Miku y se guardan en `cache/voice/ack_*.wav`.

@@ -136,15 +136,15 @@ class Live2DManagerImpl implements Live2DManager {
   }
 
   /** Routes an <audio> element through an analyser so the mouth follows its volume.
-   *  Returns false when it could not (the audio then plays directly, with a fallback rhythm). */
-  private connectLipSync(audio: HTMLAudioElement): boolean {
+   *  Returns null when it could not (the audio then plays directly, with a fallback rhythm). */
+  private connectLipSync(audio: HTMLAudioElement): MediaElementAudioSourceNode | null {
     try {
       this.audioCtx ??= new AudioContext();
       if (this.audioCtx.state !== "running") {
         // Routing audio through a suspended context would play it SILENTLY: play it directly
         // this time (fallback mouth rhythm) and try to wake the context for the next phrase
         void this.audioCtx.resume();
-        return false;
+        return null;
       }
       if (!this.analyser) {
         this.analyser = this.audioCtx.createAnalyser();
@@ -152,12 +152,13 @@ class Live2DManagerImpl implements Live2DManager {
         this.analyser.connect(this.audioCtx.destination);
         this.analyserBuf = new Float32Array(this.analyser.fftSize);
       }
-      this.audioCtx.createMediaElementSource(audio).connect(this.analyser);
-      return true;
+      const source = this.audioCtx.createMediaElementSource(audio);
+      source.connect(this.analyser);
+      return source;
     } catch (err) {
       // Audio still plays directly, with the fallback mouth rhythm
       console.warn("[Live2D] Lip sync analyser unavailable:", err);
-      return false;
+      return null;
     }
   }
 
@@ -445,7 +446,8 @@ class Live2DManagerImpl implements Live2DManager {
       this.activeFallbackAudio = audio;
 
       // The mouth is driven every frame by animateMouth() from this audio's level
-      this.lipSyncFromAudio = this.connectLipSync(audio);
+      const lipSource = this.connectLipSync(audio);
+      this.lipSyncFromAudio = lipSource !== null;
 
       const cleanup = (completed: boolean = true) => {
         if (finished) return;
@@ -456,6 +458,8 @@ class Live2DManagerImpl implements Live2DManager {
           this.interruptActive = null;
         }
         audio.pause();
+        // A connected source keeps its <audio> alive in the graph: one leaked per answer without this
+        lipSource?.disconnect();
 
         audio.removeEventListener("ended", onEnded);
         audio.removeEventListener("error", onError);

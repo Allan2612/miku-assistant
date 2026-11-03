@@ -14,7 +14,6 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 class WindowConfig:
     width: int = 400
     height: int = 600
-    anchor: str = "bottom-right"
     margin: int = 16
     fps_visible: int = 30
 
@@ -76,12 +75,10 @@ class WakewordConfig:
 class Live2DConfig:
     model: str = "models/miku_official/miku_sample_t04.model3.json"
     scale: float = 0.25
-    expressions: dict[str, Optional[str]] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
 class ToolsConfig:
-    confirm_destructive: bool = True
     file_search_roots: list[str] = field(default_factory=list)
 
 
@@ -145,7 +142,6 @@ def load_config(
         window=WindowConfig(
             width=window_data.get("width", 400),
             height=window_data.get("height", 600),
-            anchor=window_data.get("anchor", "bottom-right"),
             margin=window_data.get("margin", 16),
             fps_visible=window_data.get("fps_visible", 30),
         ),
@@ -193,10 +189,8 @@ def load_config(
         live2d=Live2DConfig(
             model=live2d_data.get("model", "models/miku_official/miku_sample_t04.model3.json"),
             scale=float(live2d_data.get("scale", 0.25)),
-            expressions=live2d_data.get("expressions", {}),
         ),
         tools=ToolsConfig(
-            confirm_destructive=bool(tools_data.get("confirm_destructive", True)),
             file_search_roots=tools_data.get("file_search_roots", ["~/Desktop", "~/Documents", "~/Downloads"]),
         ),
         apps=dict(apps_data),

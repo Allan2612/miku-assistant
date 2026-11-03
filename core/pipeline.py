@@ -119,6 +119,7 @@ class MikuPipeline:
         self._pending_farewell = False
         self._is_listening = False
         self._is_speaking = False
+        self._hidden = False  # hidden by hand: a turn still running must not talk or open the mic
         self._last_text = ""
         self._last_text_time = 0.0
         self._speak_watchdog_task: Optional[asyncio.Task] = None
@@ -157,7 +158,7 @@ class MikuPipeline:
 
         Busy (listening, thinking, speaking): do nothing; the frontend hides on its own after a fallback wait.
         """
-        if self._pipeline_lock.locked() or self._is_speaking or self._is_listening:
+        if self.busy:
             return
         # Nothing said with the user this time (she shows up at startup, or was called and nobody spoke): a
         # goodbye out of nowhere is odd (log 27-oct, 20 s after a restart). She just hides
@@ -168,17 +169,27 @@ class MikuPipeline:
             self._pending_farewell = True
             await self._speak(random.choice(GOODBYE_PHRASES), "happy", farewell=True, cache=True)
 
+    @property
+    def busy(self) -> bool:
+        """Listening, thinking or speaking."""
+        return self._pipeline_lock.locked() or self._is_speaking or self._is_listening
+
     def end_conversation(self) -> None:
         """She was hidden by hand: the next reminder must not reopen a conversation, and an answer cut off by the hide
         must not open the mic with her hidden (its speak_done never comes; the watchdog did it)."""
         self._last_turn_at = float("-inf")
         self._pending_farewell = False
+        self._hidden = True
         if self._speak_watchdog_task and not self._speak_watchdog_task.done():
             self._speak_watchdog_task.cancel()
         if self._is_speaking:
             self._is_speaking = False
             if self.wakeword is not None:
                 self.wakeword.resume()
+
+    async def _show(self) -> None:
+        self._hidden = False
+        await self.server.broadcast({"type": "show"})
 
     def _new_activity(self) -> None:
         # A goodbye cut off by barge-in must not hide Miku after the next answer
@@ -316,6 +327,14 @@ class MikuPipeline:
             if self.wakeword is not None:
                 self.wakeword.resume()
             return
+        if self._hidden:
+            # Hidden from the tray while she listened or thought: she must not talk, nor open the mic, unseen
+            logger.info("Hidden by hand during the turn. Not speaking: %s", text)
+            self._pending_farewell = False
+            await self.server.broadcast({"type": "state", "value": "idle"})
+            if self.wakeword is not None:
+                self.wakeword.resume()
+            return
         self._last_answer = text
         voice_res = await self._synthesize_voice(text, cache=cache)
         self.resources.touch()
@@ -369,7 +388,7 @@ class MikuPipeline:
             # Hidden: she shows up, says it and hides again, no mic afterwards (log 26-oct: the mic opened after
             # every reminder). In the middle of a conversation: she says it and the conversation goes on
             talking = time.monotonic() - self._last_turn_at < self.hide_after_s
-            await self.server.broadcast({"type": "show"})
+            await self._show()
             self._pending_farewell = not talking
             self.brain.note_announcement(message)
             await self._speak(message, "happy", farewell=not talking, gesture="attention")
@@ -414,7 +433,7 @@ class MikuPipeline:
 
                 # 2. Show Miku, say a short "¿Sí?" so the user knows she is listening, then listen.
                 # The mic opens only after the cue has finished playing, so it is not recorded.
-                await self.server.broadcast({"type": "show"})
+                await self._show()
                 await self.server.broadcast({"type": "expression", "name": "happy"})
                 await self._acknowledge()
                 await self.server.broadcast({"type": "state", "value": "listening"})
@@ -528,6 +547,13 @@ class MikuPipeline:
             "text": transcribed_text,
         })
 
+        if self._hidden:
+            logger.info("Hidden by hand while listening. Dropping: %s", transcribed_text)
+            await self.server.broadcast({"type": "state", "value": "idle"})
+            if self.wakeword is not None:
+                self.wakeword.resume()
+            return
+
         # 7. One Gemini request hears the audio itself (Whisper's text only gates and drives the fast path)
         self._heard_user = True
         self.resources.touch()
@@ -546,7 +572,8 @@ class MikuPipeline:
     async def _follow_up(self) -> None:
         """Conversation mode: after an answer the mic stays open a few seconds, no wake word needed."""
         await asyncio.sleep(FOLLOW_UP_DELAY_S)  # the echo of her last word dies out before the mic opens
-        if self._is_listening or self._is_speaking or self._pipeline_lock.locked() or not self.server.clients:
+        if (self._is_listening or self._is_speaking or self._hidden or self._pipeline_lock.locked()
+                or not self.server.clients):
             return
         async with self._pipeline_lock:
             self._is_listening = True
@@ -579,6 +606,7 @@ class MikuPipeline:
             return
 
         self._new_activity()
+        self._hidden = False
         async with self._pipeline_lock:
             self._last_text = clean
             self._last_text_time = now
@@ -587,7 +615,7 @@ class MikuPipeline:
                 self.wakeword.pause()
             logger.info("Processing text input: %s", clean)
             try:
-                await self._process_text(text)
+                await self._process_text(clean)
             except Exception:
                 # Without this the wake word stayed paused and the UI stuck on "thinking" (H-030)
                 logger.exception("Error in text input pipeline")
@@ -678,7 +706,7 @@ class MikuPipeline:
                     logger.info("Startup greeting skipped: the user already talked to her.")
                     return
                 logger.info("Playing startup greeting: %s", greeting)
-                await self.server.broadcast({"type": "show"})
+                await self._show()
                 await self._speak(greeting, "happy", cache=True, gesture="greet")  # fixed phrase
         except Exception:
             logger.exception("Startup greeting failed")

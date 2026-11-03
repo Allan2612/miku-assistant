@@ -476,6 +476,22 @@ async def _no_speak_done():
         p.end_conversation()
         await orig_sleep(0.1)
         assert not p._is_speaking and not p.wakeword.paused and p.audio_in.opened_after is None
+
+        # Hidden from the tray while she thinks: the answer is not spoken and no mic opens (audit 3-nov)
+        class HiddenMidTurn(RecordingBrain):
+            async def chat(self, text, audio=None):
+                p.end_conversation()
+                return await super().chat(text)
+
+        server = FakeServer()
+        p = MikuPipeline(brain=HiddenMidTurn(), tts=FakeTTS(), stt=FakeSTT("hola"), audio_in=FakeMic(server),
+                         resources=FakeResources(), server=server, rvc=None, follow_up_s=2.0)
+        p.set_wakeword(FakeWake())
+        await p.handle_text_input("hola")
+        assert "speak" not in server.sent and not p._is_speaking and not p.wakeword.paused, server.sent
+        # Shown again (a reminder): she talks normally
+        await p.announce_timer("¡Oye, recuerda: estirar!")
+        assert "speak" in server.sent, server.sent
     finally:
         asyncio.sleep = orig_sleep
 

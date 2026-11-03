@@ -259,13 +259,13 @@ class WakeWordListener:
             self._running = False
             self._paused = False
             self._consecutive_hits = 0
-            if self._stream is not None:
-                try:
-                    self._stream.stop()
-                    self._stream.close()
-                except Exception as e:
-                    logger.debug("Error closing wakeword stream: %s", e)
-                self._stream = None
-
+            stream, self._stream = self._stream, None
             self._model = None
-            logger.info("WakeWord listener stopped.")
+        # Outside the lock: stream.stop() waits for the callback, which takes the lock (deadlock)
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception as e:
+                logger.debug("Error closing wakeword stream: %s", e)
+        logger.info("WakeWord listener stopped.")

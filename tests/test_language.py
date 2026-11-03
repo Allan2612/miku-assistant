@@ -57,6 +57,13 @@ FAST_PATH = [
     ("¡Modo trabajo!", ("routine_step", ())),
     ("activa el modo trabajo", ("routine_step", ())),
     ("muestra el escritorio", ("show_desktop", ())),
+    ("minimiza todas las ventanas", ("show_desktop", ())),
+    ("Pausa la música.", ("media_control", ("pause",))),  # the three from the log
+    ("Ponle pausa la canción.", ("media_control", ("pause",))),
+    ("¡Pom pausa!", ("media_control", ("pause",))),
+    ("dale play a la canción", ("media_control", ("play",))),
+    ("pon la música", ("media_control", ("play",))),
+    ("silencia el pc", ("mute", (True,))),
     # Real Whisper transcriptions from the user's log
     ("¡Bajá el volumen!", ("change_volume", (-15,))),
     ("Subele el volumen a 100%.", ("set_volume", (100,))),  # log 05:13: used to add 15

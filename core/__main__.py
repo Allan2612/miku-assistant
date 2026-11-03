@@ -58,7 +58,7 @@ async def async_main() -> None:
     logger.info("==========================================")
     logger.info("Config loaded successfully:")
     logger.info("  - Language: %s | Hotkey: %s | Log Level: %s", config.language, config.hotkey, config.log_level)
-    logger.info("  - Window: %dx%d (%s, %d FPS)", config.window.width, config.window.height, config.window.anchor, config.window.fps_visible)
+    logger.info("  - Window: %dx%d (%d FPS)", config.window.width, config.window.height, config.window.fps_visible)
     logger.info("  - LLM Model: %s (fallbacks: %s, API key: %s)", config.llm.model, config.llm.models_fallback, api_key_status)
     logger.info("  - TTS Voice: %s (rate=%s, pitch=%s)", config.tts.voice, config.tts.rate, config.tts.pitch)
     logger.info("  - RVC Voice: enabled=%s, model=%s, f0_up_key=%d", config.rvc.enabled, config.rvc.model, config.rvc.f0_up_key)

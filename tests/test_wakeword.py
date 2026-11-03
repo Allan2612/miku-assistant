@@ -55,6 +55,35 @@ def test_activation_saves_the_last_two_seconds():
     assert not listener._recent
 
 
+def test_stop_does_not_deadlock_with_the_audio_callback():
+    # Like PortAudio: stream.stop() waits for a callback in flight, and that callback takes the listener's lock
+    import threading
+
+    cfg = types.SimpleNamespace(enabled=True, model="hey_miku.onnx", threshold=0.35, patience=1)
+    listener = ww.WakeWordListener(cfg, on_wake=lambda clip: None)
+    listener._model, listener._running, listener._target_key = FakeModel(), True, "hey_miku"
+
+    stuck = []
+
+    class Stream:
+        def stop(self):
+            t = threading.Thread(target=listener._process_chunk, args=(np.zeros(1280, np.int16),))
+            t.start()
+            t.join(1)
+            stuck.append(t.is_alive())  # not an assert: stop() swallows errors from the stream
+
+        def close(self):
+            pass
+
+    listener._stream = Stream()
+    done = threading.Thread(target=listener.stop, daemon=True)
+    done.start()
+    done.join(3)
+    assert stuck == [False], "the callback waited for the lock that stop() holds (deadlock with PortAudio)"
+    assert not done.is_alive() and listener._stream is None
+
+
 if __name__ == "__main__":
     test_activation_saves_the_last_two_seconds()
+    test_stop_does_not_deadlock_with_the_audio_callback()
     print("ok")

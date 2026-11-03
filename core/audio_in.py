@@ -110,7 +110,9 @@ class AudioInput:
             )
             stream.start()
 
-            while (time.monotonic() - start_time) < max_seconds:
+            # max_seconds counts speech, not the wait before it: a late start was cut after a few seconds.
+            # The wall-clock bound only matters if the stream stops delivering audio
+            while speech_accumulated < max_seconds and (time.monotonic() - start_time) < initial_timeout + max_seconds:
                 try:
                     chunk = await asyncio.wait_for(queue.get(), timeout=0.2)
                 except asyncio.TimeoutError:

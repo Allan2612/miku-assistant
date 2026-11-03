@@ -21,13 +21,12 @@ export type ServerMessage =
       gesture?: string; // "attention" (reminder), "greet"
       outcome?: "ok" | "fail"; // how the actions of this turn went
     }
-  | { type: "user_speech" } // the user started talking
-  | { type: "confirm_request"; id: string; text: string };
+  | { type: "user_speech" }; // the user started talking
 
 export type MessageHandler = (msg: ServerMessage) => void;
 
 const KNOWN_TYPES = new Set<string>([
-  "show", "hide", "state", "subtitle", "expression", "stop_speaking", "speak", "user_speech", "confirm_request",
+  "show", "hide", "state", "subtitle", "expression", "stop_speaking", "speak", "user_speech",
 ]);
 
 export class WebSocketClient {

@@ -53,6 +53,12 @@ class MikuServer:
         self._tasks.add(task)
         task.add_done_callback(self._task_done)
 
+    async def _hide_after(self, seconds: float) -> None:
+        await asyncio.sleep(seconds)
+        # Called again meanwhile (an "activate" right after the goodbye): she stays
+        if not self.pipeline.busy:
+            await self.broadcast({"type": "hide"})
+
     def _task_done(self, task: asyncio.Task) -> None:
         self._tasks.discard(task)
         if not task.cancelled() and task.exception():
@@ -136,8 +142,8 @@ class MikuServer:
                             continue
                         await self.broadcast({"type": "state", "value": "idle"})
                         if self.pipeline.handle_speak_done():
-                            await asyncio.sleep(1.0)
-                            await self.broadcast({"type": "hide"})
+                            # As a task: an "activate" right after the goodbye must not wait behind this second
+                            self._spawn(self._hide_after(1.0))
 
                     elif msg_type == "dismiss":
                         logger.info("Client requested dismiss.")

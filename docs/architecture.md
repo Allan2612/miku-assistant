@@ -67,7 +67,7 @@ Backend → Frontend:
 { "type": "expression", "name": "happy" }
 { "type": "speak", "audio_b64": "...", "mime": "audio/wav", "text": "...", "emotion": "happy" }
 { "type": "stop_speaking" }        // barge-in: cortar el audio actual
-// confirm_request / confirm_response: pendientes; la confirmación se hace hoy por voz (ver tools.md)
+// La confirmación de acciones destructivas se hace por voz (ver tools.md), no con mensajes propios
 ```
 Frontend → Backend:
 ```jsonc
@@ -143,15 +143,15 @@ miku-assistant/
 ```yaml
 hotkey: "Ctrl+Alt+M"
 language: "es"
-window: { width: 400, height: 600, anchor: "bottom-right", margin: 16, fps_visible: 30 }
+window: { width: 400, height: 600, margin: 16, fps_visible: 30 }
 behavior: { hide_after_seconds: 20, max_record_seconds: 15, silence_ms: 800, unload_after_minutes: 10 }
 llm: { model: "gemini-3.5-flash-lite", models_fallback: ["gemini-3.5-flash"], max_history_turns: 10, temperature: 0.35, web_search: false }
 stt: { model: "small", device: "cpu", compute_type: "int8", cpu_threads: 4 }
 tts: { voice: "es-MX-DaliaNeural", rate: "+5%", pitch: "+20Hz" }
 rvc: { enabled: true, model: "models/rvc/miku.pth", index: "models/rvc/miku.index", f0_up_key: 6 }
 wakeword: { enabled: false, model: "models/wakeword/hey_miku.onnx", threshold: 0.5 }
-live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0, expressions: { ... } }
-tools: { confirm_destructive: true, file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }
+live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0 }
+tools: { file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }
 apps: { chrome: "chrome.exe", spotify: "spotify.exe", discord: "Discord" }  # alias extra; también se escanea el menú Inicio
 routines: { trabajo: [{ tool: "open_app", args: { app_name: "opera gx" } }] }  # "modo trabajo", 0 peticiones
 log_level: "INFO"
