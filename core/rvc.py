@@ -5,7 +5,7 @@ Strict adherence to GEMINI.md:
 - Spawns and manages the isolated `rvc_worker.py` subprocess over stdin/stdout pipes.
 - Supports pre-calentamiento (asynchronous warmup while user speaks).
 - Supports graceful termination (kill/terminate) on inactivity timeout to return to 0 MB VRAM.
-- Graceful degradation: If RVC conversion fails, returns None so caller falls back to base edge-tts.
+- If RVC conversion fails it returns None: the answer goes out as a subtitle, never in another voice.
 """
 
 from __future__ import annotations
@@ -56,10 +56,6 @@ class RVCManager:
             self.index_path,
             self.f0_up_key,
         )
-
-    @property
-    def is_warming_up(self) -> bool:
-        return self._is_warming_up
 
     @property
     def is_running(self) -> bool:

@@ -171,7 +171,6 @@ class MikuBrain:
         self.all_models: List[str] = [self.primary_model] + [
             m for m in self.models_fallback if m != self.primary_model
         ]
-        self.current_model = self.primary_model
         self.max_history = max_history
         self.temperature = temperature
         self.web_search = web_search
@@ -554,8 +553,8 @@ class MikuBrain:
             from core.tools.media import media_control
             return confirm(media_control("play"), "¡Música reproduciéndose!")
 
-        # 6. Date & Time (questions only: "a la hora de comer" is not asking the time)
-        if any(w in low for w in ["qué hora", "que hora", "dime la hora"]):
+        # 6. Date & Time, the whole phrase only: "¿a qué hora cierra el súper?" got "Son las 18:41."
+        if re.match(rf"{_WAKE}(?:qu[eé]\s+hora\s+es(?:\s+ahora)?|dime\s+la\s+hora)$", low):
             now_dt = datetime.now()
             return ("neutral", f"Son las {now_dt.strftime('%H:%M')}.", False)
 
@@ -611,8 +610,9 @@ class MikuBrain:
                 return ("happy", "¡Apuntado! Ya guardé tu nota.", False)
             return ("sad", res.get("result", "No pude guardar la nota."), False)
 
-        if any(w in low for w in ["lee mis notas", "leer notas", "cuáles son mis notas", "que notas tengo", "qué notas tengo",
-                                  "qué pendientes tengo", "que pendientes tengo", "mis pendientes"]):
+        # The whole phrase only: "borra mis pendientes" read them out
+        if re.match(rf"{_WAKE}(?:l[eé]e(?:me)?\s+mis\s+(?:notas|pendientes)|leer\s+notas|mis\s+pendientes"
+                    r"|cu[aá]les\s+son\s+mis\s+(?:notas|pendientes)|qu[eé]\s+(?:notas|pendientes)\s+tengo)$", low):
             from core.tools.notes import read_notes
             notes_res = read_notes()
             return ("neutral", notes_res.get("result", "No tienes notas."), False)
@@ -692,11 +692,8 @@ class MikuBrain:
         if not models_to_try:
             logger.warning("All models in cooldown. Attempting all candidates anyway.")
             models_to_try = list(self.all_models)
-
-        # Prefer the currently active model if healthy, otherwise prioritize primary
-        if self.current_model in models_to_try:
-            models_to_try.remove(self.current_model)
-            models_to_try.insert(0, self.current_model)
+        # Always in config order: putting the last model that answered first kept a whole session on a small
+        # fallback after one 504 (log 2-nov: 12 turns on 3.1-flash-lite after a 15 s cooldown)
 
         last_error = None
         screenshot = None
@@ -721,7 +718,6 @@ class MikuBrain:
                 except Exception:
                     logger.exception("Model-switch cue failed")
             try:
-                self.current_model = model
                 self.total_api_calls += 1
                 logger.info(
                     "--> [GEMINI REQ #%d] Model: %s | Query: '%s'%s",
@@ -730,8 +726,9 @@ class MikuBrain:
                     clean_input,
                     " (+audio)" if audio is not None else "",
                 )
-                contents, config = self._for_model(model, contents, config, clean_input)
-                response = await self._generate(model, contents, config)
+                # Local names: a failed Gemma must not leave the next Gemini with text instead of the audio
+                model_contents, model_config = self._for_model(model, contents, config, clean_input)
+                response = await self._generate(model, model_contents, model_config)
                 # Clear any previous cooldown for this healthy model
                 self._model_cooldown.pop(model, None)
                 break
@@ -763,7 +760,9 @@ class MikuBrain:
             fallback_emotion, fallback_text = random.choice(OUT_OF_ENERGY_RESPONSES)
             return fallback_emotion, fallback_text, False
 
-        emotion, clean_text = await self._agent_loop(model, contents, config, response, clean_input, acted_before)
+        emotion, clean_text = await self._agent_loop(
+            model, model_contents, model_config, response, clean_input, acted_before
+        )
         if not clean_text:
             emotion, clean_text = "thinking", "Perdona, no te entendí bien. ¿Me lo repites?"
 
@@ -777,11 +776,3 @@ class MikuBrain:
         self._last_query_time = time.monotonic()
         self._last_result = result
         return result
-
-    def clear_history(self) -> None:
-        """Clears conversation history."""
-        self._last_query_text = ""
-        self._last_query_time = 0.0
-        self._last_result = None
-        self._history_turns.clear()
-        self.current_model = self.primary_model

@@ -455,6 +455,35 @@ async def _body_language():
     assert speak["gesture"] == "attention" and speak["farewell"], "a reminder while hidden: attention, then goodbye"
 
 
+async def _no_speak_done():
+    orig_sleep = asyncio.sleep
+    asyncio.sleep = lambda s, *a: orig_sleep(min(s, 0.01))  # the watchdog's 7 s, made short
+    try:
+        # A goodbye whose speak_done never came: the watchdog hides her (log 1-nov: she stayed 20 s)
+        p, server = _pipeline(FakeBrain())
+        p._pending_farewell = True
+        await p._speak("¡Adiós!", "happy", farewell=True)
+        await orig_sleep(0.1)
+        assert server.sent[-1] == "hide" and not p._is_speaking, server.sent
+
+        # Hidden from the tray mid-answer: no speak_done, and the mic must not open with her hidden
+        server = FakeServer()
+        brain = RecordingBrain()
+        p = MikuPipeline(brain=brain, tts=FakeTTS(), stt=FakeSTT("hola"), audio_in=FakeMic(server),
+                         resources=FakeResources(), server=server, rvc=None, follow_up_s=2.0)
+        p.set_wakeword(FakeWake())
+        await p._speak("Te cuento una historia larga...", "happy")
+        p.end_conversation()
+        await orig_sleep(0.1)
+        assert not p._is_speaking and not p.wakeword.paused and p.audio_in.opened_after is None
+    finally:
+        asyncio.sleep = orig_sleep
+
+
+def test_without_speak_done():
+    asyncio.run(_no_speak_done())
+
+
 def test_speak_carries_body_language():
     asyncio.run(_body_language())
 
@@ -490,4 +519,5 @@ if __name__ == "__main__":
     test_false_wake_words_never_reach_gemini()
     test_only_one_voice()
     test_speak_carries_body_language()
+    test_without_speak_done()
     print("ok")

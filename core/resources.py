@@ -23,7 +23,6 @@ class ResourceManager:
     def __init__(self, unload_after_minutes: int = 10) -> None:
         self.unload_after_seconds: float = max(60.0, unload_after_minutes * 60.0)
         self.last_activity: float = time.monotonic()
-        self._stt = None
         self._rvc = None
         self._monitor_task: Optional[asyncio.Task] = None
         self._running: bool = False
@@ -31,10 +30,6 @@ class ResourceManager:
             "ResourceManager initialized (inactivity timeout: %.1f minutes)",
             self.unload_after_seconds / 60.0,
         )
-
-    def register_stt(self, stt_manager: Any) -> None:
-        """Registers the STTManager instance for automatic unloading."""
-        self._stt = stt_manager
 
     def register_rvc(self, rvc_manager: Any) -> None:
         """Registers the RVCManager instance (for Phase 6 worker shutdown)."""

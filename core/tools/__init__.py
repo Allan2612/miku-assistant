@@ -94,8 +94,15 @@ def tool(name: Optional[str] = None, description: Optional[str] = None, destruct
                     if takes_confirmed:
                         kwargs["confirmed"] = True
                 else:
-                    _pending_confirmation = {"name": tool_name, "kwargs": dict(kwargs), "time": time.monotonic()}
+                    # Bad arguments (shutdown_pc(action=...)) raised out of the turn and left them pending
+                    try:
+                        inspect.signature(func).bind(**kwargs)
+                    except TypeError as e:
+                        return {"ok": False, "result": f"Argumentos no válidos para {tool_name}: {e}"}
                     question = func(**kwargs, confirmed=False) if takes_confirmed else None
+                    if isinstance(question, dict) and "ok" in question and not question.get("requires_confirmation"):
+                        return question  # refused before asking ("Modo desconocido"): nothing to confirm
+                    _pending_confirmation = {"name": tool_name, "kwargs": dict(kwargs), "time": time.monotonic()}
                     if not (isinstance(question, dict) and question.get("requires_confirmation")):
                         question = {"ok": False, "requires_confirmation": True,
                                     "result": f"¿Seguro que quieres que ejecute {tool_name}? Confirma diciendo sí."}

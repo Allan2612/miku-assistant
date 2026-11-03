@@ -130,14 +130,6 @@ export class WebSocketClient {
     }
   }
 
-  public sendTextInput(text: string): void {
-    this.send({ type: "text_input", text });
-  }
-
-  public sendActivate(): void {
-    this.send({ type: "activate" });
-  }
-
   public sendDismiss(): void {
     this.send({ type: "dismiss" });
   }

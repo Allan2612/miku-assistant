@@ -46,6 +46,10 @@ def test_no_hijacking():
     _setup()
     assert fast("recuérdame tomar agua a la hora de comer") is None
     assert fast("busca el archivo informe") is None
+    # A word of a local order inside another question (audit 2-nov)
+    assert fast("¿A qué hora cierra el súper?") is None
+    assert fast("borra mis pendientes") is None
+    assert fast("¿Qué hora es?")[1].startswith("Son las")
     fast("abre mi playlist favorita")
     assert not any(c[0] == "media_control" for c in calls), calls
     _setup()

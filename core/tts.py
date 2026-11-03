@@ -119,14 +119,3 @@ class TTSManager:
         except Exception as e:
             logger.error("Error synthesizing speech with edge-tts: %s", e)
             return None
-
-    async def prepopulate_cache(self, phrases: list[str]) -> None:
-        """Pre-synthesizes fixed phrases into disk cache for instant playback."""
-        for phrase in phrases:
-            clean = phrase.strip()
-            if not clean:
-                continue
-            cache_file = self._get_cache_path(clean)
-            if not cache_file.exists():
-                logger.info("Pre-caching fixed voice phrase: '%s'", clean)
-                await self.synthesize(clean, cache=True)

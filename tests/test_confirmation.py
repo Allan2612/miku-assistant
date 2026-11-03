@@ -39,7 +39,20 @@ def test_other_reply_cancels():
     assert not ran, ran
 
 
+def test_bad_arguments_are_an_error_not_a_crash():
+    # The model sent a wrong argument: an error result for it, and nothing left waiting for a "sí"
+    ran.clear()
+    tools._pending_confirmation = None
+    tools.note_user_reply("apaga el equipo")
+    for res in (shutdown(action="restart"), shutdown(mode="hibernar")):
+        assert res["ok"] is False and not res.get("requires_confirmation"), res
+    assert tools._pending_confirmation is None
+    tools.note_user_reply("sí")
+    assert not ran, ran
+
+
 if __name__ == "__main__":
+    test_bad_arguments_are_an_error_not_a_crash()
     test_llm_cannot_self_confirm()
     test_user_yes_runs_the_approved_action()
     test_other_reply_cancels()

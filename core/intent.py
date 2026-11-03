@@ -52,14 +52,17 @@ _BYE_FILLER = {"ya", "no", "ok", "vale", "bueno", "muchas", "mil", "eso", "es", 
                "asi", "está", "esta", "bien", "por", "ahora", "de", "verdad", "entonces", "pues", "más", "mas"}
 # Words that do not change a hide order: "Nada, nada. Ocúltese", "Ya, Miku, vete", "apágate un rato"
 _HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor", "un", "rato"}
+# What may stand around a goodbye phrase: "bueno, nos vemos mañana", "ya terminé por hoy, gracias"
+_KEYWORD_FILLER = _BYE_WORDS | _BYE_FILLER | _HIDE_FILLER | {"mañana", "pronto", "hoy", "cuídate", "cuidate", "ahí", "ahi"}
 # Every way Whisper writes "apágate" / "apáguese": "Apáquese", "apagase", "Apague ese, Miku" (logs 2-nov: she stayed,
 # or took it for "turn off the PC")
 _TURN_YOURSELF_OFF = re.compile(r"ap[aá]n?[gq][uü]?[aeé]?(?:te|se|ce)|apag[uü]e ese")
 # Her own answer is a goodbye when a sentence starts with one: "¡Hasta luego, que descanses!" or "¡Entendido! Me voy a
 # dormir un rato" without the [adios] tag kept the mic open (log 2-nov). "Sayonara significa adiós" is not one
 _HER_GOODBYE = re.compile(
-    r"(?:^|[.!?¡¿]\s*)(?:adi[oó]s|hasta (?:luego|pronto|mañana|la próxima)|nos vemos|chao|chau|bye|me voy"
-    r"|que descanses|aquí estaré|aqui estare|llámame (?:si|cuando)|bueno, me retiro)",
+    r"(?:^|[.!?¡¿]\s*)(?:adi[oó]s|hasta (?:luego|pronto|mañana|la próxima)|nos vemos|chao|chau|bye"
+    # "Me voy." or "me voy a dormir", not "Me voy a acordar de eso"
+    r"|me voy(?=\s*[.!,]|\s*$| a (?:dormir|descansar))|que descanses|aquí estaré|aqui estare|llámame (?:si|cuando)|bueno, me retiro)",
     re.IGNORECASE,
 )
 
@@ -142,7 +145,13 @@ def _short_goodbye(text: str) -> bool:
     bye = [w for w in words if w in _BYE_WORDS or w.startswith(("olvi", "olví"))]
     if bye and all(w in _BYE_FILLER or w in bye for w in words):
         return True
-    return any(re.search(r"\b" + re.escape(kw) + r"\b", norm) for kw in FAREWELL_KEYWORDS)
+    # A goodbye phrase counts only with filler around it: "¿Cómo se dice adiós en japonés?", "nada más dime la hora"
+    # or "vete a YouTube" are not goodbyes
+    for kw in FAREWELL_KEYWORDS:
+        m = re.search(r"\b" + re.escape(bare(kw)) + r"\b", words_only)
+        if m and all(w in _KEYWORD_FILLER for w in (words_only[:m.start()] + " " + words_only[m.end():]).split()):
+            return True
+    return False
 
 
 def is_hide_order(text: str) -> bool:

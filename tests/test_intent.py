@@ -31,6 +31,14 @@ TABLE = [
     ("Nada, nada.", "farewell"),
     ("Listo, eso era todo, gracias", "farewell"),
     ("No te necesito", "farewell"),
+    ("Bueno, nos vemos mañana", "farewell"),
+    # A goodbye word inside a question or an order is not a goodbye (audit 2-nov: she said bye instead of answering)
+    ("¿Cómo se dice adiós en japonés?", "chat"),
+    ("¿Eso es todo lo que sabes?", "chat"),
+    ("¿Qué significa chao?", "chat"),
+    ("nada más dime la hora", "chat"),
+    ("ya terminé mis pendientes de hoy", "chat"),
+    ("vete a youtube", "chat"),
     # A longer phrase ending in a goodbye: Gemini answers it, then she hides (log 2-nov: she stayed)
     ("Estás bien linda, mi amigo. Te amo. Ya eso es todo. Chau!", "chat"),
     # A goodbye with an order: the order first, then she hides
@@ -89,7 +97,7 @@ def test_goodbyes_that_hide_her():
                    "¡Vale! Aquí estaré si me necesitas."):
         assert says_goodbye(answer), answer
     for answer in ("Sayonara significa adiós en japonés.", "¡Aquí estoy! ¿Qué necesitas?", "¡Listo, ya lo pauso!",
-                   "¡Buenas noches! ¿Qué necesitas antes de descansar?"):
+                   "¡Buenas noches! ¿Qué necesitas antes de descansar?", "¡Claro! Me voy a acordar de eso."):
         assert not says_goodbye(answer), answer
 
 

@@ -94,11 +94,10 @@ async def async_main() -> None:
     audio_in = AudioInput(sample_rate=16000, channels=1)
 
     resources = ResourceManager(unload_after_minutes=config.behavior.unload_after_minutes)
-    resources.register_stt(stt)
     resources.register_rvc(rvc)
     resources.start()
 
-    server = MikuServer(host="127.0.0.1", port=8765, brain=brain, tts=tts)
+    server = MikuServer(host="127.0.0.1", port=8765)
 
     pipeline = MikuPipeline(
         brain=brain,

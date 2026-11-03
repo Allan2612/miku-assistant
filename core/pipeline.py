@@ -5,7 +5,7 @@ Strict adherence to GEMINI.md:
 - Fires STT and RVC worker pre-warming concurrently during activation while user begins speaking.
 - Enforces strict latency (< 3 s response) and mic stream closure immediately after speech.
 - Zero torch imports in the main core pipeline!
-- Seamless fallback to edge-tts if RVC fails or is disabled.
+- One voice: if RVC fails the answer is a subtitle only; the base edge-tts voice only when RVC is off in config.
 """
 
 from __future__ import annotations
@@ -39,12 +39,12 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 # Spoken right after activation so it is obvious Miku is listening; kept very short
 ACK_PHRASES = ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!")
 ACK_WAIT_S = 3.0  # max wait for the frontend to finish playing the cue
-# Said when a Gemini model fails (per-minute quota, 503) and the next one is tried: the user knows she is on it
 # Conversation mode: the mic opens this long after she stops talking (her voice must not be recorded)
 FOLLOW_UP_DELAY_S = 0.35
 ANNOUNCE_WAIT_S = 30.0  # a reminder waits at most this long for her current answer to finish
 GREETING_VOICE_WAIT_S = 90.0  # the startup greeting waits this long for RVC (cold start)
 GOODBYE_WINDOW_S = 15.0  # a goodbye only if she answered the user within hide_after_s + this
+# Said when a Gemini model fails (per-minute quota, 503) and the next one is tried: the user knows she is on it
 FILLER_PHRASES = ("Un momento...", "Mmm...", "Déjame pensar...", "Dame un segundito...", "A ver...")
 # Said before hiding on inactivity (fixed phrases: voice cached on disk, 0 Gemini requests)
 GOODBYE_PHRASES = ("¡Adiós!", "¡Chao!", "¡Nos vemos!", "¡Hasta luego!", "Me voy, ¡llámame si me necesitas!")
@@ -144,7 +144,9 @@ class MikuPipeline:
                 await asyncio.sleep(timeout_sec)
                 logger.info("Watchdog: speak_done timeout reached (%.1fs). Auto-resuming idle state & wakeword.", timeout_sec)
                 await self.server.broadcast({"type": "state", "value": "idle"})
-                self.handle_speak_done()
+                self._speak_watchdog_task = None  # or handle_speak_done cancels this task and the hide below
+                if self.handle_speak_done():  # a goodbye: she hides now, not 20 s later on inactivity
+                    await self.server.broadcast({"type": "hide"})
             except asyncio.CancelledError:
                 pass
 
@@ -167,8 +169,16 @@ class MikuPipeline:
             await self._speak(random.choice(GOODBYE_PHRASES), "happy", farewell=True, cache=True)
 
     def end_conversation(self) -> None:
-        """She was hidden by hand: the next reminder must not reopen a conversation."""
+        """She was hidden by hand: the next reminder must not reopen a conversation, and an answer cut off by the hide
+        must not open the mic with her hidden (its speak_done never comes; the watchdog did it)."""
         self._last_turn_at = float("-inf")
+        self._pending_farewell = False
+        if self._speak_watchdog_task and not self._speak_watchdog_task.done():
+            self._speak_watchdog_task.cancel()
+        if self._is_speaking:
+            self._is_speaking = False
+            if self.wakeword is not None:
+                self.wakeword.resume()
 
     def _new_activity(self) -> None:
         # A goodbye cut off by barge-in must not hide Miku after the next answer
@@ -590,7 +600,7 @@ class MikuPipeline:
 
         # Pre-warm RVC in background if needed
         if self.rvc is not None and self.rvc.enabled and not self.rvc.is_loaded:
-            asyncio.create_task(self.rvc.warmup())
+            self._spawn_bg(self.rvc.warmup())
 
         # 1. User subtitle
         await self.server.broadcast({

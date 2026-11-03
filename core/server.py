@@ -14,8 +14,6 @@ import websockets
 from websockets.asyncio.server import ServerConnection
 
 from core.browser import EXTENSION_ORIGIN, bridge
-from core.llm import MikuBrain
-from core.tts import TTSManager
 
 logger = logging.getLogger("miku.server")
 
@@ -37,19 +35,13 @@ class MikuServer:
         self,
         host: str = "127.0.0.1",
         port: int = 8765,
-        brain: Optional[MikuBrain] = None,
-        tts: Optional[TTSManager] = None,
-        pipeline: Optional[Any] = None,
     ):
         self.host = host
         self.port = port
-        self.brain = brain or MikuBrain()
-        self.tts = tts or TTSManager()
-        self.pipeline = pipeline
+        # MikuPipeline, set by __main__ before start(): every answer goes through it (one voice, RVC)
+        self.pipeline: Any = None
         self.clients: Set[ServerConnection] = set()
         self.server = None
-        self._input_lock = asyncio.Lock()
-        self._pending_farewell: bool = False
         # Set by __main__: lets the app's "Salir" stop the whole backend (H-050)
         self.on_shutdown: Optional[Callable[[], None]] = None
         # Strong refs: un-referenced tasks can be garbage-collected and lose their errors (H-021)
@@ -85,85 +77,6 @@ class MikuServer:
             except Exception:
                 disconnected.add(client)
         self.clients -= disconnected
-
-    async def handle_text_input(self, text: str) -> None:
-        """Handles a user text query from the frontend sequentially."""
-        async with self._input_lock:
-            logger.info("Processing user text input: %s", text)
-
-            # 1. Show user subtitle
-            await self.broadcast({
-                "type": "subtitle",
-                "who": "user",
-                "text": text,
-            })
-
-            # 2. Brief pause so user clearly sees their text
-            await asyncio.sleep(0.4)
-
-            # 3. Indicate thinking state
-            await self.broadcast({
-                "type": "state",
-                "value": "thinking",
-            })
-            await self.broadcast({
-                "type": "expression",
-                "name": "thinking",
-            })
-
-            # 4. Request LLM response asynchronously
-            emotion, answer, is_farewell = await self.brain.chat(text)
-            self._pending_farewell = is_farewell
-            logger.info("Miku answer [%s]: %s (farewell=%s)", emotion, answer, is_farewell)
-
-            # 5. Synthesize TTS speech (with disk cache & graceful degradation)
-            tts_res = await self.tts.synthesize(answer)
-
-            if tts_res:
-                audio_b64, mime = tts_res
-                # Update expression, show subtitle and trigger speak with lip sync
-                await self.broadcast({
-                    "type": "expression",
-                    "name": emotion,
-                })
-                await self.broadcast({
-                    "type": "subtitle",
-                    "who": "miku",
-                    "text": answer,
-                })
-                await self.broadcast({
-                    "type": "state",
-                    "value": "speaking",
-                })
-                await self.broadcast({
-                    "type": "speak",
-                    "audio_b64": audio_b64,
-                    "mime": mime,
-                    "text": answer,
-                    "emotion": emotion,
-                })
-            else:
-                # Graceful degradation: subtitle only
-                logger.warning("TTS unavailable. Degrading to subtitle only.")
-                await self.broadcast({
-                    "type": "expression",
-                    "name": emotion,
-                })
-                await self.broadcast({
-                    "type": "subtitle",
-                    "who": "miku",
-                    "text": answer,
-                })
-                await self.broadcast({
-                    "type": "state",
-                    "value": "idle",
-                })
-                if is_farewell:
-                    await asyncio.sleep(3.5)
-                    await self.broadcast({"type": "hide"})
-
-
-
 
     async def _handle_extension(self, websocket: ServerConnection) -> None:
         """Miku's Opera extension: it may only report tabs and answer commands, never drive Miku."""
@@ -210,39 +123,25 @@ class MikuServer:
                         user_text = str(data.get("text", ""))[:MAX_TEXT_INPUT]
                         if user_text:
                             # As a task: dismiss/speak_done from this client must not wait for the answer
-                            if self.pipeline:
-                                self._spawn(self.pipeline.handle_text_input(user_text))
-                            else:
-                                self._spawn(self.handle_text_input(user_text))
+                            self._spawn(self.pipeline.handle_text_input(user_text))
 
                     elif msg_type == "activate":
                         logger.info("Client requested activation.")
-                        if self.pipeline:
-                            self._spawn(self.pipeline.handle_voice_activation())
-                        else:
-                            await self.broadcast({"type": "show"})
+                        self._spawn(self.pipeline.handle_voice_activation())
 
                     elif msg_type == "speak_done":
                         logger.info("Client reported speak_done.")
                         # End of the "¿Sí?" cue: the pipeline now opens the mic, nothing else to do
-                        if self.pipeline and self.pipeline.ack_finished():
+                        if self.pipeline.ack_finished():
                             continue
                         await self.broadcast({"type": "state", "value": "idle"})
-                        farewell = False
-                        if self.pipeline:
-                            farewell = self.pipeline.handle_speak_done()
-                        elif self._pending_farewell:
-                            self._pending_farewell = False
-                            farewell = True
-
-                        if farewell:
+                        if self.pipeline.handle_speak_done():
                             await asyncio.sleep(1.0)
                             await self.broadcast({"type": "hide"})
 
                     elif msg_type == "dismiss":
                         logger.info("Client requested dismiss.")
-                        if self.pipeline:
-                            self.pipeline.end_conversation()
+                        self.pipeline.end_conversation()
                         await self.broadcast({"type": "hide"})
 
                     elif msg_type == "timing":
@@ -251,10 +150,7 @@ class MikuServer:
 
                     elif msg_type == "idle_timeout":
                         # Frontend auto-hide: Miku says goodbye, then hides on its speak_done
-                        if self.pipeline:
-                            self._spawn(self.pipeline.say_goodbye())
-                        else:
-                            await self.broadcast({"type": "hide"})
+                        self._spawn(self.pipeline.say_goodbye())
 
                     elif msg_type == "shutdown":
                         logger.info("Client requested backend shutdown.")

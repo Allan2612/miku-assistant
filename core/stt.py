@@ -9,7 +9,6 @@ Strict adherence to GEMINI.md:
 from __future__ import annotations
 
 import asyncio
-import gc
 import logging
 import time
 from typing import Optional, List
@@ -138,12 +137,3 @@ class STTManager:
             except Exception as e:
                 logger.error("Error during STT transcription: %s", e)
                 return ""
-
-    def unload(self) -> None:
-        """Unloads model from RAM to reclaim memory when inactive."""
-        if self._model is not None:
-            logger.info("Unloading faster-whisper model from CPU memory...")
-            del self._model
-            self._model = None
-            gc.collect()
-            logger.info("faster-whisper model unloaded.")

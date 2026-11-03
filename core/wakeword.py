@@ -83,11 +83,6 @@ class WakeWordListener:
         self._recent: collections.deque = collections.deque(maxlen=CLIP_CHUNKS)
         self._lock = threading.Lock()
 
-    @property
-    def is_listening(self) -> bool:
-        """Returns True if the listener is running and not currently paused."""
-        return self._running and not self._paused
-
     def _resolve_model(self) -> tuple[str, str]:
         """
         Resolves the wakeword model to load.

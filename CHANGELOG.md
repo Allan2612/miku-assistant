@@ -47,6 +47,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
 ### Corregido
+- Auditoría del 2-nov: una pregunta con una palabra de despedida ("¿Cómo se dice adiós en japonés?", "vete a YouTube") ya no la despide; "Me voy a acordar de eso" en su respuesta ya no la oculta; un solo fallo de Gemini ya no deja el resto de la sesión en el modelo de reserva (y un Gemma fallido ya no le quita el audio al siguiente); ocultarla desde la bandeja mientras habla ya no abre el micrófono con ella oculta; si no llega el fin de una despedida, se oculta igual; "¿A qué hora cierra el súper?" y "borra mis pendientes" van a Gemini en vez de dar la hora o leer las notas; un argumento mal puesto en `shutdown_pc` da un error en vez de dejar el turno mudo. Borradas unas 90 líneas de una ruta de respuesta sin RVC que nunca se usaba y otro código muerto.
 - Órdenes dobles con la segunda en "usted" o mal transcrita ("Póngale pausa y sérame todas las ventanas"): el atajo local solo pausaba; ahora toda la frase va a Gemini.
 - "¡Sí!" respondiendo a una pregunta suya se descartaba como eco del "¿Sí?" de activación, y ella se iba: ese filtro solo aplica justo después del aviso.
 - Llamadas reales descartadas como activación falsa: un "Hey Miku" transcrito como tres palabras ya no basta para descartarla, y una orden justo después siempre cuenta.

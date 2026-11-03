@@ -46,10 +46,11 @@ def reply(text, *calls):
 
 class FakeModels:
     def __init__(self, replies):
-        self.replies, self.requests, self.configs = list(replies), [], []
+        self.replies, self.requests, self.configs, self.models = list(replies), [], [], []
 
     async def generate_content(self, model, contents, config):
         assert config.automatic_function_calling.disable, "the agent loop is ours: the SDK must not run tools"
+        self.models.append(model)
         self.requests.append(list(contents))
         self.configs.append(config)
         nxt = self.replies.pop(0)
@@ -258,6 +259,23 @@ def test_fallback_chain_tells_the_user_once():
     assert cues == []
 
 
+def test_back_to_the_primary_after_a_failure():
+    # One 504 on the primary: this turn goes to the fallback, the next one (cooldown over) to the primary again
+    # (log 2-nov: 12 turns stuck on the fallback)
+    b, models = brain(RuntimeError("504 DEADLINE_EXCEEDED"), reply("[happy] ¡Uno!"), reply("[happy] ¡Dos!"))
+    b.all_models = ["m1", "m2"]
+    asyncio.run(b.chat("cuéntame algo bonito", audio=AUDIO))
+    b._model_cooldown.clear()
+    asyncio.run(b.chat("y otra cosa distinta", audio=AUDIO))
+    assert models.models == ["m1", "m2", "m1"], models.models
+
+    # A failed Gemma first must not leave the next model with Whisper's text instead of the audio
+    b, models = brain(RuntimeError("503 UNAVAILABLE"), reply("[happy] ¡Hola!"))
+    b.all_models = ["gemma-4-26b-a4b-it", "m2"]
+    asyncio.run(b.chat("cuéntame algo bonito", audio=AUDIO))
+    assert any(p.inline_data for p in models.requests[1][-1].parts), "the audio reaches the next model"
+
+
 def test_requests_adapted_per_model():
     b, _ = brain()
     contents, config = b._build_request("abre spotify", AUDIO)
@@ -325,6 +343,7 @@ def test_history_survives_a_restart_and_keeps_reminders():
 
 
 if __name__ == "__main__":
+    test_back_to_the_primary_after_a_failure()
     test_action_results_go_back_and_the_answer_comes_from_them()
     test_failed_tool_is_seen_by_the_model()
     test_multi_step_task_and_the_round_limit()

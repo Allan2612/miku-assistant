@@ -367,6 +367,9 @@ async function setupShortcutsAndTray(): Promise<void> {
             showMiku();
             break;
           case "hide":
+            // The backend must know: an answer cut off here never sends speak_done, and its watchdog then
+            // opened the mic with her hidden
+            ws.sendDismiss();
             hideMiku();
             break;
           case "toggle":

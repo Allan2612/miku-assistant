@@ -27,7 +27,7 @@ async def _try(origin):
 
 
 async def _run():
-    server = MikuServer(port=PORT, brain=object(), tts=object())
+    server = MikuServer(port=PORT)
     await server.start()
     try:
         assert not await _try("https://evil.example"), "foreign web origin must be rejected"
@@ -42,22 +42,26 @@ async def _run():
             await ws.send('{"type": "shutdown"}')
             await asyncio.wait_for(stopped.wait(), 2)
 
-        # Auto-hide: the frontend's idle_timeout makes Miku say goodbye; without a pipeline, just hide
+        # Auto-hide: the frontend's idle_timeout makes Miku say goodbye
         said = asyncio.Event()
 
         class Pipeline:
             async def say_goodbye(self):
                 said.set()
 
+            def end_conversation(self):
+                said.set()
+
         server.set_pipeline(Pipeline())
         async with connect(f"ws://127.0.0.1:{PORT}", origin="http://tauri.localhost") as ws:
             await ws.send('{"type": "idle_timeout"}')
             await asyncio.wait_for(said.wait(), 2)
-        server.set_pipeline(None)
+        # Hidden from the tray: the pipeline ends the conversation, and every window hides
+        said.clear()
         async with connect(f"ws://127.0.0.1:{PORT}", origin="http://tauri.localhost") as ws:
-            await ws.send('{"type": "idle_timeout"}')
+            await ws.send('{"type": "dismiss"}')
             msg = await asyncio.wait_for(ws.recv(), 2)
-            assert '"hide"' in msg, msg
+            assert said.is_set() and '"hide"' in msg, msg
     finally:
         await server.stop()
 
@@ -67,7 +71,7 @@ def test_origin_check():
 
 
 async def _run_extension():
-    server = MikuServer(port=PORT, brain=object(), tts=object())
+    server = MikuServer(port=PORT)
     stopped = []
     server.on_shutdown = lambda: stopped.append(1)
     await server.start()
