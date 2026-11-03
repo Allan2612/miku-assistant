@@ -109,6 +109,12 @@ export function resetAutoHideTimer(): void {
     return;
   }
   autoHideTimer = window.setTimeout(() => {
+    // Still listening, thinking or talking: not inactivity. A 20+ s answer (Gemini overloaded, 3-nov) hid her
+    // mid-turn, and she then spoke hidden
+    if (backendBusy) {
+      resetAutoHideTimer();
+      return;
+    }
     console.log(`[Auto-hide] ${HIDE_AFTER_SECONDS}s of inactivity reached. Auto-hiding Miku.`);
     if (!ws.isConnected) {
       hideMiku();
@@ -155,6 +161,7 @@ function earcon(rising: boolean): void {
   }
 }
 let micOpen = false;
+let backendBusy = false; // the last "state" was listening, thinking or speaking
 
 function handleServerMessage(msg: ServerMessage): void {
   switch (msg.type) {
@@ -178,6 +185,7 @@ function handleServerMessage(msg: ServerMessage): void {
       ui.clearSubtitle();
       break;
     case "state":
+      backendBusy = msg.value !== "idle";
       if (msg.value === "listening") {
         clearAutoHideTimer();
         ui.showListening();
@@ -208,7 +216,8 @@ function handleServerMessage(msg: ServerMessage): void {
       break;
     case "subtitle":
       ui.showSubtitle(msg.who, msg.text, msg.who === "user" ? 3500 : 10000);
-      resetAutoHideTimer();
+      // The user's words arrive while she thinks: restarting the timer there started the countdown mid-turn
+      if (msg.who !== "user") resetAutoHideTimer();
       break;
     case "speak":
       clearAutoHideTimer();
@@ -337,12 +346,14 @@ export async function toggleMiku(): Promise<void> {
   live2d.stopSpeaking();
   ui.clearSubtitle();
 
-  if (isVisible) {
-    ws.send({ type: "activate" });
-  } else {
+  // Turned off from the tray: say how to turn her on instead of showing a Miku that cannot hear
+  if (!ws.isConnected) {
     await showMiku();
-    ws.send({ type: "activate" });
+    ui.showSubtitle("miku", "Estoy apagada o arrancando. Si estoy apagada, enciéndeme desde mi icono de la bandeja.", 5000);
+    return;
   }
+  // The backend shows her, or not: with a game or a video at full screen she answers by voice only
+  ws.send({ type: "activate" });
 }
 
 /**
@@ -380,6 +391,11 @@ async function setupShortcutsAndTray(): Promise<void> {
           case "quit":
             // Stop the Python backend too, or it keeps the mic open after "Salir" (H-050)
             ws.send({ type: "shutdown" });
+            break;
+          case "stop":
+            // "Apagar Miku" in the tray: the backend closes itself; the app stays (tray, and later the panel)
+            ws.send({ type: "shutdown" });
+            hideMiku();
             break;
         }
       });

@@ -4,6 +4,8 @@ import logging.handlers
 import os
 import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 # Ensure project root is always in sys.path
@@ -24,6 +26,34 @@ from .wakeword import WakeWordListener
 from .tools.timers import restore_timers
 
 logger = logging.getLogger("miku.core")
+
+
+PARENT_CHECK_S = 2.0
+PARENT_GRACE_S = 10.0
+
+
+def watch_parent(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event) -> None:
+    """Started by miku.exe (MIKU_PARENT_PID): when it is gone (closed, crashed, killed by stop.bat), shut down instead
+    of keeping the mic open. A thread, not a task: it must work even if the event loop is stuck."""
+    raw = os.environ.get("MIKU_PARENT_PID")
+    if not raw:
+        return  # started by hand (start.bat of old, a test): nobody to watch
+    import psutil
+
+    try:
+        parent = psutil.Process(int(raw))
+    except (psutil.Error, ValueError):
+        parent = None
+
+    def run() -> None:
+        while parent is not None and parent.is_running():  # is_running also checks it is not a reused PID
+            time.sleep(PARENT_CHECK_S)
+        logger.info("miku.exe is gone: shutting down.")
+        loop.call_soon_threadsafe(stop_event.set)
+        time.sleep(PARENT_GRACE_S)
+        os._exit(0)  # the normal shutdown got stuck; the RVC worker exits on its own when its pipe closes
+
+    threading.Thread(target=run, daemon=True, name="miku-parent-watch").start()
 
 
 async def async_main() -> None:
@@ -87,6 +117,7 @@ async def async_main() -> None:
         compute_type=config.stt.compute_type,
         cpu_threads=config.stt.cpu_threads,
         language=config.language,
+        vocabulary=config.stt.vocabulary,
     )
 
     rvc = RVCManager(config=config.rvc)
@@ -121,6 +152,7 @@ async def async_main() -> None:
 
     stop_event = asyncio.Event()
     server.on_shutdown = stop_event.set
+    watch_parent(asyncio.get_running_loop(), stop_event)
 
     def signal_handler():
         logger.info("Shutdown signal received.")

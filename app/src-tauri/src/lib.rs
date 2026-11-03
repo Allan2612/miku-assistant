@@ -1,3 +1,9 @@
+mod backend;
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use backend::Backend;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -11,11 +17,23 @@ pub fn run() {
         .setup(|app| {
             // The frontend positions the window (positionWindow in main.ts) using the work area
 
-            // Build Tray Menu: Mostrar / Ocultar / Salir
+            // The backend runs as our child: Task Manager groups it under "Miku Assistant"
+            let backend = Arc::new(Backend::new());
+            {
+                let backend = backend.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = backend.start() {
+                        eprintln!("[Backend] {e}");
+                    }
+                });
+            }
+
+            // Build Tray Menu: Mostrar / Ocultar / Apagar-Encender / Salir
             let show_i = MenuItem::with_id(app, "show", "Mostrar", true, None::<&str>)?;
             let hide_i = MenuItem::with_id(app, "hide", "Ocultar", true, None::<&str>)?;
+            let power_i = MenuItem::with_id(app, "power", "Apagar Miku", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &hide_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&show_i, &hide_i, &power_i, &quit_i])?;
 
             let default_icon = app.default_window_icon().cloned();
             let mut tray_builder = TrayIconBuilder::new().menu(&menu).show_menu_on_left_click(false);
@@ -24,7 +42,7 @@ pub fn run() {
             }
 
             let tray = tray_builder
-                .on_menu_event(|app, event| match event.id.as_ref() {
+                .on_menu_event(move |app, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
@@ -37,13 +55,38 @@ pub fn run() {
                             let _ = window.emit("tray-action", "hide");
                         }
                     }
+                    "power" => {
+                        let (backend, power_i) = (backend.clone(), power_i.clone());
+                        if backend.running() || backend::port_in_use() {
+                            // The frontend asks the backend to close itself (releases the mic and the VRAM)
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.emit("tray-action", "stop");
+                            }
+                            let _ = power_i.set_enabled(false);
+                            std::thread::spawn(move || {
+                                backend.wait_or_kill(Duration::from_secs(6));
+                                let _ = power_i.set_text("Encender Miku");
+                                let _ = power_i.set_enabled(true);
+                            });
+                        } else {
+                            std::thread::spawn(move || {
+                                match backend.start() {
+                                    Ok(()) => {
+                                        let _ = power_i.set_text("Apagar Miku");
+                                    }
+                                    Err(e) => eprintln!("[Backend] {e}"),
+                                }
+                            });
+                        }
+                    }
                     "quit" => {
                         // Let the frontend tell the backend to shut down before we exit (H-050)
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.emit("tray-action", "quit");
                         }
-                        std::thread::spawn(|| {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
+                        let backend = backend.clone();
+                        std::thread::spawn(move || {
+                            backend.wait_or_kill(Duration::from_secs(5));
                             std::process::exit(0);
                         });
                     }
