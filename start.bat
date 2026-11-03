@@ -17,9 +17,9 @@ netstat -ano | findstr /R /C:":8765 .*LISTENING" >nul && (
 ::    backend shuts down by itself when miku.exe closes
 echo [*] Iniciando Miku Assistant...
 if exist "%~dp0app\src-tauri\target\release\miku.exe" (
-    start "" "%~dp0app\src-tauri\target\release\miku.exe"
+    start "" "%~dp0app\src-tauri\target\release\miku.exe" %*
 ) else if exist "%~dp0app\src-tauri\target\debug\miku.exe" (
-    start "" "%~dp0app\src-tauri\target\debug\miku.exe"
+    start "" "%~dp0app\src-tauri\target\debug\miku.exe" %*
 ) else (
     echo [!] Error: No se encontro miku.exe. Compila la app primero.
     pause

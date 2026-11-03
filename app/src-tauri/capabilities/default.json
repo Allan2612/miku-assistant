@@ -1,8 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for Miku's window and the panel",
+  "windows": [
+    "main",
+    "panel"
+  ],
   "permissions": [
     "core:default",
     "core:window:default",

@@ -22,6 +22,19 @@
         "shadow": false,
         "resizable": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+      },
+      {
+        "label": "panel",
+        "title": "Miku Assistant",
+        "url": "panel.html",
+        "width": 1240,
+        "height": 800,
+        "minWidth": 980,
+        "minHeight": 640,
+        "visible": false,
+        "center": true,
+        "decorations": true,
+        "resizable": true
       }
     ],
     "security": {

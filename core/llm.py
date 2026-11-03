@@ -17,7 +17,8 @@ import time
 import wave
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from collections import deque
+from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 from dotenv import load_dotenv
@@ -234,6 +235,10 @@ class MikuBrain:
         self.tools = get_registered_tools()
         self.total_api_calls = 0
         self._quota_warning: Optional[str] = None
+        # For the panel: the model that answered last, and the last turns (when, what, local or Gemini)
+        self.last_model: Optional[str] = None
+        self.recent_turns: Deque[Dict[str, str]] = deque(maxlen=12)
+        self._turn_kind = "local"
         self._last_query_text = ""
         self._last_query_time = 0.0
         self._last_result: Optional[Tuple[str, str, bool]] = None
@@ -388,6 +393,8 @@ class MikuBrain:
 
     def _remember(self, user_text: str, model_text: str) -> None:
         """Keeps the turn as text so the next request (on any model) has the context."""
+        self.recent_turns.appendleft({"at": datetime.now().strftime("%H:%M"), "user": user_text,
+                                      "answer": re.sub(r"^\[\w+\]\s*", "", model_text), "kind": self._turn_kind})
         self._history_turns.append({"role": "user", "text": user_text})
         self._history_turns.append({"role": "model", "text": model_text})
         if len(self._history_turns) > self.max_history * 4:
@@ -776,6 +783,7 @@ class MikuBrain:
         acted_before = self._acted_last_turn
         self._acted_last_turn = False
         self.last_outcome = None
+        self._turn_kind = "local"  # confirmation, goodbye, fast path: no request
 
         # Only the user's own reply can confirm a pending destructive tool (H-001); the approved action
         # runs here, locally, so confirming costs no request
@@ -835,6 +843,7 @@ class MikuBrain:
         # fallback after one 504 (log 2-nov: 12 turns on 3.1-flash-lite after a 15 s cooldown)
 
         last_error = None
+        self._turn_kind = "gemini"
         screenshot = None
         if intent.asks_about_screen(clean_input) or (intent.points_at_screen(clean_input) and not bridge.results):
             try:
@@ -869,6 +878,7 @@ class MikuBrain:
                 model_contents, model_config = self._for_model(model, contents, config, clean_input)
                 response = await self._generate(model, model_contents, model_config)
                 self._count(model)
+                self.last_model = model
                 # Clear any previous cooldown for this healthy model
                 self._model_cooldown.pop(model, None)
                 self._fail_streak.pop(model, None)

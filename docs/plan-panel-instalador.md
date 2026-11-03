@@ -120,6 +120,17 @@ Al usuario le gusta todo. Cambios pedidos:
 4. **Nombre:** `productName` "Miku Assistant" y ejecutable `miku.exe`, que es lo que muestra el Administrador de tareas.
 5. **`start.bat` y `stop.bat`** solo abren y cierran `miku.exe` (el backend va dentro). Siguen sirviendo de respaldo.
 
+## Estado
+
+- **Fase 1 (hecha, 3-nov):** `miku.exe` lanza el backend como hijo; procesos agrupados como "Miku Assistant"; el
+  backend se apaga solo en ~2,6 s si `miku.exe` desaparece; Apagar/Encender en la bandeja.
+- **Fase 2 (hecha, 3-nov):** ventana del panel (`panel.html`, `src/panel/`), abierta al abrir `miku.exe` o desde
+  "Abrir panel" en la bandeja (con `--tray`, el arranque con Windows, solo el icono); cerrarla la oculta.
+  Inicio (Miku en Live2D, encender/apagar, piezas, últimos turnos, cuota), Recursos (procesos de Miku con CPU,
+  memoria, VRAM y GPU leídos de los contadores de Windows con `ctypes`, `core/gpu_counters.py`), Cuotas (modelos,
+  pausas, 7 días) y Logs (leídos por Rust: funcionan con Miku apagada). El resto de secciones dice qué tendrá.
+  Fuentes de Windows (Segoe UI Variable, Cascadia Mono): la app no carga Google Fonts.
+
 ## Fases
 
 Cada fase deja algo usable por sí mismo.

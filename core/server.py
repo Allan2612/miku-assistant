@@ -13,6 +13,7 @@ from typing import Callable, Set, Dict, Any, Optional
 import websockets
 from websockets.asyncio.server import ServerConnection
 
+from core import panel
 from core.browser import EXTENSION_ORIGIN, bridge
 
 logger = logging.getLogger("miku.server")
@@ -28,6 +29,7 @@ ALLOWED_ORIGINS = [
 ]
 
 MAX_TEXT_INPUT = 1000  # characters sent to Gemini per message
+PANEL_EVENTS = {"state", "subtitle"}  # what the panel hears of Miku's events (its equalizer, its "now")
 
 
 class MikuServer:
@@ -41,6 +43,8 @@ class MikuServer:
         # MikuPipeline, set by __main__ before start(): every answer goes through it (one voice, RVC)
         self.pipeline: Any = None
         self.clients: Set[ServerConnection] = set()
+        # The panel window: it asks for data and gets only the light events, never Miku's audio
+        self.panels: Set[ServerConnection] = set()
         self.server = None
         # Set by __main__: lets the app's "Salir" stop the whole backend (H-050)
         self.on_shutdown: Optional[Callable[[], None]] = None
@@ -70,6 +74,8 @@ class MikuServer:
 
     async def broadcast(self, message: Dict[str, Any]) -> None:
         """Broadcasts a JSON message to all connected frontend clients."""
+        if message.get("type") in PANEL_EVENTS and self.panels:
+            await self._send_panels(message)
         if not self.clients:
             return
         if message.get("type") == "show":
@@ -83,6 +89,22 @@ class MikuServer:
             except Exception:
                 disconnected.add(client)
         self.clients -= disconnected
+
+    async def _send_panels(self, message: Dict[str, Any]) -> None:
+        payload = json.dumps(message, ensure_ascii=False)
+        for panel in list(self.panels):
+            try:
+                await panel.send(payload)
+            except Exception:
+                self.panels.discard(panel)
+
+    async def _answer_panel(self, websocket: ServerConnection, data: Dict[str, Any]) -> None:
+        reply = None
+        if self.pipeline is not None:
+            # Process and GPU counters block for a few ms: off the event loop
+            reply = await asyncio.to_thread(panel.answer, self.pipeline, str(data.get("what", "")))
+        await websocket.send(json.dumps({"type": "panel_reply", "id": data.get("id"), "data": reply},
+                                        ensure_ascii=False))
 
     async def _handle_extension(self, websocket: ServerConnection) -> None:
         """Miku's Opera extension: it may only report tabs and answer commands, never drive Miku."""
@@ -121,7 +143,16 @@ class MikuServer:
                     data = json.loads(raw_message)
                     msg_type = data.get("type")
 
-                    if msg_type == "ready":
+                    if msg_type == "panel_hello":
+                        # The panel, not Miku's window: no show/hide/speak for it, and it does not count as
+                        # "someone is there" for conversation mode
+                        self.clients.discard(websocket)
+                        self.panels.add(websocket)
+
+                    elif msg_type == "panel_get":
+                        self._spawn(self._answer_panel(websocket, data))
+
+                    elif msg_type == "ready":
                         logger.info("Client is ready.")
                         await websocket.send(json.dumps({"type": "state", "value": "idle"}))
 
@@ -176,6 +207,7 @@ class MikuServer:
             pass
         finally:
             self.clients.discard(websocket)
+            self.panels.discard(websocket)
             logger.info("Frontend client disconnected: %s", client_addr)
 
     async def start(self) -> None:

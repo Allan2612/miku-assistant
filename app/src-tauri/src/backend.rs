@@ -35,6 +35,10 @@ impl Backend {
         Backend { root: find_root(), child: Mutex::new(None) }
     }
 
+    pub fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
     /// Ours and still alive.
     pub fn running(&self) -> bool {
         let mut child = self.child.lock().unwrap();

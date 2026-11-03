@@ -25,6 +25,15 @@ export default defineConfig(() => ({
       live2d: appConfig.live2d,
     }),
   },
+  // Two pages: Miku's window and the panel
+  build: {
+    rolldownOptions: {
+      input: {
+        main: path.resolve(import.meta.dirname, "index.html"),
+        panel: path.resolve(import.meta.dirname, "panel.html"),
+      },
+    },
+  },
   clearScreen: false,
   server: {
     port: 1420,

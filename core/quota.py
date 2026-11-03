@@ -26,6 +26,7 @@ DAILY_LIMITS = {
     "gemma-4-26b-a4b-it": 14400,
 }
 WARN_AT = 0.9
+HISTORY_DAYS = 14
 
 
 def _first_sunday(year: int, month: int) -> datetime.date:
@@ -56,7 +57,7 @@ def _today(data: Dict) -> Dict:
     """The saved counts if they are today's (Pacific), else a fresh day."""
     day = pacific_now().date().isoformat()
     if data.get("day") != day:
-        data = {"day": day, "counts": {}, "warned": []}
+        data = {"day": day, "counts": {}, "warned": [], "history": data.get("history") or {}}
     return data
 
 
@@ -64,6 +65,11 @@ def count(model: str, primary: str) -> Optional[str]:
     """Counts one answered request. Returns a warning to say once a day when the primary model reaches 90%."""
     data = _today(_load())
     data["counts"][model] = data["counts"].get(model, 0) + 1
+    # Per day, for the panel's last-7-days chart
+    history = data.setdefault("history", {})
+    history[data["day"]] = dict(data["counts"])
+    for old in sorted(history)[:-HISTORY_DAYS]:
+        del history[old]
     used, limit = data["counts"][model], DAILY_LIMITS.get(model)
     warning = None
     if model == primary and limit and used >= limit * WARN_AT and model not in data.get("warned", []):
@@ -77,6 +83,18 @@ def count(model: str, primary: str) -> Optional[str]:
     except OSError as e:
         logger.warning("Could not save the quota count: %s", e)
     return warning
+
+
+def snapshot() -> Dict:
+    """Today's counts per model, the limits, the last 7 days and when the quota renews (for the panel)."""
+    data = _today(_load())
+    pacific = pacific_now()
+    to_midnight = datetime.datetime.combine(pacific.date() + datetime.timedelta(days=1), datetime.time()) - pacific
+    reset = datetime.datetime.now() + to_midnight + datetime.timedelta(seconds=30)
+    days = [(pacific.date() - datetime.timedelta(days=n)).isoformat() for n in range(6, -1, -1)]
+    history = data.get("history") or {}
+    return {"day": data["day"], "counts": data["counts"], "limits": DAILY_LIMITS, "reset": f"{reset:%H:%M}",
+            "week": [{"day": d, "counts": history.get(d, {})} for d in days]}
 
 
 def describe(primary: str) -> str:
