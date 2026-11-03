@@ -102,7 +102,8 @@ class MikuServer:
         reply = None
         if self.pipeline is not None:
             # Process and GPU counters block for a few ms: off the event loop
-            reply = await asyncio.to_thread(panel.answer, self.pipeline, str(data.get("what", "")))
+            args = data.get("args") if isinstance(data.get("args"), dict) else {}
+            reply = await asyncio.to_thread(panel.answer, self.pipeline, str(data.get("what", "")), args)
         await websocket.send(json.dumps({"type": "panel_reply", "id": data.get("id"), "data": reply},
                                         ensure_ascii=False))
 

@@ -64,6 +64,50 @@ async fn backend_stop(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || stop_backend(&app)).await.map_err(|e| e.to_string())
 }
 
+fn settings(app: &AppHandle, args: &[&str], input: &str) -> Result<String, String> {
+    app.state::<Power>().backend.run_settings(args, input)
+}
+
+#[tauri::command]
+async fn settings_get(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || settings(&app, &["get"], "")).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn settings_set(app: AppHandle, changes: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || settings(&app, &["set"], &changes)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn settings_tools(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || settings(&app, &["tools"], "")).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn settings_testkey(app: AppHandle, key: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || settings(&app, &["testkey"], &key)).await.map_err(|e| e.to_string())?
+}
+
+/// After saving settings: the backend reads config.yaml and .env only when it starts.
+#[tauri::command]
+async fn backend_restart(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if backend_on(&app) {
+            stop_backend(&app);
+        }
+        start_backend(&app)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// docs/funciones.md, for the Funciones page (only that file).
+#[tauri::command]
+fn read_functions_doc(app: AppHandle) -> Result<String, String> {
+    let root = app.state::<Power>().backend.root().ok_or("No encuentro la carpeta de Miku")?.to_path_buf();
+    std::fs::read_to_string(root.join("docs").join("funciones.md")).map_err(|e| e.to_string())
+}
+
 /// The last `lines` lines of cache/core.log, read from the file: the panel shows them with Miku off too.
 #[tauri::command]
 fn read_log(app: AppHandle, lines: usize) -> Result<String, String> {
@@ -78,7 +122,10 @@ fn read_log(app: AppHandle, lines: usize) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![backend_state, backend_start, backend_stop, read_log])
+        .invoke_handler(tauri::generate_handler![
+            backend_state, backend_start, backend_stop, backend_restart, read_log, read_functions_doc,
+            settings_get, settings_set, settings_tools, settings_testkey
+        ])
         .setup(|app| {
             // The frontend positions the window (positionWindow in main.ts) using the work area
 

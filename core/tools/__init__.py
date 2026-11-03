@@ -18,6 +18,8 @@ from typing import Callable, Dict, List, Any, Optional
 logger = logging.getLogger("miku.tools")
 
 _TOOL_REGISTRY: Dict[str, Callable] = {}
+# Turned off in the panel (config.yaml -> tools.disabled): Gemini does not see them, local phrases get a refusal
+DISABLED: set = set()
 _TOOL_METADATA: Dict[str, Dict[str, Any]] = {}
 
 # Destructive call waiting for the user's "sí": {"name", "kwargs", "time"}
@@ -85,6 +87,8 @@ def tool(name: Optional[str] = None, description: Optional[str] = None, destruct
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Dict[str, Any]:
             global _pending_confirmation, _user_confirmed
+            if tool_name in DISABLED:
+                return {"ok": False, "result": "Esa función está desactivada en el panel de Miku (Herramientas)."}
             if destructive:
                 kwargs.pop("confirmed", None)  # the LLM cannot confirm on the user's behalf
                 confirmed = _user_confirmed
@@ -138,8 +142,8 @@ def tool(name: Optional[str] = None, description: Optional[str] = None, destruct
 
 
 def get_registered_tools() -> List[Callable]:
-    """Returns a list of all registered tool functions for Gemini."""
-    return list(_TOOL_REGISTRY.values())
+    """Returns a list of all registered tool functions for Gemini (not the ones turned off in the panel)."""
+    return [f for name, f in _TOOL_REGISTRY.items() if name not in DISABLED]
 
 
 def get_tool_metadata(name: str) -> Optional[Dict[str, Any]]:
@@ -161,3 +165,7 @@ import core.tools.routines
 import core.tools.obs
 import core.tools.weather
 import core.tools.downloads
+
+from core.config import load_config  # noqa: E402  (after the tools: config.py imports nothing from here)
+
+DISABLED.update(load_config().tools.disabled)

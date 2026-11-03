@@ -39,6 +39,34 @@ impl Backend {
         self.root.as_deref()
     }
 
+    /// `python -m core.settings <args>` as a short process (works with Miku off): JSON in on stdin, JSON out.
+    /// python.exe, not pythonw.exe: pythonw has no stdout to read the answer from.
+    pub fn run_settings(&self, args: &[&str], input: &str) -> Result<String, String> {
+        use std::io::Write;
+        let root = self.root.as_ref().ok_or("No encuentro la carpeta de Miku")?;
+        let mut child = Command::new(root.join("core").join(".venv").join("Scripts").join("python.exe"))
+            .args(["-m", "core.settings"])
+            .args(args)
+            .current_dir(root)
+            .env("PYTHONPATH", root)
+            .env("PYTHONIOENCODING", "utf-8")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("No pude lanzar Python: {e}"))?;
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(input.as_bytes());
+        }
+        let out = child.wait_with_output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(err.lines().last().unwrap_or("error de Python").to_string());
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
     /// Ours and still alive.
     pub fn running(&self) -> bool {
         let mut child = self.child.lock().unwrap();

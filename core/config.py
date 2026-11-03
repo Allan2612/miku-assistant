@@ -83,6 +83,7 @@ class Live2DConfig:
 class ToolsConfig:
     file_search_roots: list[str] = field(default_factory=list)
     weather_city: str = "San José, Costa Rica"  # "Ciudad, País": the country picks the right San José
+    disabled: list[str] = field(default_factory=list)  # tools turned off in the panel
 
 
 @dataclass(slots=True)
@@ -197,6 +198,7 @@ def load_config(
         tools=ToolsConfig(
             file_search_roots=tools_data.get("file_search_roots", ["~/Desktop", "~/Documents", "~/Downloads"]),
             weather_city=str(tools_data.get("weather_city") or ToolsConfig().weather_city),
+            disabled=[str(t) for t in tools_data.get("disabled") or []],
         ),
         apps=dict(apps_data),
         routines={str(k).lower(): list(v or []) for k, v in (raw_data.get("routines") or {}).items()},

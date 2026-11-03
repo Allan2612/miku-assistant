@@ -9,9 +9,11 @@ echo ====================================================
 
 echo [*] Cerrando Miku Assistant (miku.exe de este proyecto)...
 :: Match the exact executable path: other programs with that name are left alone (app.exe: builds before 3-nov)
-powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('miku.exe','app.exe') -and $_.ExecutablePath -like ($env:MIKU_ROOT + 'app\src-tauri\target\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+:: miku.old.exe: a running miku.exe renamed so a new build could be written next to it
+powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('miku.exe','miku.old.exe','app.exe') -and $_.ExecutablePath -like ($env:MIKU_ROOT + 'app\src-tauri\target\*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 :: The backend sees miku.exe gone and shuts down by itself (mic, RVC worker): give it a moment
 ping -n 5 127.0.0.1 >nul
+if exist "app\src-tauri\target\release\miku.old.exe" del "app\src-tauri\target\release\miku.old.exe" >nul 2>&1
 
 echo [*] Cerrando backend de Miku si sigue vivo...
 :: Started by hand, or stuck: core\__main__.py wrote its PID. No /T: the apps Miku opened for you (Spotify,

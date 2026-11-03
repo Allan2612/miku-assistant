@@ -136,11 +136,101 @@ def quota_view(pipeline: Any) -> Dict[str, Any]:
     return {"models": models, "reset": snap["reset"], "week": snap["week"], "primary": brain.primary_model}
 
 
-def answer(pipeline: Any, what: str) -> Optional[Dict[str, Any]]:
+def timers_view() -> Dict[str, Any]:
+    """Active timers and reminders, soonest first, and the pending notes."""
+    import datetime
+
+    from core.tools import timers
+    from core.tools.notes import _notes
+
+    items = []
+    for t in sorted(timers._TIMERS.values(), key=lambda t: t["due"]):
+        label = str(t["label"])
+        items.append({"id": t["id"], "reminder": label.startswith("Recordatorio"),
+                      "text": label.removeprefix("Recordatorio:").strip(), "when": timers._spoken_when(t),
+                      "at": datetime.datetime.fromtimestamp(t["due"]).strftime("%H:%M"), "repeats": bool(t.get("every"))})
+    try:
+        pending = [text for _, text in _notes()]
+    except OSError:
+        pending = []
+    return {"timers": items, "pending": pending}
+
+
+def memory_view() -> Dict[str, Any]:
+    """What she remembers about the user, and the days with an archived conversation (newest first)."""
+    from core.tools.memory import CONVERSATIONS_DIR, memory_facts
+
+    days = sorted((p.stem for p in CONVERSATIONS_DIR.glob("*.jsonl")), reverse=True) if CONVERSATIONS_DIR.exists() else []
+    return {"facts": memory_facts(), "days": days}
+
+
+def conversation(day: str) -> Dict[str, Any]:
+    import json
+    import re
+
+    from core.tools.memory import CONVERSATIONS_DIR
+
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day or ""):  # a file name from the panel: never a path
+        return {"day": day, "turns": []}
+    path = CONVERSATIONS_DIR / f"{day}.jsonl"
+    turns = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                turns.append(json.loads(line))
+            except ValueError:
+                continue
+    return {"day": day, "turns": turns}
+
+
+def act(action: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Changes made from the panel, through the same tools Miku uses: the same checks, the same files."""
+    from core.tools import memory, notes, timers
+
+    text = str(args.get("text", "")).strip()
+    if action == "remind":
+        def num(key: str) -> float:
+            try:
+                return float(args.get(key) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        return timers.remind(text, minutes=num("minutes"), at=str(args.get("at") or ""), date=str(args.get("date") or ""),
+                             every_minutes=num("every_minutes"))
+    if action == "cancel_timer":
+        return timers.cancel_timer(int(args.get("id", 0)))
+    if action == "note_add":
+        return notes.take_note(text)
+    if action == "note_done":
+        return notes.complete_note(text)
+    if action == "note_delete":
+        return notes.delete_note(text)
+    if action == "fact_add":
+        return memory.remember(text)
+    if action in ("fact_delete", "fact_edit"):
+        facts = memory.memory_facts()
+        old = str(args.get("old", text))
+        if old not in facts:
+            return {"ok": False, "result": "Ese dato ya no estaba guardado."}
+        new = str(args.get("new", "")).strip()
+        memory._save([new if f == old else f for f in facts if new or f != old])  # exact fact, not "contains"
+        return {"ok": True, "result": "Dato cambiado." if new else "Dato borrado."}
+    return {"ok": False, "result": f"Acción desconocida: {action}"}
+
+
+def answer(pipeline: Any, what: str, args: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    args = args or {}
     if what == "status":
         return status(pipeline)
     if what == "processes":
         return processes()
     if what == "quota":
         return quota_view(pipeline)
+    if what == "timers":
+        return timers_view()
+    if what == "memory":
+        return memory_view()
+    if what == "conversation":
+        return conversation(str(args.get("day", "")))
+    if what.startswith("do:"):
+        return act(what[3:], args)
     return None

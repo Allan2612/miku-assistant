@@ -58,10 +58,51 @@ async def _run():
         await server.stop()
 
 
+def test_panel_changes_go_through_mikus_tools():
+    import tempfile
+    from pathlib import Path
+
+    from core.tools import memory, notes, timers
+
+    tmp = Path(tempfile.mkdtemp())
+    timers.TIMERS_FILE, notes.NOTES_FILE = tmp / "timers.json", tmp / "notes.md"
+    memory.MEMORY_FILE, memory.CONVERSATIONS_DIR = tmp / "memory.json", tmp / "conversations"
+
+    async def run():
+        timers.set_timer_notifier(lambda m: asyncio.sleep(0), loop=asyncio.get_running_loop())
+        timers._TIMERS.clear()
+        # Called from a thread, as the server does
+        res = await asyncio.to_thread(panel.act, "remind", {"text": "estirar", "minutes": "30"})
+        assert res["ok"], res
+        view = await asyncio.to_thread(panel.timers_view)
+        assert view["timers"][0]["text"] == "estirar" and view["timers"][0]["reminder"], view
+        assert (await asyncio.to_thread(panel.act, "cancel_timer", {"id": view["timers"][0]["id"]}))["ok"]
+        assert panel.timers_view()["timers"] == []
+
+    asyncio.run(run())
+
+    assert panel.act("note_add", {"text": "subir el PR"})["ok"]
+    assert panel.timers_view()["pending"] == ["subir el PR"]
+    assert panel.act("note_done", {"text": "subir el PR"})["ok"] and panel.timers_view()["pending"] == []
+
+    panel.act("fact_add", {"text": "Le gusta Frieren"})
+    panel.act("fact_add", {"text": "Le gusta el café"})
+    assert panel.act("fact_edit", {"old": "Le gusta Frieren", "new": "Le encanta Frieren"})["ok"]
+    assert panel.act("fact_delete", {"text": "Le gusta el café"})["ok"]
+    assert panel.memory_view()["facts"] == ["Le encanta Frieren"]
+
+    memory.CONVERSATIONS_DIR.mkdir()
+    (memory.CONVERSATIONS_DIR / "2026-11-03.jsonl").write_text('{"at": "12:00", "user": "hola", "miku": "¡Hola!"}\n', encoding="utf-8")
+    assert panel.memory_view()["days"] == ["2026-11-03"]
+    assert panel.conversation("2026-11-03")["turns"][0]["user"] == "hola"
+    assert panel.conversation("../../config")["turns"] == [], "a day, never a path"
+
+
 def test_panel_asks_and_listens():
     asyncio.run(_run())
 
 
 if __name__ == "__main__":
     test_panel_asks_and_listens()
+    test_panel_changes_go_through_mikus_tools()
     print("ok")

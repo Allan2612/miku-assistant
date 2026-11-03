@@ -6,91 +6,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { live2d } from "../live2d";
+import { refreshReminders, renderConfig, renderFunctions, renderMemory, renderReminders, renderTools } from "./manage";
+import { MODEL, POWER_ICON, Reply, byId, comma, esc, head, icon, isTauri, link, offlineNote, size, state } from "./shared";
 
-declare const __APP_CONFIG__: { live2d?: { model?: string } };
-
-const isTauri = "__TAURI_INTERNALS__" in window;
-const MODEL = (typeof __APP_CONFIG__ !== "undefined" && __APP_CONFIG__.live2d?.model) || "models/miku_official/miku_sample_t04.model3.json";
-
-// ---------- small helpers ----------
-const esc = (v: unknown): string =>
-  String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-const byId = (id: string) => document.getElementById(id);
-const comma = (n: number, d = 1) => n.toFixed(d).replace(".", ",");
-const size = (bytes: number) => (bytes >= 1024 ** 3 ? `${comma(bytes / 1024 ** 3)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`);
-const icon = (d: string, s = 18) =>
-  `<svg aria-hidden="true" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"></path></svg>`;
-const POWER_ICON = "M12 3v8M6.4 7.2a8 8 0 1 0 11.2 0";
-
-// ---------- link to the backend ----------
-type Reply = Record<string, any> | null;
-
-class BackendLink {
-  private ws: WebSocket | null = null;
-  private nextId = 1;
-  private pending = new Map<number, (data: Reply) => void>();
-  private retry: number | null = null;
-  onEvent: (msg: Record<string, any>) => void = () => {};
-  get open(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
-  }
-
-  connect(): void {
-    if (this.ws && this.ws.readyState <= WebSocket.OPEN) return;
-    try {
-      this.ws = new WebSocket("ws://127.0.0.1:8765");
-    } catch {
-      this.later();
-      return;
-    }
-    this.ws.onopen = () => this.ws?.send(JSON.stringify({ type: "panel_hello" }));
-    this.ws.onmessage = (ev) => {
-      let msg: Record<string, any>;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch {
-        return;
-      }
-      if (msg.type === "panel_reply") {
-        this.pending.get(msg.id)?.(msg.data ?? null);
-        this.pending.delete(msg.id);
-      } else {
-        this.onEvent(msg);
-      }
-    };
-    this.ws.onclose = () => {
-      this.ws = null;
-      for (const resolve of this.pending.values()) resolve(null);
-      this.pending.clear();
-      this.later();
-    };
-  }
-
-  private later(): void {
-    if (this.retry) return;
-    this.retry = window.setTimeout(() => {
-      this.retry = null;
-      if (backendOn) this.connect();
-    }, 2000);
-  }
-
-  request(what: string): Promise<Reply> {
-    if (!this.open) return Promise.resolve(null);
-    const id = this.nextId++;
-    return new Promise((resolve) => {
-      this.pending.set(id, resolve);
-      this.ws!.send(JSON.stringify({ type: "panel_get", id, what }));
-      window.setTimeout(() => {
-        if (this.pending.delete(id)) resolve(null);
-      }, 5000);
-    });
-  }
-}
-
-const link = new BackendLink();
-let backendOn = false;
-let powerBusy = false;
-let speaking = false;
 
 // ---------- sections ----------
 interface Section {
@@ -108,16 +26,11 @@ const SECTIONS: Section[] = [
   { id: "recursos", label: "Recursos", d: "M3 12h4l2.5-6 5 12 2.5-6H21", render: renderRecursos, refresh: refreshRecursos, every: 2 },
   { id: "cuotas", label: "Cuotas", d: "M12 3v9h9M20.5 15A9 9 0 1 1 9 3.5", render: renderCuotas, refresh: refreshCuotas, every: 10 },
   { id: "logs", label: "Logs", d: "M4 5h16v14H4zM7.5 9.5 10 12l-2.5 2.5M12.5 15h4", render: renderLogs, refresh: refreshLogs, every: 1.5 },
-  { id: "config", label: "Configuración", d: "M4 7h10M18 7h2M4 17h4M12 17h8M16 4.5v5M10 14.5v5", render: renderSoon,
-    soon: ["API key de Gemini y modelo principal", "Voz RVC y «Hey Miku» encendidos o apagados", "Umbral de la palabra clave, atajo y micrófono", "Ciudad del clima, contraseña de OBS y palabras de Whisper", "Guardar y reiniciar a Miku"] },
-  { id: "herramientas", label: "Herramientas", d: "M14.7 6.3a4 4 0 0 0 5 5L11 20a2.1 2.1 0 0 1-3-3l8.7-8.7a4 4 0 0 1-2-2z", render: renderSoon,
-    soon: ["Las 46 herramientas, con su descripción", "Cuáles son locales y cuáles usan Gemini", "Un interruptor para desactivar alguna"] },
-  { id: "funciones", label: "Funciones", d: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", render: renderSoon,
-    soon: ["Todo lo que puede hacer y cómo pedírselo, con buscador", "Botón para probar una frase"] },
-  { id: "recordatorios", label: "Recordatorios", d: "M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0", render: renderSoon,
-    soon: ["Recordatorios y temporizadores con cuándo suenan", "Crear y cancelar", "Tus pendientes"] },
-  { id: "memoria", label: "Memoria", d: "M6 4h12v17l-6-4-6 4z", render: renderSoon,
-    soon: ["Lo que Miku recuerda de ti, para editar o borrar", "Las conversaciones de cada día"] },
+  { id: "config", label: "Configuración", d: "M4 7h10M18 7h2M4 17h4M12 17h8M16 4.5v5M10 14.5v5", render: renderConfig },
+  { id: "herramientas", label: "Herramientas", d: "M14.7 6.3a4 4 0 0 0 5 5L11 20a2.1 2.1 0 0 1-3-3l8.7-8.7a4 4 0 0 1-2-2z", render: renderTools },
+  { id: "funciones", label: "Funciones", d: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", render: renderFunctions },
+  { id: "recordatorios", label: "Recordatorios", d: "M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0", render: renderReminders, refresh: refreshReminders, every: 5 },
+  { id: "memoria", label: "Memoria", d: "M6 4h12v17l-6-4-6 4z", render: renderMemory },
   { id: "palabra", label: "Palabra clave", d: "M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21", render: renderSoon,
     soon: ["Escuchar cada activación de «Hey Miku»", "Marcar «era yo» o «no era yo» para reentrenar el modelo", "Activaciones, falsas y casi disparos del día"] },
   { id: "chat", label: "Chat", d: "M4 5h16v11H9l-5 4z", render: renderSoon, soon: ["Escribirle a Miku cuando no puedes hablar"] },
@@ -138,16 +51,14 @@ function go(id: string): void {
   if (current.id === "inicio" && next.id !== "inicio") live2d.stopTicker();
   current = next;
   renderNav();
+  const v = byId("view")!; // each page sets its own handlers
+  v.onclick = v.oninput = v.onchange = v.onkeydown = null;
+  v.scrollTop = 0;
   current.render();
   lastRefresh = 0;
   tick();
 }
 
-function head(eyebrow: string, title: string, sub: string, right = ""): string {
-  return `<header class="head"><div class="head-text"><span class="eyebrow">${esc(eyebrow)}</span><h1 id="title">${esc(title)}</h1><p class="sub" id="subtitle">${esc(sub)}</p></div>${right}</header>`;
-}
-
-const offlineNote = () => `<div class="offline">Miku está apagada. Enciéndela desde Inicio o desde su icono de la bandeja.</div>`;
 
 // ---------- Inicio ----------
 let stage: HTMLDivElement | null = null;
@@ -168,7 +79,7 @@ function mikuStage(): HTMLDivElement {
     .then(() => live2d.loadModel(`/${MODEL.replace(/^\/+/, "")}`, 0))
     .then(() => {
       mikuReady = true;
-      live2d.setExpression(backendOn ? "happy" : "neutral");
+      live2d.setExpression(state.backendOn ? "happy" : "neutral");
     })
     .catch((err) => console.warn("[Panel] Live2D:", err));
   return stage;
@@ -200,12 +111,12 @@ function renderInicio(): void {
 let lastStatus: Reply = null;
 
 async function refreshInicio(): Promise<void> {
-  lastStatus = backendOn ? await link.request("status") : null;
+  lastStatus = state.backendOn ? await link.request("status") : null;
   if (current.id === "inicio") paintInicio(lastStatus);
 }
 
 function paintPower(): void {
-  const on = backendOn;
+  const on = state.backendOn;
   byId("title") && (byId("title")!.textContent = on ? "Todo en orden" : "Miku está apagada");
   byId("subtitle") &&
     (byId("subtitle")!.textContent = on
@@ -214,22 +125,22 @@ function paintPower(): void {
   const btn = byId("power") as HTMLButtonElement | null;
   if (btn) {
     btn.className = `power ${on ? "on" : "off"}`;
-    btn.disabled = powerBusy;
-    byId("power-label")!.textContent = powerBusy ? (on ? "Apagando…" : "Encendiendo…") : on ? "Apagar Miku" : "Encender Miku";
+    btn.disabled = state.powerBusy;
+    byId("power-label")!.textContent = state.powerBusy ? (on ? "Apagando…" : "Encendiendo…") : on ? "Apagar Miku" : "Encender Miku";
   }
   byId("hero-title") && (byId("hero-title")!.textContent = on ? "Encendida" : "Apagada");
   const eq = byId("eq");
-  if (eq) eq.className = `eq${on ? (speaking ? " speaking" : "") : " off"}`;
+  if (eq) eq.className = `eq${on ? (state.speaking ? " speaking" : "") : " off"}`;
   stage?.classList.toggle("off", !on);
   if (mikuReady) live2d.setExpression(on ? "happy" : "neutral");
   byId("side-dot")!.style.background = on ? "#39c5bb" : "#56666a";
   byId("side-dot")!.style.boxShadow = on ? "0 0 10px #39c5bb" : "none";
-  byId("side-text")!.textContent = powerBusy ? "Cambiando…" : on ? "Encendida" : "Apagada";
+  byId("side-text")!.textContent = state.powerBusy ? "Cambiando…" : on ? "Encendida" : "Apagada";
 }
 
 function paintInicio(s: Reply): void {
   paintPower();
-  const on = backendOn;
+  const on = state.backendOn;
   const heroText = byId("hero-text");
   if (heroText) {
     heroText.textContent = !on
@@ -281,17 +192,17 @@ function paintInicio(s: Reply): void {
 }
 
 async function togglePower(): Promise<void> {
-  if (powerBusy || !isTauri) return;
-  powerBusy = true;
+  if (state.powerBusy || !isTauri) return;
+  state.powerBusy = true;
   paintPower();
   try {
-    await invoke(backendOn ? "backend_stop" : "backend_start");
+    await invoke(state.backendOn ? "backend_stop" : "backend_start");
   } catch (err) {
     console.warn("[Panel] power:", err);
   }
-  backendOn = await invoke<boolean>("backend_state");
-  powerBusy = false;
-  if (backendOn) link.connect();
+  state.backendOn = await invoke<boolean>("backend_state");
+  state.powerBusy = false;
+  if (state.backendOn) link.connect();
   paintPower();
   lastRefresh = 0;
 }
@@ -308,7 +219,7 @@ function renderRecursos(): void {
 }
 
 async function refreshRecursos(): Promise<void> {
-  const data = backendOn ? await link.request("processes") : null;
+  const data = state.backendOn ? await link.request("processes") : null;
   if (data) {
     cpuHist.push(data.total.cpu);
     vramHist.push(data.total.vram);
@@ -329,7 +240,7 @@ function chart(values: number[], color: string, fill: string, label: string): st
 function paintRecursos(d: Reply): void {
   const body = byId("res-body");
   if (!body) return;
-  if (!backendOn) {
+  if (!state.backendOn) {
     body.innerHTML = offlineNote();
     return;
   }
@@ -375,14 +286,14 @@ function renderCuotas(): void {
 }
 
 async function refreshCuotas(): Promise<void> {
-  const data = backendOn ? await link.request("quota") : null;
+  const data = state.backendOn ? await link.request("quota") : null;
   if (current.id === "cuotas") paintCuotas(data);
 }
 
 function paintCuotas(d: Reply): void {
   const body = byId("q-body");
   if (!body) return;
-  if (!backendOn) {
+  if (!state.backendOn) {
     body.innerHTML = offlineNote();
     return;
   }
@@ -462,7 +373,7 @@ async function refreshLogs(): Promise<void> {
   try {
     const text = await invoke<string>("read_log", { lines: 1500 });
     const re = /^(\d\d:\d\d:\d\d(?:\.\d{3})?) \[(\w+)\] ([\w.]+): (.*)$/;
-    logLines = text.split(/\r?\n/).map((l) => re.exec(l)).filter(Boolean).map((m) => ({ t: m![1], lvl: m![2], src: m![3].replace(/^miku\./, ""), msg: m![4] }));
+    logLines = text.split(/\r?\n/).map((l) => re.exec(l)).filter(Boolean).map((m) => ({ t: m![1], lvl: m![2], src: m![3].replace(/^miku\./, "").replace(/^websockets\./, "ws."), msg: m![4] }));
   } catch (err) {
     console.warn("[Panel] log:", err);
   }
@@ -531,33 +442,33 @@ document.addEventListener("visibilitychange", () => {
 
 link.onEvent = (msg) => {
   if (msg.type === "state") {
-    speaking = msg.value === "speaking";
+    state.speaking = msg.value === "speaking";
     if (current.id === "inicio") paintPower();
   }
 };
 
 async function bootstrap(): Promise<void> {
   if (isTauri) {
-    backendOn = await invoke<boolean>("backend_state").catch(() => false);
+    state.backendOn = await invoke<boolean>("backend_state").catch(() => false);
     await listen<boolean>("backend-changed", (ev) => {
-      backendOn = ev.payload;
-      if (backendOn) link.connect();
+      state.backendOn = ev.payload;
+      if (state.backendOn) link.connect();
       if (current.id === "inicio") paintPower();
       lastRefresh = 0;
     });
   } else {
-    backendOn = true; // in a plain browser (vite dev or preview) there is no Rust to ask: the WebSocket decides
+    state.backendOn = true; // in a plain browser (vite dev or preview) there is no Rust to ask: the WebSocket decides
   }
-  if (backendOn) link.connect();
+  if (state.backendOn) link.connect();
   renderNav();
   current.render();
   window.setInterval(() => void tick(), 500);
   // The backend can be started or stopped from elsewhere (start.bat, stop.bat): check now and then
   window.setInterval(async () => {
-    if (!isTauri || powerBusy) return;
-    const on = await invoke<boolean>("backend_state").catch(() => backendOn);
-    if (on !== backendOn) {
-      backendOn = on;
+    if (!isTauri || state.powerBusy) return;
+    const on = await invoke<boolean>("backend_state").catch(() => state.backendOn);
+    if (on !== state.backendOn) {
+      state.backendOn = on;
       if (on) link.connect();
       if (current.id === "inicio") paintPower();
     }

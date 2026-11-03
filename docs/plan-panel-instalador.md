@@ -130,6 +130,12 @@ Al usuario le gusta todo. Cambios pedidos:
   memoria, VRAM y GPU leídos de los contadores de Windows con `ctypes`, `core/gpu_counters.py`), Cuotas (modelos,
   pausas, 7 días) y Logs (leídos por Rust: funcionan con Miku apagada). El resto de secciones dice qué tendrá.
   Fuentes de Windows (Segoe UI Variable, Cascadia Mono): la app no carga Google Fonts.
+- **Fase 3 (hecha, 3-nov):** Configuración (API key con prueba sin gastar cuota, modelo, voz RVC, «Hey Miku» y su
+  umbral, ciudad, OBS, palabras de Whisper; se guarda con Miku apagada, `core/settings.py` edita config.yaml valor a
+  valor sin perder comentarios y deja config.yaml.bak), Herramientas (las 46, apagar alguna: `tools.disabled`),
+  Funciones (funciones.md con frases que se le mandan a Miku), Recordatorios y pendientes, Memoria y conversaciones.
+  El atajo y el micrófono se muestran pero no se cambian aquí (el atajo va compilado en la app; el micrófono es el de
+  Windows). Barras de scroll oscuras.
 
 ## Fases
 
