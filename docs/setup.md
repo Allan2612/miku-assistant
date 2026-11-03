@@ -21,6 +21,8 @@
    - También hace falta **`models/rvc/rmvpe.pt`** (estimador de tono de RVC). Sin él, RVC falla y Miku usa la voz base de edge-tts.
    - La primera vez que arranca RVC se descargan de Hugging Face **ContentVec** (`lengyue233/content-vec-best`, unos cientos de MB) y el modelo de **Whisper**: el primer uso necesita internet y puede tardar un par de minutos.
 4. **(Opcional) Wake word** `hey_miku.onnx` entrenado con el notebook de openWakeWord, en `models/wakeword/`. Fase 7.
+5. **OBS (opcional):** para clips y grabación por voz, activa en OBS Herramientas → Ajustes del servidor WebSocket y
+   pon la contraseña en `.env` como `OBS_PASSWORD=...`. Para los clips, configura el búfer de repetición en Ajustes → Salida.
 
 ## Cómo trabajar con Gemini CLI
 1. Crea la carpeta `miku-assistant/` y copia dentro `GEMINI.md` (en la raíz) y la carpeta `docs/`.

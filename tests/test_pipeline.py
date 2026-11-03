@@ -7,9 +7,14 @@ import asyncio
 
 import numpy as np
 
+import core.pipeline as pipeline_module
 from core.llm import MikuBrain
 from core.intent import says_miku
 from core.pipeline import FILLER_PHRASES, FOLLOW_UP_DELAY_S, MikuPipeline
+
+# Whatever is open on this PC while the tests run (a full-screen video) must not change them
+FULLSCREEN = [False]
+pipeline_module.fullscreen_app_in_front = lambda: FULLSCREEN[0]
 
 
 class FakeServer:
@@ -524,6 +529,30 @@ def test_goodbye_on_inactivity():
     asyncio.run(_goodbye())
 
 
+async def _fullscreen():
+    FULLSCREEN[0] = True
+    try:
+        # A game or a video at full screen: called by voice, she answers without showing herself
+        server = AckServer()
+        p = MikuPipeline(brain=RecordingBrain(), tts=FakeTTS(), stt=FakeSTT("hola"), audio_in=FakeMic(server),
+                         resources=FakeResources(), server=server, rvc=None, follow_up_s=0)
+        server.pipeline = p
+        p.set_wakeword(FakeWake())
+        await p.handle_voice_activation()
+        assert "show" not in server.sent and any(m.startswith("speak:") for m in server.sent), server.sent
+        assert p.brain.heard == ["hola"]
+        # A reminder too: said, not shown
+        server.sent.clear()
+        await p.announce_timer("¡Oye, recuerda: estirar!")
+        assert "show" not in server.sent and "speak:¡Oye, recuerda: estirar!" in server.sent, server.sent
+    finally:
+        FULLSCREEN[0] = False
+
+
+def test_fullscreen_means_voice_only():
+    asyncio.run(_fullscreen())
+
+
 if __name__ == "__main__":
     test_pipeline_flows()
     test_goodbye_on_inactivity()
@@ -536,4 +565,5 @@ if __name__ == "__main__":
     test_only_one_voice()
     test_speak_carries_body_language()
     test_without_speak_done()
+    test_fullscreen_means_voice_only()
     print("ok")

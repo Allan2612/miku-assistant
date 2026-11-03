@@ -2,6 +2,7 @@
 
 | Documento | Contenido |
 |---|---|
+| [plan-funciones.md](plan-funciones.md) | Plan de las ocho funciones del 3-nov (modo pantalla completa, OBS, clima, cuota…) |
 | [funciones.md](funciones.md) | Todo lo que puede hacer Miku, qué es local (0 peticiones) y cómo pedirlo |
 | [architecture.md](architecture.md) | Procesos, stack, flujo de una petición, protocolo WebSocket y presupuesto de recursos |
 | [roadmap.md](roadmap.md) | Fases del proyecto y su estado |

@@ -43,6 +43,8 @@ class STTConfig:
     device: str = "cpu"
     compute_type: str = "int8"
     cpu_threads: int = 4
+    # Words Whisper should know (names, songs). Words only: a whole command here gets "heard" in noise (H-035)
+    vocabulary: str = "Miku, Spotify, YouTube, Google, Opera GX, Discord, Steam, Bloc de notas, OBS, Visual Studio, K/DA, Firestarter, More, Los Tigres del Norte."
 
 
 @dataclass(slots=True)
@@ -80,6 +82,7 @@ class Live2DConfig:
 @dataclass(slots=True)
 class ToolsConfig:
     file_search_roots: list[str] = field(default_factory=list)
+    weather_city: str = "San José, Costa Rica"  # "Ciudad, País": the country picks the right San José
 
 
 @dataclass(slots=True)
@@ -165,6 +168,7 @@ def load_config(
             device=stt_data.get("device", "cpu"),
             compute_type=stt_data.get("compute_type", "int8"),
             cpu_threads=int(stt_data.get("cpu_threads", 4)),
+            vocabulary=str(stt_data.get("vocabulary") or STTConfig().vocabulary),
         ),
         tts=TTSConfig(
             voice=tts_data.get("voice", "es-ES-XimenaNeural"),
@@ -192,6 +196,7 @@ def load_config(
         ),
         tools=ToolsConfig(
             file_search_roots=tools_data.get("file_search_roots", ["~/Desktop", "~/Documents", "~/Downloads"]),
+            weather_city=str(tools_data.get("weather_city") or ToolsConfig().weather_city),
         ),
         apps=dict(apps_data),
         routines={str(k).lower(): list(v or []) for k, v in (raw_data.get("routines") or {}).items()},

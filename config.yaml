@@ -17,13 +17,15 @@ llm: {
   temperature: 0.35,
   web_search: false  # Google search inside the single request: the free tier answers it with 429 (23-oct). Reading a web page (url_context) is always on
 }
-stt: { model: "small", device: "cpu", compute_type: "int8", cpu_threads: 8 }  # local, 0 requests: gates noise and feeds the fast path; Gemini hears the audio itself in its single request
+stt: { model: "small", device: "cpu", compute_type: "int8", cpu_threads: 8,
+  # Names and songs you say often, so Whisper writes them right. Words only, never whole orders
+  vocabulary: "Miku, Spotify, YouTube, Google, Opera GX, Discord, Steam, Bloc de notas, OBS, Visual Studio, K/DA, Firestarter, More, Los Tigres del Norte." }  # local, 0 requests: gates noise and feeds the fast path; Gemini hears the audio itself in its single request
 # Miku's voice, chosen by ear on 27-oct (MikuDiva, higher and faster). scratch/voice_ab.py compares variations.
 tts: { voice: "es-MX-DaliaNeural", rate: "+15%", pitch: "+30Hz" }
 rvc: { enabled: true, model: "models/rvc/miku_diva.pth", index: "models/rvc/miku_diva.index", f0_up_key: 6, index_rate: 0.5 }
 wakeword: { enabled: true, model: "models/wakeword/hey_miku.onnx", threshold: 0.35, patience: 1 }
 live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0 }
-tools: { file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"] }
+tools: { file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"], weather_city: "San José, Costa Rica" }  # city: "Ciudad, País"
 apps: {
   opera: "opera.exe",
   "opera gx": "opera.exe",

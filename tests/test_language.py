@@ -9,18 +9,22 @@ import os
 os.environ.setdefault("GEMINI_API_KEY", "test")
 
 import core.tools.apps as apps
+import core.tools.downloads as downloads
 import core.tools.media as media
 import core.tools.memory as memory
 import core.tools.notes as notes
+import core.tools.obs as obs
 import core.tools.routines as routines
 import core.tools.system as system
 import core.tools.timers as timers
+import core.tools.weather as weather
 import core.tools.web as web
 from core.intent import asks_about_screen, points_at_screen
 from core.llm import CLAIMED_ACTION_RE, MikuBrain
 from core.tools.apps import _spoken_app_list
 
 calls = []
+OBS_OPEN = [True]
 
 
 def _rec(name):
@@ -34,8 +38,11 @@ def fast(text):
     calls.clear()
     for mod, name in [(apps, "open_app"), (apps, "close_app"), (apps, "show_desktop"), (media, "change_volume"),
                       (media, "mute"), (media, "media_control"), (media, "set_volume"), (web, "web_search"), (web, "youtube_search"), (web, "youtube_play"), (web, "browser_tabs"), (web, "open_website"),
-                      (web, "open_url"), (notes, "take_note"), (notes, "open_notes"), (timers, "set_timer"), (memory, "remember"), (system, "shutdown_pc")]:
+                      (web, "open_url"), (web, "youtube_player"), (system, "lock_pc"), (notes, "take_note"), (notes, "open_notes"), (timers, "set_timer"), (timers, "list_timers"), (memory, "remember"), (system, "shutdown_pc"),
+                      (notes, "my_day"), (system, "quota_status"), (obs, "obs"), (weather, "weather"),
+                      (downloads, "watch_downloads")]:
         setattr(mod, name, _rec(name))
+    obs.obs_open = lambda: OBS_OPEN[0]
     notes.read_notes = lambda *a: calls.append(("read_notes", ())) or {"ok": True, "result": "notas"}
     routines.ROUTINES["trabajo"] = [{"tool": "_noop"}]
     routines.get_tool_metadata = lambda n: {"function": _rec("routine_step"), "destructive": False}
@@ -75,11 +82,58 @@ FAST_PATH = [
     ("¡Listo, volumen al máximo!", ("set_volume", (100,))),  # what Gemini claimed: repaired locally
     ("bájale el volumen", ("change_volume", (-15,))),
     ("Subile al volumen", None),  # "al volumen" is not the pattern: Gemini decides
-    # The video's own volume (youtube_player), not Windows': Gemini picks, it sees the open tabs (27-oct)
-    ("sube el volumen del video", None),
-    ("súbele el volumen a YouTube", None),
-    ("bájale el volumen al reproductor", None),
-    ("silencia el video", None),
+    # The video's own volume (youtube_player), not Windows' (27-oct); local since 3-nov
+    ("sube el volumen del video", ("youtube_player", ("volume_up", ""))),
+    ("súbele el volumen a YouTube", ("youtube_player", ("volume_up", ""))),
+    ("bájale el volumen al reproductor", ("youtube_player", ("volume_down", ""))),
+    ("silencia el video", ("youtube_player", ("mute", ""))),
+    ("Quita el silencio del video.", ("youtube_player", ("unmute", ""))),
+    ("Pon el volumen del video al 50.", ("youtube_player", ("volume", "50"))),
+    ("Siguiente video.", ("youtube_player", ("next", ""))),
+    ("Adelanta 30 segundos.", ("youtube_player", ("forward", "30"))),
+    ("Regresa diez segundos.", ("youtube_player", ("back", "10"))),
+    ("Adelanta el video.", ("youtube_player", ("forward", ""))),
+    ("Regresa.", None),  # not about the video
+    ("Pon subtítulos.", ("youtube_player", ("captions_on", ""))),
+    ("Quita los subtítulos.", ("youtube_player", ("captions_off", ""))),
+    ("Ponlo en 1080.", ("youtube_player", ("quality", "1080p"))),
+    ("Máxima calidad.", ("youtube_player", ("quality", "max"))),
+    ("Ponlo en mínima calidad.", ("youtube_player", ("quality", "min"))),
+    ("Velocidad 1,5.", ("youtube_player", ("speed", "1.5"))),
+    ("Velocidad normal.", ("youtube_player", ("speed", "1"))),
+    ("Ponlo en bucle.", ("youtube_player", ("loop", ""))),
+    ("Repite.", None),  # "say it again", not the video
+    # Songs, sound, lock, reminders (3-nov)
+    ("Siguiente canción.", ("media_control", ("next",))),
+    ("Pasa a la siguiente.", ("media_control", ("next",))),
+    ("Salta esta canción.", ("media_control", ("next",))),
+    ("Pon la anterior.", ("media_control", ("previous",))),
+    ("Canción anterior.", ("media_control", ("previous",))),
+    ("Activa el sonido.", ("mute", (False,))),
+    ("Bloquea el PC.", ("lock_pc", ())),
+    ("¿Qué recordatorios tengo?", ("list_timers", ())),
+    ("¿Cuáles son mis recordatorios?", ("list_timers", ())),
+    ("¿Qué canción es la siguiente en la lista?", None),
+    # My day, quota, OBS, weather, downloads (3-nov)
+    ("¿Qué tengo hoy?", ("my_day", ())),
+    ("¿Qué tengo que hacer hoy?", ("my_day", ())),
+    ("¿Cómo está mi día?", ("my_day", ())),
+    ("¿Cuánta cuota me queda?", ("quota_status", ())),
+    ("¿Cuántas peticiones llevas hoy?", ("quota_status", ())),
+    ("Cuanta capacidad tengo hoy.", ("quota_status", ())),  # log 3-nov: went to Gemini
+    ("Guarda eso.", ("obs", ("clip", ""))),
+    ("¡Clip!", ("obs", ("clip", ""))),
+    ("Miku, clipé eso.", ("obs", ("clip", ""))),
+    ("Empieza a grabar.", ("obs", ("record_start", ""))),
+    ("Deja de grabar.", ("obs", ("record_stop", ""))),
+    ("Para la grabación.", ("obs", ("record_stop", ""))),
+    ("Cambia a la escena de pantalla de espera.", ("obs", ("scene", "pantalla de espera"))),
+    ("¿Cómo está el clima?", ("weather", ("hoy",))),
+    ("¿Va a llover mañana?", ("weather", ("mañana",))),
+    ("¿Qué temperatura hace?", ("weather", ("hoy",))),
+    ("¿Va a llover en Tokio?", None),  # another city: Gemini
+    ("Avísame cuando termine la descarga.", ("watch_downloads", ())),
+    ("Avísame cuando terminen las descargas.", ("watch_downloads", ())),
     ("súbele el volumen", ("change_volume", (15,))),
     ("Recuérdame en 10 minutos que saque la ropa de lavadora.", ("set_timer", (10.0, "Recordatorio: saque la ropa de lavadora"))),
     ("avísame en media hora", ("set_timer", (30.0, "Temporizador"))),
@@ -136,7 +190,7 @@ FAST_PATH = [
     ("Reproduce la canción que estoy escuchando ahora.", None),
     ("Reprodúceme una canción en YouTube.", None),  # vague: Gemini picks one
     ("modo avión", None),
-    ("quita el silencio", None),
+    ("quita el silencio", ("mute", (False,))),
     ("¿quién va a ganar el mundial?", None),
     ("cuéntame un chiste", None),
     ("busca el archivo informe", None),
@@ -145,6 +199,14 @@ FAST_PATH = [
     ("¡Reinicia la computadora!", ("shutdown_pc", ("restart",))),
     ("apaga la música", None),
 ]
+
+
+def test_obs_phrases_need_obs_open():
+    OBS_OPEN[0] = False
+    try:
+        assert fast("Guarda eso.") is None and not calls, "without OBS, 'guarda eso' is Gemini's"
+    finally:
+        OBS_OPEN[0] = True
 
 
 def test_fast_path_table():
@@ -236,6 +298,7 @@ def test_spoken_app_list():
 
 if __name__ == "__main__":
     test_fast_path_table()
+    test_obs_phrases_need_obs_open()
     test_greeting_answers_locally()
     test_claimed_action_detector()
     test_screenshot_trigger()

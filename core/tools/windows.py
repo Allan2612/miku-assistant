@@ -117,6 +117,22 @@ def visible_windows() -> List[Dict[str, Any]]:
     return found
 
 
+# SHQueryUserNotificationState: busy (a full-screen app), a Direct3D game at full screen, presentation mode.
+# The same check Windows' own "Do not disturb when playing a game / using an app in full screen" uses
+_QUNS_FULLSCREEN = {2, 3, 4}
+
+
+def fullscreen_app_in_front() -> bool:
+    """A game or a video at full screen is in front. Microseconds; False if Windows cannot tell."""
+    state = ctypes.c_int(0)
+    try:
+        if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:
+            return False
+    except (AttributeError, OSError):
+        return False
+    return state.value in _QUNS_FULLSCREEN
+
+
 def _app_name(w: Dict[str, Any]) -> str:
     exe = w["exe"]
     return _FRIENDLY_NAMES.get(exe.lower(), exe[:1].upper() + exe[1:])

@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-from core import intent
+from core import intent, quota
 from core.tools import get_registered_tools, get_tool_metadata, note_user_reply
 from core.browser import bridge
 from core.screen import capture_screen_png
@@ -115,6 +115,51 @@ CLAIMED_ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# The YouTube player, whole phrases only (19 Gemini requests in the logs, 20-oct to 3-nov)
+_VIDEO = r"(?:el\s+|al\s+|del\s+|a\s+|en\s+)?(?:v[ií]deo|youtube|reproductor)"
+_SECONDS = r"(\d+|" + "|".join(k for k in _SPOKEN_NUMBERS if k != "media") + r")\s+segundos?"
+_PLAYER_ORDERS = [
+    (rf"{_WAKE}(?:pon\s+|sube\s+|baja\s+|s[uú]bele\s+|b[aá]jale\s+)?(?:el\s+)?volumen\s+{_VIDEO}\s+(?:a|al|en)\s+"
+     r"(\d{1,3})\s*(?:%|por\s*ciento)?$", "volume"),
+    (rf"{_WAKE}(?:(?:s[uú]b[eií](?:le)?|aumenta(?:le)?|m[aá]s)\s+(?:el\s+)?volumen|s[uú]b[eií]le)\s+{_VIDEO}$",
+     "volume_up"),
+    (rf"{_WAKE}(?:(?:b[aá]j[aeá](?:le)?|disminu(?:ye|í)(?:le)?|menos)\s+(?:el\s+)?volumen|b[aá]j[aeá]le)\s+{_VIDEO}$",
+     "volume_down"),
+    (rf"{_WAKE}(?:silencia|mutea|quita\s+el\s+(?:sonido|audio))\s+{_VIDEO}$", "mute"),
+    (rf"{_WAKE}(?:(?:quita|quitar|desactiva)\s+(?:el\s+)?silencio|desmutea|activa\s+el\s+(?:sonido|audio))\s+{_VIDEO}$",
+     "unmute"),
+    (rf"{_WAKE}(?:(?:pon|pasa|salta)\s+(?:a\s+|al\s+)?(?:el\s+)?)?(?:siguiente|pr[oó]ximo|otro)\s+v[ií]deo$", "next"),
+    (rf"{_WAKE}(?:adelanta|avanza|adel[aá]ntalo|av[aá]nzalo)(?:\s+(?:el\s+)?v[ií]deo)?(?:\s+{_SECONDS})?$", "forward"),
+    # "Regresa" alone is not about the video: it needs the seconds or "el video"
+    (rf"{_WAKE}(?:regresa|retrocede|atrasa|r[eé]gresalo|atr[aá]salo)(?:\s+(?:el\s+)?v[ií]deo\s+{_SECONDS}"
+     rf"|\s+(?:el\s+)?v[ií]deo|\s+{_SECONDS})$", "back"),
+    (rf"{_WAKE}(?:pon|activa|ponle)\s+(?:los\s+)?subt[ií]tulos(?:\s+{_VIDEO})?$", "captions_on"),
+    (rf"{_WAKE}(?:quita|desactiva|apaga|qu[ií]tale)\s+(?:los\s+)?subt[ií]tulos(?:\s+{_VIDEO})?$", "captions_off"),
+    (rf"{_WAKE}(?:pon(?:lo|me)?(?:\s+el\s+v[ií]deo)?\s+(?:en|a)\s+|calidad\s+(?:en\s+|a\s+)?)(\d{{3,4}})\s*p?$", "quality"),
+    (rf"{_WAKE}(?:pon(?:lo|me)?(?:\s+el\s+v[ií]deo)?\s+(?:en|a)\s+)?(?:la\s+)?(m[aá]xima|m[ií]nima)\s+calidad$", "quality"),
+    (rf"{_WAKE}(?:pon(?:lo)?\s+(?:a|en)\s+|cambia\s+la\s+)?velocidad\s+(?:a\s+|de\s+|en\s+)?"
+     r"(\d(?:[.,]\d{1,2})?|normal)\s*x?$", "speed"),
+    (rf"{_WAKE}(?:repite\s+(?:el|este)\s+v[ií]deo|pon(?:lo|me)?(?:\s+el\s+v[ií]deo)?\s+en\s+bucle)$", "loop"),
+]
+
+
+def _youtube_order(low: str) -> Optional[Tuple[str, str]]:
+    """(action, value) for youtube_player when the whole phrase is a player order, else None."""
+    for pattern, action in _PLAYER_ORDERS:
+        m = re.match(pattern, low)
+        if not m:
+            continue
+        value = next((g for g in m.groups() if g), "")
+        if action in ("forward", "back") and value:
+            value = str(_SPOKEN_NUMBERS.get(value) or value)
+        elif action == "quality":
+            value = "max" if "x" in value else "min" if value.startswith("m") else f"{value}p"
+        elif action == "speed":
+            value = "1" if value == "normal" else value.replace(",", ".")
+        return action, value
+    return None
+
+
 def _to_wav(audio: np.ndarray, sample_rate: int = 16000) -> bytes:
     """Encodes 16 kHz float32 mono audio as 16-bit PCM WAV bytes."""
     buf = io.BytesIO()
@@ -128,6 +173,8 @@ def _to_wav(audio: np.ndarray, sample_rate: int = 16000) -> bytes:
 # Gemini ends its answer with this when the user says goodbye in words no list catches (system prompt)
 _BYE_TAG = re.compile(r"\s*\[adi[oó]s\]\s*", re.IGNORECASE)
 TRANSCRIPT_HINT = "(Transcripción automática, puede tener errores: "
+CHAT_HINT = ("(Aviso del sistema: este mensaje es solo charla, sin ninguna orden: contesta sin herramientas. "
+             "Las órdenes de mensajes anteriores ya se hicieron: no las repitas.)")
 # The user asks whether the last action happened: answering "sí, lo apunté" is then not a claim
 _ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
 # Follow-up requests after the first one: tool results back to the model, a nudge, or a second tool step
@@ -135,6 +182,8 @@ MAX_TOOL_ROUNDS = 3
 # A request that hangs waits this long before the next model in the chain: 15 s twice per 504 (log 1-nov), when a
 # normal answer takes 1-6 s
 GEMINI_TIMEOUT_MS = 10_000
+# Cooldown after the 1st, 2nd and 3rd+ failure in a row of the same model (the 1st keeps the usual 15/60 s)
+REPEAT_FAILURE_COOLDOWN_S = (0.0, 120.0, 600.0)
 HISTORY_MAX_AGE_S = 12 * 3600  # a saved conversation older than this comes back marked as a past one
 NUDGE_TEXT = (
     "(Aviso del sistema) Dijiste que hiciste una acción, pero no llamaste ninguna herramienta, así que no ocurrió. "
@@ -184,12 +233,14 @@ class MikuBrain:
         self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS))
         self.tools = get_registered_tools()
         self.total_api_calls = 0
+        self._quota_warning: Optional[str] = None
         self._last_query_text = ""
         self._last_query_time = 0.0
         self._last_result: Optional[Tuple[str, str, bool]] = None
 
         # Model cooldown tracker: model_name -> expiration timestamp
         self._model_cooldown: Dict[str, float] = {}
+        self._fail_streak: Dict[str, int] = {}  # failed requests in a row, per model
         # In-memory history turns for model transfer: [{"role": "user"|"model", "text": str}]
         self._history_turns: List[Dict[str, str]] = []
         self._acted_last_turn = False  # the previous turn ran a tool (local or Gemini's)
@@ -238,6 +289,10 @@ class MikuBrain:
         if audio is not None:
             # Audio alone: flash-lite misheard "¿Cómo estás hoy?" and replayed the previous order (log, 27-oct)
             parts.append(types.Part.from_text(text=f"{TRANSCRIPT_HINT}«{clean_input}»)"))
+        if intent.is_small_talk(clean_input):
+            # Flash-lite replays the last order on small talk (log 3-nov: "¿Cómo estás, oye?" saved an OBS clip,
+            # "Gracias mi amor" set a second reminder). Gemini still hears the audio: a real order still runs
+            parts.append(types.Part.from_text(text=CHAT_HINT))
         if state:
             # Only in this request, never in the history: an old snapshot would contradict the new one
             parts.append(types.Part.from_text(text=state))
@@ -321,6 +376,15 @@ class MikuBrain:
                 raise
             logger.warning("Gemini rejected the built-in web tools (%s). Disabled for this session.", e)
             return response
+
+    def _count(self, model: str) -> None:
+        """One answered request against today's quota; the 90% warning rides on this turn's answer."""
+        if self.history_file is None:  # a test, not the real assistant: never touch cache/quota.json
+            return
+        try:
+            self._quota_warning = quota.count(model, self.primary_model) or self._quota_warning
+        except Exception as e:  # counting must never cost an answer
+            logger.warning("Quota count failed: %s", e)
 
     def _remember(self, user_text: str, model_text: str) -> None:
         """Keeps the turn as text so the next request (on any model) has the context."""
@@ -433,6 +497,7 @@ class MikuBrain:
                 self.total_api_calls += 1
                 logger.info("--> [GEMINI REQ #%d] Model: %s | follow-up (tool results or nudge)", self.total_api_calls, model)
                 response = await self._generate(model, contents, config)
+                self._count(model)
             except Exception as e:
                 # Quota or overload on the follow-up: the actions are done, so read their results out as they are
                 logger.warning("Follow-up request failed (%s). Reading the tool results instead.", e)
@@ -518,9 +583,16 @@ class MikuBrain:
                 return ("happy", ok_text, False)
             return ("sad", res.get("result", "No pude hacerlo."), False)
 
-        # "Sube el volumen del video": YouTube's own volume (youtube_player), not Windows'. Gemini picks, seeing
-        # the open tabs; pause/play below are fine either way (the media keys reach YouTube too)
+        def said(res: Dict[str, Any]) -> Tuple[str, str, bool]:
+            return ("happy" if res.get("ok") else "sad", res.get("result", "No pude hacerlo."), False)
+
+        # "Sube el volumen del video": YouTube's own volume (youtube_player), not Windows'. pause/play below are
+        # fine either way (the media keys reach YouTube too)
         for_player = has_word("video", "vídeo", "youtube", "reproductor", "canción", "cancion")
+        player = _youtube_order(low)
+        if player is not None:
+            from core.tools.web import youtube_player
+            return said(youtube_player(*player))
 
         # An exact level first: "súbele el volumen a 100%" used to just add 15 (log 05:13). Also "al máximo",
         # "súbelo a tope", "volumen al mínimo"
@@ -559,6 +631,27 @@ class MikuBrain:
                     r"|(?:reproduce|reproducir|pon|contin[uú]a)\s+la\s+m[uú]sica)$", low):
             from core.tools.media import media_control
             return confirm(media_control("play"), "¡Música reproduciéndose!")
+        if re.match(rf"{_WAKE}(?:(?:pon|pasa|salta|cambia)\s+(?:a\s+|al\s+)?)?(?:la\s+)?(?:siguiente(?:\s+canci[oó]n)?"
+                    rf"|pr[oó]xima\s+canci[oó]n|otra\s+canci[oó]n)$|{_WAKE}(?:pasa|salta|cambia)(?:\s+(?:la|esta|de))?"
+                    r"\s+canci[oó]n$", low):
+            from core.tools.media import media_control
+            return confirm(media_control("next"), "¡Siguiente canción!")
+        if re.match(rf"{_WAKE}(?:(?:pon|regresa|vuelve)\s+(?:a\s+)?)?(?:la\s+)?(?:canci[oó]n\s+anterior"
+                    r"|anterior(?:\s+canci[oó]n)?)$", low):
+            from core.tools.media import media_control
+            return confirm(media_control("previous"), "Volví a la canción anterior.")
+        if re.match(rf"{_WAKE}(?:(?:quita|quitar|desactiva)\s+(?:el\s+)?silencio|desmutea|unmute"
+                    r"|(?:activa|reactiva)\s+(?:el\s+)?sonido)$", low):
+            from core.tools.media import mute
+            return confirm(mute(False), "¡Sonido activado!")
+        if re.match(rf"{_WAKE}bloquea(?:r)?\s+(?:el\s+|la\s+|mi\s+)?(?:pc|computadora|compu|equipo|pantalla"
+                    r"|sesi[oó]n|laptop)$", low):
+            from core.tools.system import lock_pc
+            return said(lock_pc())
+        if re.match(rf"{_WAKE}(?:(?:qu[eé]|cu[aá]les)\s+(?:son\s+)?(?:mis\s+)?(?:recordatorios|temporizadores|alarmas|avisos)"
+                    r"(?:\s+tengo)?(?:\s+(?:activos|pendientes))?|(?:l[eé]eme\s+)?mis\s+recordatorios)$", low):
+            from core.tools.timers import list_timers
+            return said(list_timers())
 
         # 6. Date & Time, the whole phrase only: "¿a qué hora cierra el súper?" got "Son las 18:41."
         if re.match(rf"{_WAKE}(?:qu[eé]\s+hora\s+es(?:\s+ahora)?|dime\s+la\s+hora)$", low):
@@ -623,6 +716,43 @@ class MikuBrain:
             from core.tools.notes import read_notes
             notes_res = read_notes()
             return ("neutral", notes_res.get("result", "No tienes notas."), False)
+        if re.match(rf"{_WAKE}(?:qu[eé]\s+(?:tengo|hay|me\s+toca)(?:\s+(?:para|que\s+hacer))?\s+hoy"
+                    r"|c[oó]mo\s+(?:est[aá]|viene|va)\s+mi\s+d[ií]a|(?:el\s+)?resumen\s+(?:del|de\s+mi)\s+d[ií]a)$", low):
+            from core.tools.notes import my_day
+            return said(my_day())
+        if re.match(rf"{_WAKE}(?:cu[aá]nta\s+(?:cuota|capacidad)\s+(?:me\s+|te\s+)?(?:queda|quedan|llevas|llevamos|tengo)"
+                    r"|cu[aá]ntas\s+peticiones\s+(?:me\s+|te\s+)?(?:quedan|llevas|llevamos)(?:\s+hoy)?"
+                    r"|c[oó]mo\s+(?:va|vamos\s+de|andamos\s+de)\s+(?:la\s+)?cuota)(?:\s+hoy)?$", low):
+            from core.tools.system import quota_status
+            return said(quota_status())
+
+        # OBS, only while it runs: "guarda eso" means a clip there, and something else for Gemini otherwise
+        m_scene = re.match(rf"{_WAKE}(?:cambia|pasa|pon|ponme)\s+(?:a\s+)?(?:la\s+)?escena\s+(?:de\s+)?(.+)$", low)
+        obs_order = (
+            "clip" if re.match(rf"{_WAKE}(?:(?:guarda|gu[aá]rdame|haz|hazme|crea|saca|s[aá]came)\s+(?:eso|esto|el\s+clip"
+                               r"|un\s+clip|ese\s+clip|la\s+jugada|esa\s+jugada|lo\s+[uú]ltimo)|clip|cl[ií]pealo"
+                               r"|cl[ií]p(?:ea|é|e)\s+eso)$", low)  # log 3-nov: "Miku, clipé eso."
+            else "record_start" if re.match(rf"{_WAKE}(?:graba|(?:empieza|comienza|ponte)\s+a\s+grabar|dale\s+a\s+grabar"
+                                            r"|(?:inicia|empieza)\s+(?:la\s+)?grabaci[oó]n)$", low)
+            else "record_stop" if re.match(rf"{_WAKE}(?:(?:para|det[eé]n|corta|termina|finaliza)\s+(?:la\s+)?grabaci[oó]n"
+                                           r"|(?:deja|para)\s+de\s+grabar|ya\s+no\s+grabes)$", low)
+            else "scene" if m_scene else None
+        )
+        if obs_order:
+            from core.tools.obs import obs, obs_open
+            if obs_open():
+                return said(obs(obs_order, m_scene.group(1).strip(" .") if m_scene else ""))
+
+        if re.match(rf"{_WAKE}(?:c[oó]mo\s+(?:est[aá]|va\s+a\s+estar|estar[aá])\s+el\s+(?:clima|tiempo)"
+                    r"|qu[eé]\s+(?:clima|tiempo|temperatura)\s+(?:hace|hay|va\s+a\s+hacer)|(?:va|iba)\s+a\s+llover"
+                    r"|llover[aá]|(?:el\s+)?clima)(?:\s+(?:para\s+)?(?:hoy|ma[nñ]ana))?$", low):
+            from core.tools.weather import weather
+            return said(weather("mañana" if re.search(r"ma[nñ]ana$", low) else "hoy"))
+
+        if re.match(rf"{_WAKE}(?:(?:av[ií]same|dime)\s+cuando\s+(?:termin|acab)(?:e|en)|vigila)"
+                    r"\s+(?:la\s+|las\s+|mi\s+|mis\s+)?descargas?$", low):
+            from core.tools.downloads import watch_downloads
+            return said(watch_downloads())
 
         # 7. Desktop / System
         # The whole phrase: "minimiza todo menos Opera" minimized Opera too
@@ -738,8 +868,10 @@ class MikuBrain:
                 # Local names: a failed Gemma must not leave the next Gemini with text instead of the audio
                 model_contents, model_config = self._for_model(model, contents, config, clean_input)
                 response = await self._generate(model, model_contents, model_config)
+                self._count(model)
                 # Clear any previous cooldown for this healthy model
                 self._model_cooldown.pop(model, None)
+                self._fail_streak.pop(model, None)
                 break
 
             except Exception as e:
@@ -754,7 +886,11 @@ class MikuBrain:
                     return ("sad", "No puedo conectarme con Gemini: revisa la API key en el archivo .env.", False)
                 # A daily quota does not come back in a minute, nor a retired model (404): stop retrying them every turn
                 gone = "per day" in err_str or "404" in err_str or "not_found" in err_str
-                cooldown_sec = 3600.0 if gone else 60.0 if is_rate_limit else 15.0
+                # Failing again and again (log 3-nov: 504 every turn, 10 s lost each time on an overloaded model):
+                # it waits longer, so the next turns go straight to a model that answers
+                streak = self._fail_streak[model] = self._fail_streak.get(model, 0) + 1
+                cooldown_sec = 3600.0 if gone else max(60.0 if is_rate_limit else 15.0,
+                                                       REPEAT_FAILURE_COOLDOWN_S[min(streak, len(REPEAT_FAILURE_COOLDOWN_S)) - 1])
                 self._model_cooldown[model] = time.monotonic() + cooldown_sec
                 logger.warning(
                     "Gemini model '%s' failed (rate_limit/quota=%s, cooldown=%.0fs): %s. Switching to fallback...",
@@ -778,6 +914,8 @@ class MikuBrain:
         # Gemini marks a goodbye our word lists missed ("Olvíalo, muchas gracias"): she hides after saying it
         said_bye = bool(_BYE_TAG.search(clean_text))
         clean_text = _BYE_TAG.sub(" ", clean_text).strip() or "¡Hasta luego!"
+        if self._quota_warning:
+            clean_text, self._quota_warning = f"{clean_text} {self._quota_warning}", None
         self._remember(clean_input, f"[{emotion}] {clean_text}")
         # A goodbye in her own words hides her too: without the tag she said "¡Hasta luego!" and kept listening
         result = (emotion, clean_text, said_bye or intent.is_farewell(clean_input) or intent.says_goodbye(clean_text))

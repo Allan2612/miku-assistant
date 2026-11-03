@@ -269,11 +269,35 @@ def test_back_to_the_primary_after_a_failure():
     asyncio.run(b.chat("y otra cosa distinta", audio=AUDIO))
     assert models.models == ["m1", "m2", "m1"], models.models
 
+    # Failing turn after turn (log 3-nov: 504 on every request): the cooldown grows, so the turns stop
+    # losing 10 s on it; one answer resets it
+    b, models = brain(*[RuntimeError("504 DEADLINE_EXCEEDED"), reply("[happy] ¡Ok!")] * 3, reply("[happy] ¡Ok!"))
+    b.all_models = ["m1", "m2"]
+    waits = []
+    for i in range(3):
+        b._model_cooldown.pop("m1", None)  # cooldown over: m1 is tried again
+        asyncio.run(b.chat(f"pregunta {i}", audio=AUDIO))
+        waits.append(round(b._model_cooldown["m1"] - llm.time.monotonic()))
+    assert waits[0] <= 15 and 110 < waits[1] <= 120 and 590 < waits[2] <= 600, waits
+    b._model_cooldown.clear()
+    b.all_models = ["m1"]
+    asyncio.run(b.chat("otra", audio=AUDIO))
+    assert "m1" not in b._fail_streak, "an answer resets the streak"
+
     # A failed Gemma first must not leave the next model with Whisper's text instead of the audio
     b, models = brain(RuntimeError("503 UNAVAILABLE"), reply("[happy] ¡Hola!"))
     b.all_models = ["gemma-4-26b-a4b-it", "m2"]
     asyncio.run(b.chat("cuéntame algo bonito", audio=AUDIO))
     assert any(p.inline_data for p in models.requests[1][-1].parts), "the audio reaches the next model"
+
+
+def test_small_talk_is_marked_so_the_last_order_is_not_replayed():
+    # Log 3-nov: "¿Cómo estás, oye?" after some clips saved another clip (4 of 6 live retries without the mark, 0 of 6
+    # with it). Orders the local rules miss ("Déjalo al 20") get no mark: Gemini still runs them
+    b, _ = brain()
+    marked = lambda text: any(p.text == llm.CHAT_HINT for p in b._build_request(text, AUDIO)[0][-1].parts)
+    assert marked("¿Cómo estás, oye?") and marked("Gracias mi amor, te amo.")
+    assert not marked("Déjalo al 20.") and not marked("Mueve Opera a la pantalla de la derecha.") and not marked("Sí.")
 
 
 def test_requests_adapted_per_model():
@@ -343,6 +367,7 @@ def test_history_survives_a_restart_and_keeps_reminders():
 
 
 if __name__ == "__main__":
+    test_small_talk_is_marked_so_the_last_order_is_not_replayed()
     test_back_to_the_primary_after_a_failure()
     test_action_results_go_back_and_the_answer_comes_from_them()
     test_failed_tool_is_seen_by_the_model()

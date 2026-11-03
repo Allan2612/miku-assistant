@@ -14,6 +14,10 @@ TABLE = [
     ("¡Suscríbete!", "noise"),
     ("Subtítulos realizados por la comunidad de Amara.org", "noise"),
     ("", "noise"),
+    # Thanks with a pet name: local, not a replayed order from Gemini (log 3-nov)
+    ("Gracias mi amor.", "farewell"),
+    ("Gracias guapa.", "farewell"),
+    ("Mi amor, abre Spotify.", "order"),
     # Orders to hide, usted forms and Whisper's spellings (logs 26-oct, 27-oct, 1-nov)
     ("Ocúltate.", "hide"),
     ("Nada, nada. Cúltese.", "hide"),

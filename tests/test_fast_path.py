@@ -37,7 +37,7 @@ def fast(text):
 def test_closing_goes_to_gemini():
     # Closing needs to know what is open (apps, tabs): Gemini gets that in the PC state, regexes do not
     _setup()
-    for phrase in ("apaga la música", "cierra la ventana", "cierra e", "quitar el silencio", "cierra spotify"):
+    for phrase in ("apaga la música", "cierra la ventana", "cierra e", "cierra spotify"):
         assert fast(phrase) is None, phrase
     assert not calls, calls
 

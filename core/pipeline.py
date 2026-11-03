@@ -30,7 +30,8 @@ from core.stt import STTManager
 from core.rvc import RVCManager
 from core.audio_in import AudioInput
 from core.resources import ResourceManager
-from core.tools.timers import set_timer_notifier
+from core.tools.timers import describe_today, set_timer_notifier
+from core.tools.windows import fullscreen_app_in_front
 
 logger = logging.getLogger("miku.pipeline")
 
@@ -189,6 +190,11 @@ class MikuPipeline:
 
     async def _show(self) -> None:
         self._hidden = False
+        # A game or a video at full screen: she answers by voice only. A window over a game in exclusive
+        # full screen can minimize it
+        if fullscreen_app_in_front():
+            logger.info("Full-screen app in front: voice only, Miku stays hidden.")
+            return
         await self.server.broadcast({"type": "show"})
 
     def _new_activity(self) -> None:
@@ -692,9 +698,15 @@ class MikuPipeline:
                         break
                     await asyncio.sleep(0.5)
 
+            if fullscreen_app_in_front():
+                logger.info("Startup greeting skipped: a full-screen app (a game, a video) is in front.")
+                return
             now_hour = datetime.now().hour
+            fixed = True
             if 5 <= now_hour < 12:
                 greeting = "¡Buenos días! ¿Qué vamos a hacer hoy?"
+                if today_items := describe_today():
+                    greeting, fixed = f"¡Buenos días! Hoy tienes: {today_items}.", False
             elif 12 <= now_hour < 20:
                 greeting = "¡Buenas tardes! ¿En qué puedo ayudarte?"
             else:
@@ -707,6 +719,6 @@ class MikuPipeline:
                     return
                 logger.info("Playing startup greeting: %s", greeting)
                 await self._show()
-                await self._speak(greeting, "happy", cache=True, gesture="greet")  # fixed phrase
+                await self._speak(greeting, "happy", cache=fixed, gesture="greet")  # a fixed phrase is cached
         except Exception:
             logger.exception("Startup greeting failed")

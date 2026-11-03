@@ -131,3 +131,14 @@ def read_clipboard() -> Dict[str, Any]:
     if proc.returncode != 0 or not text:
         return {"ok": True, "result": "El portapapeles está vacío o no tiene texto."}
     return {"ok": True, "result": text[:400] + ("..." if len(text) > 400 else "")}
+
+
+@tool(
+    name="quota_status",
+    description="Dice cuántas peticiones a Gemini lleva hoy Miku y cuántas le quedan ('¿cuánta cuota te queda?').",
+)
+def quota_status() -> Dict[str, Any]:
+    """Peticiones de hoy contra el límite diario del plan gratuito."""
+    from core import quota
+    from core.config import load_config
+    return {"ok": True, "result": quota.describe(load_config().llm.model)}

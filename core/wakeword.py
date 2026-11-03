@@ -36,18 +36,32 @@ BUILTIN_MODELS = {"alexa", "hey_mycroft", "hey_jarvis", "hey_rhasspy", "timer", 
 CLIPS_DIR = Path(__file__).resolve().parents[1] / "cache" / "wake"
 CLIP_CHUNKS = 25  # x 80 ms = the last 2 s
 MAX_CLIPS = 200
+# A trigger whose clip never gets this loud is not a voice (3-nov: 15 of 61 false triggers were near silence; the
+# quietest real "Hey Miku" of 28 peaked at 0.0128). Loudest 0.2 s, as a fraction of full scale
+MIN_CLIP_PEAK = 0.006
+# Scores this high but under the threshold are kept too (cache/wake/near/): the only way to see missed calls
+NEAR_MISS = 0.15
+NEAR_MISS_EVERY_S = 5.0
 
 
-def _save_clip(audio: np.ndarray, score: float) -> None:
+def clip_peak(audio: np.ndarray) -> float:
+    """Loudest 0.2 s (0.05 s steps) of 16 kHz int16 audio, as a fraction of full scale."""
+    a = audio.astype(np.float32) / 32768.0
+    windows = [a[i:i + 3200] for i in range(0, max(len(a) - 3200, 0) + 1, 800)]
+    return max((float(np.sqrt(np.mean(w ** 2))) for w in windows if len(w)), default=0.0)
+
+
+def _save_clip(audio: np.ndarray, score: float, sub: str = "") -> None:
+    folder = CLIPS_DIR / sub if sub else CLIPS_DIR
     try:
-        CLIPS_DIR.mkdir(parents=True, exist_ok=True)
-        path = CLIPS_DIR / f"{datetime.now():%Y%m%d-%H%M%S}_{score:.3f}.wav"
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{datetime.now():%Y%m%d-%H%M%S}_{score:.3f}.wav"
         with wave.open(str(path), "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
             w.setframerate(16000)
             w.writeframes(audio.astype(np.int16).tobytes())
-        for old in sorted(CLIPS_DIR.glob("*.wav"))[:-MAX_CLIPS]:
+        for old in sorted(folder.glob("*.wav"))[:-MAX_CLIPS]:
             old.unlink(missing_ok=True)
         logger.info("Wake clip saved: %s", path.name)
     except OSError as e:
@@ -78,6 +92,7 @@ class WakeWordListener:
         self._model: Optional[Model] = None
         self._target_key: str = "hey_jarvis"
         self._last_trigger_time: float = 0.0
+        self._last_near_miss: float = 0.0
         self._cooldown_seconds: float = 3.0
         self._consecutive_hits: int = 0
         self._recent: collections.deque = collections.deque(maxlen=CLIP_CHUNKS)
@@ -180,12 +195,9 @@ class WakeWordListener:
                     audio_data = audio_data.astype(np.int16)
                 self._recent.append(audio_data.copy())
 
-                # Pure electrical silence floor check (< 6 RMS): skip to save CPU without corrupting buffer
-                rms = float(np.sqrt(np.mean(audio_data.astype(np.float32) ** 2)))
-                if rms < 6.0:
-                    self._consecutive_hits = 0
-                    return
-
+                # Every chunk, silent or not: the model reads the last ~1.3 s as one continuous window. Skipping the
+                # quiet ones glued audio from minutes ago to the present, and it fired at 0.99 on near silence
+                # (3-nov: 12 such clips score 0.000 when replayed with the audio in one piece)
                 predictions = self._model.predict(audio_data)
                 score = predictions.get(self._target_key, 0.0)
 
@@ -195,6 +207,11 @@ class WakeWordListener:
                     score = predictions[best_key]
 
                 now = time.time()
+                if NEAR_MISS <= score < self.threshold and now - self._last_near_miss >= NEAR_MISS_EVERY_S:
+                    self._last_near_miss = now
+                    near = np.concatenate(self._recent)
+                    threading.Thread(target=_save_clip, args=(near, score, "near"), daemon=True,
+                                     name="miku-wake-near").start()
                 # Consecutive frame debouncing: eliminates isolated 1-frame spikes (clics, keyboard, noise)
                 if score >= self.threshold:
                     self._consecutive_hits += 1
@@ -204,6 +221,13 @@ class WakeWordListener:
                 if self._consecutive_hits >= self.patience and (now - self._last_trigger_time) >= self._cooldown_seconds:
                     self._last_trigger_time = now
                     self._consecutive_hits = 0
+                    clip = np.concatenate(self._recent)
+                    peak = clip_peak(clip)
+                    if peak < MIN_CLIP_PEAK:
+                        logger.info("Wake word ignored: score %.3f but the clip is near silence (peak %.4f).", score, peak)
+                        threading.Thread(target=_save_clip, args=(clip, score, "silent"), daemon=True,
+                                         name="miku-wake-clip").start()
+                        return
                     logger.info(
                         "Wake word '%s' detected! Score: %.3f (>= %.2f, hits=%d)",
                         self._target_key,
@@ -212,7 +236,6 @@ class WakeWordListener:
                         self.patience,
                     )
                     # Off the audio thread: a disk write here would drop audio
-                    clip = np.concatenate(self._recent)
                     threading.Thread(target=_save_clip, args=(clip, score), daemon=True, name="miku-wake-clip").start()
                     # Automatically pause listening during subsequent conversation
                     self._paused = True

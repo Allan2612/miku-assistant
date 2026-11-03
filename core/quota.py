@@ -1,0 +1,96 @@
+"""
+Miku Assistant - Gemini requests used today, per model (free tier).
+
+Google resets the daily quota at midnight Pacific time. Only answered requests are counted: a rejected one
+(429, 503) spends nothing. Saved in cache/quota.json, so a restart does not reset the count.
+"""
+
+from __future__ import annotations
+
+import datetime
+import json
+import logging
+from pathlib import Path
+from typing import Dict, Optional
+
+logger = logging.getLogger("miku.quota")
+
+QUOTA_FILE = Path(__file__).resolve().parents[1] / "cache" / "quota.json"
+# Requests per day on the free tier (docs/mejoras.md, 24-oct). Unknown models are counted, not judged
+DAILY_LIMITS = {
+    "gemini-3.5-flash-lite": 500,
+    "gemini-3.1-flash-lite": 500,
+    "gemini-3-flash-preview": 20,
+    "gemini-3.5-flash": 20,
+    "gemini-3.8-flash": 20,
+    "gemma-4-26b-a4b-it": 14400,
+}
+WARN_AT = 0.9
+
+
+def _first_sunday(year: int, month: int) -> datetime.date:
+    first = datetime.date(year, month, 1)
+    return first + datetime.timedelta(days=(6 - first.weekday()) % 7)
+
+
+def pacific_now(utc: Optional[datetime.datetime] = None) -> datetime.datetime:
+    """Pacific time without tzdata (not installed): US daylight time runs from the second Sunday of March,
+    2:00 local (10:00 UTC), to the first Sunday of November, 2:00 local (9:00 UTC)."""
+    utc = (utc or datetime.datetime.now(datetime.timezone.utc)).replace(tzinfo=None)
+    start = datetime.datetime.combine(_first_sunday(utc.year, 3) + datetime.timedelta(days=7), datetime.time(10))
+    end = datetime.datetime.combine(_first_sunday(utc.year, 11), datetime.time(9))
+    return utc + datetime.timedelta(hours=-7 if start <= utc < end else -8)
+
+
+def _load() -> Dict:
+    try:
+        data = json.loads(QUOTA_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("counts"), dict):
+            return data
+    except (OSError, ValueError):
+        pass
+    return {}
+
+
+def _today(data: Dict) -> Dict:
+    """The saved counts if they are today's (Pacific), else a fresh day."""
+    day = pacific_now().date().isoformat()
+    if data.get("day") != day:
+        data = {"day": day, "counts": {}, "warned": []}
+    return data
+
+
+def count(model: str, primary: str) -> Optional[str]:
+    """Counts one answered request. Returns a warning to say once a day when the primary model reaches 90%."""
+    data = _today(_load())
+    data["counts"][model] = data["counts"].get(model, 0) + 1
+    used, limit = data["counts"][model], DAILY_LIMITS.get(model)
+    warning = None
+    if model == primary and limit and used >= limit * WARN_AT and model not in data.get("warned", []):
+        data.setdefault("warned", []).append(model)
+        warning = f"Ojo: ya usé {used} de las {limit} peticiones de hoy de mi modelo principal."
+    try:
+        QUOTA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = QUOTA_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        tmp.replace(QUOTA_FILE)
+    except OSError as e:
+        logger.warning("Could not save the quota count: %s", e)
+    return warning
+
+
+def describe(primary: str) -> str:
+    """Today's use, said aloud: the primary model against its limit, the fallbacks together, and the reset time."""
+    counts = _today(_load())["counts"]
+    used = counts.get(primary, 0)
+    limit = DAILY_LIMITS.get(primary)
+    text = (f"Hoy llevo {used} de {limit} peticiones en mi modelo principal; me quedan {max(limit - used, 0)}."
+            if limit else f"Hoy llevo {used} peticiones en mi modelo principal.")
+    others = sum(n for m, n in counts.items() if m != primary)
+    if others:
+        text += f" Y {others} en los modelos de respaldo."
+    # Next Pacific midnight, in the user's clock
+    pacific = pacific_now()
+    to_midnight = datetime.datetime.combine(pacific.date() + datetime.timedelta(days=1), datetime.time()) - pacific
+    reset = datetime.datetime.now() + to_midnight + datetime.timedelta(seconds=30)  # whole minutes
+    return f"{text} La cuota se renueva a las {reset:%H:%M}."

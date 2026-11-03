@@ -50,7 +50,11 @@ _BYE_WORDS = {"gracias", "chao", "chau", "adiós", "adios", "bye", "olvídalo", 
               "nada"}
 _BYE_FILLER = {"ya", "no", "ok", "vale", "bueno", "muchas", "mil", "eso", "es", "era", "sería", "seria", "todo", "así",
                "asi", "está", "esta", "bien", "por", "ahora", "de", "verdad", "entonces", "pues", "más", "mas", "ahí", "ahi", "mejor",
-               "nomás", "nomas"}
+               "nomás", "nomas",  # see also _SMALL_TALK
+               # Pet names: "Gracias mi amor" went to Gemini, which replayed the last order (log 3-nov: a second
+               # reminder); "Gracias guapa" cost a request too
+               "mi", "amor", "guapa", "linda", "hermosa", "bonita", "preciosa", "cariño", "corazón", "corazon",
+               "reina", "chula", "querida"}
 # Words that do not change a hide order: "Nada, nada. Ocúltese", "Ya, Miku, vete", "apágate un rato"
 _HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor", "un", "rato"}
 # What may stand around a goodbye phrase: "bueno, nos vemos mañana", "ya terminé por hoy, gracias"
@@ -176,6 +180,21 @@ def mentions_order(text: str) -> bool:
 
 def starts_with_order(text: str) -> bool:
     return bool(_ORDER_START.search(text))
+
+
+# Words of greetings, thanks and affection only. "sí", "dale", "ok" are left out: they answer her questions
+_SMALL_TALK = {"cómo", "como", "estás", "estas", "está", "qué", "que", "tal", "oye", "hola", "hey", "ey", "buenos",
+               "buenas", "días", "dias", "tardes", "noches", "gracias", "muchas", "mil", "te", "amo", "quiero",
+               "mucho", "mi", "amor", "bella", "linda", "guapa", "hermosa", "preciosa", "bonita", "cariño", "corazón",
+               "corazon", "reina", "bien", "muy", "y", "tú", "tu", "hoy", "todo", "eres", "la", "mejor", "genial",
+               "jaja", "jajaja", "jajajaja", "hermosura", "vos", "andas", "vas", "va", "pasa", "onda"}
+
+
+def is_small_talk(text: str) -> bool:
+    """Only greetings, thanks and pet names ("¿Cómo estás, oye?", "Gracias mi amor, te amo"). Flash-lite replayed
+    the last order on these (log 3-nov: an OBS clip, a second reminder)."""
+    words = bare(text).split()
+    return bool(words) and all(w in _SMALL_TALK for w in words)
 
 
 def has_chained_orders(text: str) -> bool:

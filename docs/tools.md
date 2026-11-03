@@ -1,6 +1,6 @@
 # Herramientas de control del PC
 
-Lista **cerrada** (38). Gemini solo puede invocar estas funciones, mediante function calling. Cada una devuelve un dict `{ "ok": bool, "result": str }` corto.
+Lista **cerrada** (46). Gemini solo puede invocar estas funciones, mediante function calling. Cada una devuelve un dict `{ "ok": bool, "result": str }` corto.
 
 **Una petición por turno.** Gemini pide las herramientas y escribe la frase de Miku en la **misma** respuesta. Las herramientas se ejecutan en local y su resultado **no** vuelve a Gemini (AFC desactivado). Por eso Miku lee el `result` tal cual, en lugar de su frase, en tres casos:
 - cuando la herramienta falla;
@@ -108,6 +108,27 @@ Los pendientes van en el estado del PC de cada petición (los 8 más recientes).
 | Función | Parámetros | Implementación |
 |---|---|---|
 | `type_text` | `text: str` | Escribe en la ventana activa con `keybd_event`. Máx. 500 caracteres, sin saltos de línea; se niega a escribir en consolas |
+
+## OBS — `tools/obs.py`
+| Función | Parámetros | Implementación |
+|---|---|---|
+| `obs` | `action: clip \| record_start \| record_stop \| scene, scene?` | Servidor WebSocket de OBS 28+ (protocolo v5), con el cliente síncrono de `websockets`: una conexión corta por orden. Contraseña en `.env` (`OBS_PASSWORD`), dirección opcional `OBS_URL` (por defecto `ws://127.0.0.1:4455`). `clip`: si el búfer de repetición está apagado lo enciende y lo dice (lo anterior no se puede guardar). `scene`: nombre exacto, parcial o parecido (`difflib`). Sin directos, a propósito. Las frases locales ("guarda eso", "graba") solo actúan con OBS abierto |
+
+## Clima — `tools/weather.py`
+| Función | Parámetros | Implementación |
+|---|---|---|
+| `weather` | `day: hoy \| mañana, city?` | Open-Meteo (gratis, sin clave) con `urllib`, timeout de 4 s. Ciudad por defecto en `config.yaml → tools.weather_city` ("Ciudad, País": el país elige el San José correcto); cada ciudad se geocodifica una vez por sesión. Ahora (temperatura y cielo), mínima, máxima y probabilidad de lluvia |
+
+## Descargas — `tools/downloads.py`
+| Función | Parámetros | Implementación |
+|---|---|---|
+| `watch_downloads` | — | Busca en Descargas los temporales `.opdownload` (Opera), `.crdownload` (Chrome/Edge) y `.part` (Firefox). Un hilo mira cada 2 s (hasta 4 h): al desaparecer uno, "¡Terminó la descarga de X!" si está el archivo final (también "X (1).ext"), o "se canceló". Un temporal renombrado por el navegador se sigue vigilando. El aviso va como un recordatorio (`timers.announce`) |
+
+## Cuota y día — `core/quota.py`, `tools/system.py`, `tools/notes.py`
+| Función | Parámetros | Implementación |
+|---|---|---|
+| `quota_status` | — | Peticiones respondidas hoy por modelo (`cache/quota.json`), contra los límites diarios del plan gratuito. El día es el de Google (medianoche del Pacífico, con el horario de verano calculado a mano porque no hay `tzdata`). Al 90 % del modelo principal, la respuesta lleva un aviso, una vez al día |
+| `my_day` | — | Recordatorios que suenan hoy, en orden, y pendientes (los 5 últimos) |
 
 ## Visión — `core/screen.py` (no es una herramienta)
 Una herramienta no serviría, porque Gemini no ve su resultado. Si el texto de Whisper pregunta por la pantalla (`SCREEN_RE` en `llm.py`: "pantalla", "qué ves", "mira esto", "este error"…), se captura la pantalla principal y va como imagen PNG **en la misma petición** que el audio. Se captura con GDI vía `ctypes` y se codifica con `numpy` + `zlib`, sin Pillow: 1920×1080 en ~70 ms, ~0,5 MB. Nunca se captura si no se pregunta.

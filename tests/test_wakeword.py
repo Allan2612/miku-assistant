@@ -20,8 +20,10 @@ ww.CLIPS_DIR = Path(tempfile.mkdtemp())
 class FakeModel:
     def __init__(self):
         self.score = 0.0
+        self.fed = 0
 
     def predict(self, audio):
+        self.fed += 1
         return {"hey_miku": self.score}
 
     def reset(self):
@@ -55,6 +57,45 @@ def test_activation_saves_the_last_two_seconds():
     assert not listener._recent
 
 
+def _wait_for(folder, n=1):
+    for _ in range(50):
+        found = list(folder.glob("*.wav"))
+        if len(found) >= n:
+            return found
+        time.sleep(0.02)
+    return list(folder.glob("*.wav"))
+
+
+def test_silence_reaches_the_model_and_cannot_wake_her():
+    woke = []
+    cfg = types.SimpleNamespace(enabled=True, model="hey_miku.onnx", threshold=0.35, patience=1)
+    listener = ww.WakeWordListener(cfg, on_wake=lambda clip: woke.append(clip))
+    listener._model, listener._running, listener._target_key = FakeModel(), True, "hey_miku"
+    listener._loop = None
+    quiet = np.full(1280, 3, dtype=np.int16)  # under the old "RMS < 6" skip
+
+    # Every chunk reaches the model: skipped quiet ones glued old audio to new and fired on silence (3-nov)
+    for _ in range(30):
+        listener._process_chunk(quiet)
+    assert listener._model.fed == 30
+
+    # The model fires on that near silence anyway: ignored, she does not wake, and the listener keeps going
+    listener._model.score = 0.99
+    listener._process_chunk(quiet)
+    assert not listener._paused and _wait_for(ww.CLIPS_DIR / "silent"), "no wake on a near-silent clip"
+
+
+def test_near_misses_are_kept_to_find_missed_calls():
+    cfg = types.SimpleNamespace(enabled=True, model="hey_miku.onnx", threshold=0.35, patience=1)
+    listener = ww.WakeWordListener(cfg, on_wake=lambda clip: None)
+    listener._model, listener._running, listener._target_key = FakeModel(), True, "hey_miku"
+    listener._model.score = 0.25
+    for _ in range(10):
+        listener._process_chunk(np.full(1280, 500, dtype=np.int16))
+    assert len(_wait_for(ww.CLIPS_DIR / "near")) == 1, "one clip per near miss, not one per chunk"
+    assert not listener._paused
+
+
 def test_stop_does_not_deadlock_with_the_audio_callback():
     # Like PortAudio: stream.stop() waits for a callback in flight, and that callback takes the listener's lock
     import threading
@@ -86,4 +127,6 @@ def test_stop_does_not_deadlock_with_the_audio_callback():
 if __name__ == "__main__":
     test_activation_saves_the_last_two_seconds()
     test_stop_does_not_deadlock_with_the_audio_callback()
+    test_silence_reaches_the_model_and_cannot_wake_her()
+    test_near_misses_are_kept_to_find_missed_calls()
     print("ok")

@@ -190,3 +190,24 @@ def open_notes() -> Dict[str, Any]:
         return {"ok": True, "result": "He abierto tu archivo de notas en pantalla."}
     except Exception as e:
         return {"ok": False, "result": f"Error al abrir notas: {e}"}
+
+
+@tool(
+    name="my_day",
+    description="Resume el día del usuario: sus recordatorios de hoy y sus pendientes ('¿qué tengo hoy?', '¿qué me toca?').",
+)
+def my_day() -> Dict[str, Any]:
+    """Recordatorios que suenan hoy y pendientes, en una frase."""
+    from core.tools.timers import describe_today
+    parts = []
+    if today := describe_today():
+        parts.append(f"Hoy tienes: {today}.")
+    try:
+        pending = [t.rstrip(".") for _, t in _notes()]
+    except OSError:
+        pending = []
+    if pending:
+        head = "un pendiente" if len(pending) == 1 else f"{len(pending)} pendientes"
+        more = f", y {len(pending) - 5} más" if len(pending) > 5 else ""
+        parts.append(f"{'Y' if parts else 'Tienes'} {head}: {'; '.join(pending[-5:])}{more}.")
+    return {"ok": True, "result": " ".join(parts) or "Hoy no tienes recordatorios ni pendientes. ¡Día libre!"}

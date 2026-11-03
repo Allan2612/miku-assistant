@@ -32,6 +32,16 @@ juntas ("abre Spotify y sube el volumen"), va a Gemini.
 | Silenciar el PC | "Silencio", "Silencia el PC", "Mutea", "Pon silencio" |
 | Pausar | "Pausa", "Pon pausa", "Ponle pausa a la canción", "Pausa la música", "Pausa el video" |
 | Reanudar | "Play", "Dale play", "Dale play a la canción", "Reanuda", "Pon la música", "Continúa la música" |
+| Canción siguiente o anterior | "Siguiente canción", "Pasa a la siguiente", "Salta esta canción", "Pon la anterior", "Canción anterior" |
+| Quitar el silencio del PC | "Quita el silencio", "Activa el sonido", "Desmutea" |
+| Video de YouTube (necesita la extensión de Opera) | "Sube / baja el volumen del video", "Volumen del video al 50", "Silencia el video", "Siguiente video", "Adelanta 30 segundos", "Regresa 10 segundos", "Pon subtítulos", "Quita los subtítulos", "Ponlo en 1080", "Máxima calidad", "Velocidad 1,5", "Velocidad normal", "Ponlo en bucle" |
+| OBS (solo con OBS abierto) | "Guarda eso", "Clip", "Empieza a grabar", "Deja de grabar", "Para la grabación", "Cambia a la escena X" |
+| Clima de tu ciudad | "¿Cómo está el clima?", "¿Va a llover hoy?", "¿Va a llover mañana?", "¿Qué temperatura hace?", "¿Cómo estará el clima mañana?" |
+| Tu día | "¿Qué tengo hoy?", "¿Qué tengo que hacer hoy?", "¿Cómo está mi día?", "Resumen del día" |
+| Cuota de Gemini | "¿Cuánta cuota me queda?", "¿Cuántas peticiones llevas hoy?", "¿Cómo va la cuota?" |
+| Aviso de descargas | "Avísame cuando termine la descarga", "Avísame cuando terminen las descargas" |
+| Bloquear el PC | "Bloquea el PC", "Bloquea la pantalla" |
+| Ver recordatorios | "¿Qué recordatorios tengo?", "¿Cuáles son mis recordatorios?" |
 | Hora | "¿Qué hora es?", "Dime la hora" |
 | Temporizador | "Pon un temporizador de cinco minutos para el té", "Avísame en media hora" |
 | Recordatorio en N minutos/horas | "Recuérdame en 10 minutos que saque la ropa", "Recuérdame en una hora llamar a mamá" (números en cifra o: un, una, dos, tres, cuatro, cinco, diez, quince, veinte, treinta, media) |
@@ -58,13 +68,6 @@ la misma frase en menos de 2 s (reutiliza la respuesta).
 | Manejar ventanas | "Minimiza todo menos el juego", "Pon Opera a la izquierda", "Maximiza VS Code", "Mueve Discord al otro monitor", "Trae Spotify al frente", "Cierra la ventana de Opera" |
 | Escribir en la ventana activa | "Escribe: hola, ya voy" (máx. 500 caracteres, no en consolas) |
 
-### Música y sonido
-| Qué | Cómo pedirlo |
-|---|---|
-| Canción siguiente o anterior | "Siguiente canción", "Pon la anterior" |
-| Quitar el silencio | "Quita el silencio", "Activa el sonido" |
-| Volumen de un video de YouTube (no el de Windows) | "Sube el volumen del video", "Bájale al reproductor", "Silencia el video" |
-
 ### Opera y YouTube (necesita la extensión de Miku en Opera)
 | Qué | Cómo pedirlo |
 |---|---|
@@ -75,14 +78,14 @@ la misma frase en menos de 2 s (reutiliza la respuesta).
 | Buscar en YouTube sin reproducir | "Busca en YouTube World is Mine" |
 | Abrir un resultado visible | "Ábreme el segundo resultado", "Abre ese enlace" |
 | Pestañas | "Cierra esta pestaña", "Cierra todas menos la de YouTube", "Ve a la pestaña de Discord", "Recarga la página", "Vuelve atrás" |
-| Reproductor de YouTube | "Pausa el video", "Pon subtítulos", "Ponlo en 1080p", "Velocidad 1.5", "Adelanta 10 segundos", "Siguiente video" |
+| Reproductor de YouTube, dicho de otra forma | "Ponle subtítulos en español a este video", "Ponlo al doble de velocidad" (las frases cortas son locales, arriba) |
 
 ### PC y portapapeles
 | Qué | Cómo pedirlo |
 |---|---|
 | Estado del PC | "¿Cómo va el PC?" (CPU, RAM, GPU/VRAM y disco) |
 | Fecha | "¿Qué día es hoy?" |
-| Bloquear la sesión | "Bloquea el PC" |
+| Bloquear la sesión, dicho de otra forma | "Bloquéame la compu que me voy" |
 | Copiar un texto | "Copia al portapapeles mi correo" |
 | Leer lo copiado | "¿Qué tengo copiado?", "Léeme el portapapeles" |
 
@@ -102,12 +105,22 @@ No puede borrar, mover ni renombrar archivos.
 |---|---|
 | Recordatorio a una hora o fecha | "Recuérdame mañana a las 8 que tengo cita", "Recuérdame el viernes a las 6 pagar la luz" |
 | Recordatorio que se repite | "Recuérdame todos los días a las 9 tomar la pastilla", "Cada 2 horas recuérdame estirar" |
-| Ver o cancelar | "¿Qué recordatorios tengo?", "Cancela el recordatorio 3" |
+| Cancelar | "Cancela el recordatorio 3" |
 | Marcar un pendiente como hecho | "Ya subí el PR" |
 | Borrar una nota | "Borra la nota de comprar pan" |
 | Abrir el archivo de notas | "Abre mis notas" |
 | Olvidar un dato | "Olvida lo de mi gato" |
 | Recordar conversaciones | "¿De qué hablamos ayer?", "¿Qué te dije del banco?" |
+
+### OBS, clima y descargas, dicho de otra forma
+| Qué | Cómo pedirlo |
+|---|---|
+| OBS | "Guárdame la jugada de recién", "Pásate a la escena del juego" |
+| Clima de otra ciudad | "¿Qué clima hace en Tokio?", "¿Llueve mañana en Madrid?" |
+
+OBS necesita su servidor WebSocket activado (en OBS: Herramientas → Ajustes del servidor WebSocket) y la contraseña en
+`.env` como `OBS_PASSWORD`. Para guardar clips, el búfer de repetición tiene que estar configurado (Ajustes → Salida);
+si está apagado, Miku lo enciende y te avisa de que lo anterior no se puede guardar. No inicia ni para directos.
 
 ### Ver tu pantalla
 Si la frase habla de la pantalla, va una captura en la misma petición: "¿Qué ves en mi pantalla?", "Mira este error",
@@ -119,6 +132,10 @@ La búsqueda de Google dentro de la respuesta está apagada (el plan gratuito la
 
 ## Lo que hace sola
 
+- **Modo pantalla completa:** con un juego o un video a pantalla completa delante, no aparece encima. Te sigue
+  escuchando ("Hey Miku", Ctrl+Alt+M) y responde solo con voz; los recordatorios también. No saluda al arrancar.
+- **Aviso de cuota:** cuando el modelo principal llega al 90 % de sus peticiones del día, lo dice una vez.
+- **Saludo de la mañana** con los recordatorios de hoy, si hay.
 - **Modo conversación:** después de cada respuesta deja el micrófono abierto 6 s; puedes seguir hablando sin "Hey Miku".
 - **Se oculta sola** tras 20 s sin actividad, despidiéndose si estuvieron hablando.
 - **Saludo** al arrancar, una vez al día.

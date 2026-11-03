@@ -158,3 +158,6 @@ import core.tools.timers
 import core.tools.notes
 import core.tools.memory
 import core.tools.routines
+import core.tools.obs
+import core.tools.weather
+import core.tools.downloads

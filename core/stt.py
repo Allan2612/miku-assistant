@@ -29,12 +29,14 @@ class STTManager:
         compute_type: str = "int8",
         cpu_threads: int = 4,
         language: str = "es",
+        vocabulary: str = "",
     ) -> None:
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
         self.cpu_threads = cpu_threads
         self.language = language
+        self.vocabulary = vocabulary
         self._model = None
         self._lock = asyncio.Lock()
         logger.info(
@@ -92,8 +94,8 @@ class STTManager:
             beam_size=1,
             best_of=1,
             temperature=0.0,
-            # Vocabulary only: whole commands here get "heard" in noise and run by the fast path (H-035)
-            initial_prompt="Miku, Spotify, YouTube, Google, Opera GX, Discord, Steam, Bloc de notas.",
+            # Vocabulary only (config.yaml -> stt.vocabulary): whole commands here get "heard" in noise (H-035)
+            initial_prompt=self.vocabulary or None,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=400),
             repetition_penalty=1.15,

@@ -6,6 +6,7 @@ Reminders can be on a date ("el viernes a las 8") and repeat ("todos los días a
 
 import asyncio
 import datetime
+import difflib
 import json
 import logging
 import time
@@ -29,6 +30,7 @@ MISSED_GRACE_S = 6 * 3600
 # Missed ones wait this long at startup, so the frontend has connected and can show Miku
 MISSED_DELAY_S = 15.0
 DAY_S, WEEK_S = 86400, 7 * 86400
+DUPLICATE_WINDOW_S = 90
 
 _WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 _MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
@@ -61,6 +63,15 @@ def _spoken_when(t: Dict[str, Any]) -> str:
 def describe_timers() -> str:
     """The active timers and reminders as one spoken line ("" if none)."""
     return "; ".join(f"el {t['id']}, {t['label']}, {_spoken_when(t)}" for t in _TIMERS.values())
+
+
+def describe_today() -> str:
+    """Today's timers and reminders still to come, in time order, as one spoken line ("" if none)."""
+    today = datetime.date.today()
+    due_today = sorted((t["due"], t["label"]) for t in _TIMERS.values()
+                       if datetime.date.fromtimestamp(t["due"]) == today)
+    return "; ".join(f"{label.removeprefix('Recordatorio:').strip()} a las {datetime.datetime.fromtimestamp(due):%H:%M}"
+                     for due, label in due_today)
 
 
 def _save() -> None:
@@ -105,6 +116,14 @@ def set_timer_notifier(callback: Callable[[str], Awaitable[None]], loop: Optiona
     _TIMER_NOTIFIER = callback
     if loop is not None:
         _MAIN_LOOP = loop
+
+
+def announce(message: str) -> None:
+    """Says something out of turn, like a reminder (shown or not, no mic after it). From any thread."""
+    if _TIMER_NOTIFIER is None or _MAIN_LOOP is None or _MAIN_LOOP.is_closed():
+        logger.warning("Nothing can announce '%s' (no notifier yet).", message)
+        return
+    asyncio.run_coroutine_threadsafe(_TIMER_NOTIFIER(message), _MAIN_LOOP)
 
 
 def _schedule_worker(timer_id: int, duration_sec: float, label: str) -> Any:
@@ -156,6 +175,14 @@ async def _timer_worker(timer_id: int, duration_seconds: float, label: str) -> N
 def _add(label: str, seconds: float, every: float = 0) -> Dict[str, Any]:
     """Registers and schedules one timer; returns its entry, or an error result if there are too many."""
     global _NEXT_TIMER_ID
+    # The model sometimes replays the last order on a "gracias" (log 3-nov: "Jarolito" then "Harolito", same 2
+    # minutes): an almost equal one due at about the same time is the same reminder
+    due = time.time() + seconds
+    for t in _TIMERS.values():
+        if (abs(t["due"] - due) < DUPLICATE_WINDOW_S and t.get("every", 0) == every
+                and difflib.SequenceMatcher(None, t["label"].lower(), label.lower()).ratio() > 0.8):
+            logger.info("Timer '%s' is a repeat of #%d: not added twice.", label, t["id"])
+            return t
     if len(_TIMERS) >= MAX_TIMERS:
         return {"ok": False, "result": f"Ya hay {MAX_TIMERS} temporizadores activos; cancela alguno primero."}
     timer_id = _NEXT_TIMER_ID

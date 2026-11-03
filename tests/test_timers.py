@@ -128,6 +128,49 @@ async def _dates_and_repeats():
     timers.cancel_timer(40)
 
 
+def test_a_replayed_reminder_is_not_added_twice():
+    async def run():
+        timers._TIMERS.clear()
+        timers.set_timer_notifier(lambda m: asyncio.sleep(0), loop=asyncio.get_running_loop())
+        first = timers.remind("Jarolito es muy playo", minutes=2)
+        again = timers.remind("Harolito es muy playo", minutes=2)  # log 3-nov: replayed on "gracias mi amor"
+        assert len(timers._TIMERS) == 1 and first["result"].split(",")[0] == again["result"].split(",")[0], again
+        timers.remind("Jarolito es muy playo", minutes=10)  # another time: a real second reminder
+        timers.remind("tomar agua", minutes=2)
+        assert len(timers._TIMERS) == 3
+        for t in list(timers._TIMERS):
+            timers.cancel_timer(t)
+
+    asyncio.run(run())
+
+
+def test_my_day():
+    """"¿Qué tengo hoy?": today's reminders in time order, then the pending notes."""
+    import core.tools.notes as notes
+
+    today, tomorrow = datetime.date.today(), datetime.date.today() + datetime.timedelta(days=1)
+
+    def at(day, hh, mm):
+        return datetime.datetime.combine(day, datetime.time(hh, mm)).timestamp()
+
+    timers._TIMERS.clear()
+    timers._TIMERS.update({
+        1: {"id": 1, "label": "Recordatorio: la cita", "due": at(today, 23, 59), "every": 0},
+        2: {"id": 2, "label": "el té", "due": at(today, 0, 1), "every": 0},
+        3: {"id": 3, "label": "Recordatorio: vitaminas", "due": at(tomorrow, 9, 0), "every": timers.DAY_S},
+    })
+    assert timers.describe_today() == "el té a las 00:01; la cita a las 23:59", timers.describe_today()
+
+    notes.NOTES_FILE = Path(tempfile.mkdtemp()) / "notes.md"
+    assert notes.my_day()["result"] == "Hoy tienes: el té a las 00:01; la cita a las 23:59."
+    notes.NOTES_FILE.write_text("- [2026-10-20 02:58] comprar pan\n- ✔ [2026-10-21 10:00] hecho\n", encoding="utf-8")
+    assert notes.my_day()["result"].endswith("Y un pendiente: comprar pan."), notes.my_day()
+    timers._TIMERS.clear()
+    assert notes.my_day()["result"] == "Tienes un pendiente: comprar pan."
+    notes.NOTES_FILE.unlink()
+    assert "Día libre" in notes.my_day()["result"]
+
+
 def test_timers_persist():
     asyncio.run(_flow())
     asyncio.run(_restart())
@@ -137,4 +180,6 @@ def test_timers_persist():
 
 if __name__ == "__main__":
     test_timers_persist()
+    test_my_day()
+    test_a_replayed_reminder_is_not_added_twice()
     print("ok")
