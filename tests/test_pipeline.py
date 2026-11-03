@@ -549,6 +549,17 @@ async def _fullscreen():
         FULLSCREEN[0] = False
 
 
+def test_quiet_text_answers_without_voice():
+    # The panel's chat, "Solo texto": the answer as a subtitle, no voice, nothing for the GPU
+    async def run():
+        p, server = _pipeline(FakeBrain())
+        await p.handle_text_input("hola", quiet=True)
+        assert "subtitle" in server.sent and "speak" not in server.sent and not p._is_speaking, server.sent
+        assert not p.wakeword.paused
+
+    asyncio.run(run())
+
+
 def test_fullscreen_means_voice_only():
     asyncio.run(_fullscreen())
 
@@ -566,4 +577,5 @@ if __name__ == "__main__":
     test_speak_carries_body_language()
     test_without_speak_done()
     test_fullscreen_means_voice_only()
+    test_quiet_text_answers_without_voice()
     print("ok")

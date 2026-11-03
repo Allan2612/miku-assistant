@@ -103,7 +103,11 @@ class MikuServer:
         if self.pipeline is not None:
             # Process and GPU counters block for a few ms: off the event loop
             args = data.get("args") if isinstance(data.get("args"), dict) else {}
-            reply = await asyncio.to_thread(panel.answer, self.pipeline, str(data.get("what", "")), args)
+            what = str(data.get("what", ""))
+            if what == "do:transcribe_clip":  # Whisper is async and has its own lock: not in a thread
+                reply = await panel.transcribe_clip(self.pipeline, args)
+            else:
+                reply = await asyncio.to_thread(panel.answer, self.pipeline, what, args)
         await websocket.send(json.dumps({"type": "panel_reply", "id": data.get("id"), "data": reply},
                                         ensure_ascii=False))
 
@@ -161,7 +165,8 @@ class MikuServer:
                         user_text = str(data.get("text", ""))[:MAX_TEXT_INPUT]
                         if user_text:
                             # As a task: dismiss/speak_done from this client must not wait for the answer
-                            self._spawn(self.pipeline.handle_text_input(user_text))
+                            # quiet: the panel's chat can ask for a text-only answer
+                            self._spawn(self.pipeline.handle_text_input(user_text, quiet=bool(data.get("quiet"))))
 
                     elif msg_type == "activate":
                         logger.info("Client requested activation.")

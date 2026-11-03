@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import psutil
@@ -215,6 +216,52 @@ def act(action: str, args: Dict[str, Any]) -> Dict[str, Any]:
         memory._save([new if f == old else f for f in facts if new or f != old])  # exact fact, not "contains"
         return {"ok": True, "result": "Dato cambiado." if new else "Dato borrado."}
     return {"ok": False, "result": f"Acción desconocida: {action}"}
+
+
+CLIP_NAME = r"\d{8}-\d{6}_\d\.\d{3}\.wav"
+CLIP_FOLDERS = ("", "near", "silent")
+
+
+def clip_path(folder: str, name: str) -> Optional[Path]:
+    """A wake word clip from the panel: a known folder and the clip name pattern, never a path."""
+    import re
+
+    from core.wakeword import CLIPS_DIR
+
+    if folder not in CLIP_FOLDERS or not re.fullmatch(CLIP_NAME, name or ""):
+        return None
+    path = (CLIPS_DIR / folder / name) if folder else CLIPS_DIR / name
+    return path if path.is_file() else None
+
+
+async def transcribe_clip(pipeline: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+    """What Whisper hears in a wake word clip ("¿Qué oyó?" on the panel), kept in cache/wake/heard.json."""
+    import asyncio
+    import json
+    import wave
+
+    import numpy as np
+
+    from core.wakeword import CLIPS_DIR
+
+    folder, name = str(args.get("folder", "")), str(args.get("name", ""))
+    path = clip_path(folder, name)
+    if path is None:
+        return {"ok": False, "result": "No encuentro ese clip."}
+
+    def load() -> Any:
+        with wave.open(str(path)) as w:
+            return np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768.0
+
+    heard = await pipeline.stt.transcribe(await asyncio.to_thread(load))
+    store = CLIPS_DIR / "heard.json"
+    try:
+        known = json.loads(store.read_text(encoding="utf-8")) if store.is_file() else {}
+    except ValueError:
+        known = {}
+    known[f"{folder}/{name}" if folder else name] = heard
+    store.write_text(json.dumps(known, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "result": heard}
 
 
 def answer(pipeline: Any, what: str, args: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:

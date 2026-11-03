@@ -108,6 +108,86 @@ fn read_functions_doc(app: AppHandle) -> Result<String, String> {
     std::fs::read_to_string(root.join("docs").join("funciones.md")).map_err(|e| e.to_string())
 }
 
+// ---------- wake word clips (cache/wake): listen and label them, for retraining "Hey Miku" ----------
+
+const CLIP_FOLDERS: [&str; 3] = ["", "near", "silent"];
+
+fn wake_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app.state::<Power>().backend.root().ok_or("No encuentro la carpeta de Miku")?.join("cache").join("wake"))
+}
+
+/// "20261103-122416_0.984.wav" in a known folder: a clip name from the panel is never a path.
+fn clip_key(folder: &str, name: &str) -> Option<String> {
+    let b = name.as_bytes();
+    let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
+    let ok = CLIP_FOLDERS.contains(&folder)
+        && b.len() == 25
+        && digits(0..8)
+        && b[8] == b'-'
+        && digits(9..15)
+        && b[15] == b'_'
+        && digits(16..17)
+        && b[17] == b'.'
+        && digits(18..21)
+        && &name[21..] == ".wav";
+    ok.then(|| if folder.is_empty() { name.to_string() } else { format!("{folder}/{name}") })
+}
+
+fn read_json(path: &std::path::Path) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn wake_clips(app: AppHandle) -> Result<serde_json::Value, String> {
+    let dir = wake_dir(&app)?;
+    let labels = read_json(&dir.join("labels.json"));
+    let heard = read_json(&dir.join("heard.json"));
+    let mut clips = Vec::new();
+    for folder in CLIP_FOLDERS {
+        let Ok(entries) = std::fs::read_dir(if folder.is_empty() { dir.clone() } else { dir.join(folder) }) else { continue };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(key) = clip_key(folder, &name) {
+                clips.push(serde_json::json!({
+                    "folder": folder, "name": name,
+                    "label": labels.get(&key).cloned().unwrap_or(serde_json::Value::Null),
+                    "heard": heard.get(&key).cloned().unwrap_or(serde_json::Value::Null),
+                }));
+            }
+        }
+    }
+    clips.sort_by(|a, b| b["name"].as_str().cmp(&a["name"].as_str())); // newest first
+    Ok(serde_json::json!({ "clips": clips }))
+}
+
+/// The clip's WAV bytes, as an ArrayBuffer for the panel's audio player.
+#[tauri::command]
+fn wake_clip_audio(app: AppHandle, folder: String, name: String) -> Result<tauri::ipc::Response, String> {
+    clip_key(&folder, &name).ok_or("Clip no válido")?;
+    let dir = wake_dir(&app)?;
+    let path = if folder.is_empty() { dir.join(&name) } else { dir.join(&folder).join(&name) };
+    std::fs::read(path).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+}
+
+/// "yes" (it was the user), "no" (it was not), or nothing to clear the mark. Kept in cache/wake/labels.json.
+#[tauri::command]
+fn wake_label(app: AppHandle, folder: String, name: String, label: Option<String>) -> Result<(), String> {
+    let key = clip_key(&folder, &name).ok_or("Clip no válido")?;
+    let path = wake_dir(&app)?.join("labels.json");
+    let mut labels = read_json(&path);
+    match label.as_deref() {
+        Some(l @ ("yes" | "no")) => labels.insert(key, serde_json::Value::String(l.to_string())),
+        _ => labels.remove(&key),
+    };
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, serde_json::Value::Object(labels).to_string()).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
 /// The last `lines` lines of cache/core.log, read from the file: the panel shows them with Miku off too.
 #[tauri::command]
 fn read_log(app: AppHandle, lines: usize) -> Result<String, String> {
@@ -124,7 +204,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             backend_state, backend_start, backend_stop, backend_restart, read_log, read_functions_doc,
-            settings_get, settings_set, settings_tools, settings_testkey
+            settings_get, settings_set, settings_tools, settings_testkey, wake_clips, wake_clip_audio, wake_label
         ])
         .setup(|app| {
             // The frontend positions the window (positionWindow in main.ts) using the work area

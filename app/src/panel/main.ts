@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { live2d } from "../live2d";
+import { onChatEvent, renderChat, renderWake } from "./voice";
 import { refreshReminders, renderConfig, renderFunctions, renderMemory, renderReminders, renderTools } from "./manage";
 import { MODEL, POWER_ICON, Reply, byId, comma, esc, head, icon, isTauri, link, offlineNote, size, state } from "./shared";
 
@@ -18,7 +19,6 @@ interface Section {
   render: () => void;
   refresh?: () => Promise<void>;
   every?: number; // seconds between refreshes while shown
-  soon?: string[];
 }
 
 const SECTIONS: Section[] = [
@@ -31,9 +31,8 @@ const SECTIONS: Section[] = [
   { id: "funciones", label: "Funciones", d: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", render: renderFunctions },
   { id: "recordatorios", label: "Recordatorios", d: "M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0", render: renderReminders, refresh: refreshReminders, every: 5 },
   { id: "memoria", label: "Memoria", d: "M6 4h12v17l-6-4-6 4z", render: renderMemory },
-  { id: "palabra", label: "Palabra clave", d: "M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21", render: renderSoon,
-    soon: ["Escuchar cada activación de «Hey Miku»", "Marcar «era yo» o «no era yo» para reentrenar el modelo", "Activaciones, falsas y casi disparos del día"] },
-  { id: "chat", label: "Chat", d: "M4 5h16v11H9l-5 4z", render: renderSoon, soon: ["Escribirle a Miku cuando no puedes hablar"] },
+  { id: "palabra", label: "Palabra clave", d: "M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21", render: renderWake },
+  { id: "chat", label: "Chat", d: "M4 5h16v11H9l-5 4z", render: renderChat },
 ];
 
 let current: Section = SECTIONS[0];
@@ -393,13 +392,6 @@ function paintLogs(jump: boolean): void {
   if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
-// ---------- not built yet ----------
-function renderSoon(): void {
-  byId("view")!.innerHTML = `
-    ${head(current.label.toUpperCase(), current.label, "Esta sección llega en las próximas fases del panel.")}
-    <section class="card soon"><h2>Qué tendrá</h2><ul>${(current.soon ?? []).map((s) => `<li>${esc(s)}</li>`).join("")}</ul></section>`;
-}
-
 // ---------- loop and events ----------
 async function tick(): Promise<void> {
   if (document.hidden || !current.refresh) return;
@@ -441,6 +433,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 link.onEvent = (msg) => {
+  onChatEvent(msg);
   if (msg.type === "state") {
     state.speaking = msg.value === "speaking";
     if (current.id === "inicio") paintPower();

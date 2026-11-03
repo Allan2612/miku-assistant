@@ -96,6 +96,8 @@ def test_panel_changes_go_through_mikus_tools():
     assert panel.memory_view()["days"] == ["2026-11-03"]
     assert panel.conversation("2026-11-03")["turns"][0]["user"] == "hola"
     assert panel.conversation("../../config")["turns"] == [], "a day, never a path"
+    # Wake word clips: a known folder and the clip name pattern only
+    assert panel.clip_path("", "../../.env") is None and panel.clip_path("..", "20261103-122416_0.984.wav") is None
 
 
 def test_panel_asks_and_listens():

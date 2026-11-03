@@ -136,6 +136,10 @@ Al usuario le gusta todo. Cambios pedidos:
   Funciones (funciones.md con frases que se le mandan a Miku), Recordatorios y pendientes, Memoria y conversaciones.
   El atajo y el micrófono se muestran pero no se cambian aquí (el atajo va compilado en la app; el micrófono es el de
   Windows). Barras de scroll oscuras.
+- **Fase 4 (hecha, 3-nov):** Palabra clave (activaciones, casi disparos e ignoradas de `cache/wake`, con reproductor,
+  "¿Qué oyó?" con Whisper y las marcas "era yo / no era yo" en `cache/wake/labels.json`; progreso hacia 60 marcas
+  con 20 tuyas para reentrenar) y Chat (escribirle a Miku, con "Solo texto" para que conteste sin voz; los turnos de
+  voz también aparecen). Leer y marcar clips funciona con Miku apagada (Rust).
 
 ## Fases
 

@@ -320,10 +320,12 @@ class MikuPipeline:
 
     async def _speak(
         self, text: str, emotion: str, farewell: bool = False, cache: bool = False, gesture: Optional[str] = None,
+        quiet: bool = False,
     ) -> None:
         """Shows Miku's answer and speaks it, or degrades to subtitle only. Shared by every path (H-032).
         `gesture` asks the avatar for a specific one ("attention" for a reminder, "greet"); otherwise she picks
-        from the emotion and from how this turn's actions went."""
+        from the emotion and from how this turn's actions went. `quiet`: text only, asked from the panel's chat
+        (no voice, no GPU work)."""
         self._last_turn_at = float("-inf") if farewell else time.monotonic()
         if not text and farewell:
             # "Ocúltate": she goes at once, without a word and without opening the mic again
@@ -342,7 +344,7 @@ class MikuPipeline:
                 self.wakeword.resume()
             return
         self._last_answer = text
-        voice_res = await self._synthesize_voice(text, cache=cache)
+        voice_res = None if quiet else await self._synthesize_voice(text, cache=cache)
         self.resources.touch()
         await self.server.broadcast({"type": "expression", "name": emotion})
         await self.server.broadcast({"type": "subtitle", "who": "miku", "text": text})
@@ -367,7 +369,8 @@ class MikuPipeline:
             })
             self._schedule_speak_done_watchdog(text)
         else:
-            logger.warning("Voice unavailable. Degrading to text subtitle.")
+            if not quiet:
+                logger.warning("Voice unavailable. Degrading to text subtitle.")
             await self.server.broadcast({"type": "state", "value": "idle"})
             if self.wakeword is not None:
                 self.wakeword.resume()
@@ -596,7 +599,7 @@ class MikuPipeline:
             finally:
                 self._is_listening = False
 
-    async def handle_text_input(self, text: str) -> None:
+    async def handle_text_input(self, text: str, quiet: bool = False) -> None:
         """Processes sequential text chat from the frontend."""
         clean = text.strip()
         if not clean:
@@ -621,7 +624,7 @@ class MikuPipeline:
                 self.wakeword.pause()
             logger.info("Processing text input: %s", clean)
             try:
-                await self._process_text(clean)
+                await self._process_text(clean, quiet)
             except Exception:
                 # Without this the wake word stayed paused and the UI stuck on "thinking" (H-030)
                 logger.exception("Error in text input pipeline")
@@ -629,7 +632,7 @@ class MikuPipeline:
                 if self.wakeword is not None:
                     self.wakeword.resume()
 
-    async def _process_text(self, text: str) -> None:
+    async def _process_text(self, text: str, quiet: bool = False) -> None:
         """Body of handle_text_input; runs under the pipeline lock."""
 
         # Pre-warm RVC in background if needed
@@ -653,7 +656,7 @@ class MikuPipeline:
         self.resources.touch()
 
         # 4. Synthesize speech (edge-tts -> RVC) and speak
-        await self._speak(answer, emotion, farewell=is_farewell)
+        await self._speak(answer, emotion, farewell=is_farewell, quiet=quiet)
 
     def handle_speak_done(self) -> bool:
         """Returns True if there is a pending farewell animation to trigger."""
