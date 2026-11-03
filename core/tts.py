@@ -14,9 +14,11 @@ from pathlib import Path
 from typing import Optional, Tuple
 import edge_tts
 
+from core.paths import CACHE
+
 logger = logging.getLogger("miku.tts")
 
-DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "cache" / "voice"
+DEFAULT_CACHE_DIR = CACHE / "voice"
 WORDS_KEPT = 16  # timings of the last phrases only: each is read once, right after synthesis
 
 

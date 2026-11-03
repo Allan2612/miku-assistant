@@ -88,6 +88,28 @@ async fn settings_testkey(app: AppHandle, key: String) -> Result<String, String>
     tauri::async_runtime::spawn_blocking(move || settings(&app, &["testkey"], &key)).await.map_err(|e| e.to_string())?
 }
 
+/// Installed and not set up yet: the panel shows the first-start wizard instead of the sections.
+#[tauri::command]
+fn setup_state(app: AppHandle) -> serde_json::Value {
+    let backend = &app.state::<Power>().backend;
+    serde_json::json!({ "installed": backend.installed(), "ready": backend.ready() })
+}
+
+/// The first start (installer/setup.ps1): each progress line goes to the panel as a "setup-progress" event; at the
+/// end Miku starts.
+#[tauri::command]
+async fn setup_run(app: AppHandle, api_key: String, city: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let backend = app.state::<Power>().backend.clone();
+        backend.run_setup(&api_key, &city, |line| {
+            let _ = app.emit("setup-progress", line.to_string());
+        })?;
+        start_backend(&app)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// After saving settings: the backend reads config.yaml and .env only when it starts.
 #[tauri::command]
 async fn backend_restart(app: AppHandle) -> Result<(), String> {
@@ -113,7 +135,7 @@ fn read_functions_doc(app: AppHandle) -> Result<String, String> {
 const CLIP_FOLDERS: [&str; 3] = ["", "near", "silent"];
 
 fn wake_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    Ok(app.state::<Power>().backend.root().ok_or("No encuentro la carpeta de Miku")?.join("cache").join("wake"))
+    Ok(app.state::<Power>().backend.data().join("cache").join("wake"))
 }
 
 /// "20261103-122416_0.984.wav" in a known folder: a clip name from the panel is never a path.
@@ -191,8 +213,7 @@ fn wake_label(app: AppHandle, folder: String, name: String, label: Option<String
 /// The last `lines` lines of cache/core.log, read from the file: the panel shows them with Miku off too.
 #[tauri::command]
 fn read_log(app: AppHandle, lines: usize) -> Result<String, String> {
-    let root = app.state::<Power>().backend.root().ok_or("No encuentro la carpeta de Miku")?.to_path_buf();
-    let text = std::fs::read(root.join("cache").join("core.log")).map_err(|e| e.to_string())?;
+    let text = std::fs::read(app.state::<Power>().backend.data().join("cache").join("core.log")).map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&text);
     let all: Vec<&str> = text.lines().collect();
     Ok(all[all.len().saturating_sub(lines.min(2000))..].join("\n"))
@@ -204,7 +225,8 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             backend_state, backend_start, backend_stop, backend_restart, read_log, read_functions_doc,
-            settings_get, settings_set, settings_tools, settings_testkey, wake_clips, wake_clip_audio, wake_label
+            settings_get, settings_set, settings_tools, settings_testkey, wake_clips, wake_clip_audio, wake_label,
+            setup_state, setup_run
         ])
         .setup(|app| {
             // The frontend positions the window (positionWindow in main.ts) using the work area

@@ -14,6 +14,7 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 from .config import load_config
+from .paths import CACHE
 from .llm import MikuBrain
 from .server import MikuServer
 from .tts import TTSManager
@@ -59,14 +60,14 @@ def watch_parent(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event) -> 
 async def async_main() -> None:
     config = load_config()
 
-    os.makedirs("cache", exist_ok=True)
+    CACHE.mkdir(parents=True, exist_ok=True)
     # stop.bat kills exactly this process tree instead of matching command lines (H-053)
-    pid_file = Path(root_dir) / "cache" / "core.pid"
+    pid_file = CACHE / "core.pid"
     pid_file.write_text(str(os.getpid()), encoding="ascii")
     handlers: list[logging.Handler] = [
         # Rotating: the log grew without limit (H-029)
         logging.handlers.RotatingFileHandler(
-            Path(root_dir) / "cache" / "core.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
+            CACHE / "core.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8"
         )
     ]
     if sys.stderr is not None:
@@ -102,7 +103,7 @@ async def async_main() -> None:
         max_history=config.llm.max_history_turns,
         temperature=config.llm.temperature,
         web_search=config.llm.web_search,
-        history_file=Path(root_dir) / "cache" / "history.json",
+        history_file=CACHE / "history.json",
     )
 
     tts = TTSManager(

@@ -26,6 +26,7 @@ import sounddevice as sd
 from openwakeword.model import Model
 
 from core.config import WakewordConfig
+from core.paths import CACHE
 
 logger = logging.getLogger("miku.wakeword")
 
@@ -33,7 +34,7 @@ BUILTIN_MODELS = {"alexa", "hey_mycroft", "hey_jarvis", "hey_rhasspy", "timer", 
 
 # What it heard at each activation, to find what triggers the false ones (plan B, 26-oct). Real and false
 # activations can't be told apart by score (false: 0.988; real: 0.355), so the audio is the evidence
-CLIPS_DIR = Path(__file__).resolve().parents[1] / "cache" / "wake"
+CLIPS_DIR = CACHE / "wake"
 CLIP_CHUNKS = 25  # x 80 ms = the last 2 s
 MAX_CLIPS = 200
 # A trigger whose clip never gets this loud is not a voice (3-nov: 15 of 61 false triggers were near silence; the

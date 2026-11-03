@@ -5,9 +5,10 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 from dotenv import load_dotenv
+
+from core import paths
 import yaml
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 @dataclass(slots=True)
@@ -111,8 +112,8 @@ def load_config(
     env_path: Optional[Path | str] = None,
 ) -> AppConfig:
     """Load configuration from config.yaml and environment variables (.env)."""
-    cfg_file = Path(config_path) if config_path else ROOT_DIR / "config.yaml"
-    dotenv_file = Path(env_path) if env_path else ROOT_DIR / ".env"
+    cfg_file = Path(config_path) if config_path else paths.CONFIG
+    dotenv_file = Path(env_path) if env_path else paths.ENV
 
     if dotenv_file.is_file():
         load_dotenv(dotenv_path=dotenv_file, override=False)

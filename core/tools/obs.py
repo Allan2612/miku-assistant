@@ -16,12 +16,13 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from core import paths
 from core.tools import tool
 
 logger = logging.getLogger("miku.tools.obs")
 
 TIMEOUT_S = 3.0
-ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+ENV_FILE = paths.ENV
 NOT_RUNNING = ("OBS no está abierto o su servidor WebSocket está apagado. Actívalo en OBS: Herramientas, "
                "Ajustes del servidor WebSocket.")
 # requestStatus codes of obs-websocket 5

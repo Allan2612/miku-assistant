@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Callable, Awaitable, Any
 
+from core.paths import CACHE
 from core.tools import tool
 
 logger = logging.getLogger("miku.tools.timers")
@@ -24,7 +25,7 @@ _TIMER_NOTIFIER: Optional[Callable[[str], Awaitable[None]]] = None
 _MAIN_LOOP: Optional[asyncio.AbstractEventLoop] = None
 MAX_TIMERS = 20
 
-TIMERS_FILE = Path(__file__).resolve().parents[2] / "cache" / "timers.json"
+TIMERS_FILE = CACHE / "timers.json"
 # Missed while Miku was off: still announced at startup if it was due less than this long ago
 MISSED_GRACE_S = 6 * 3600
 # Missed ones wait this long at startup, so the frontend has connected and can show Miku

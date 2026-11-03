@@ -140,6 +140,14 @@ Al usuario le gusta todo. Cambios pedidos:
   "¿Qué oyó?" con Whisper y las marcas "era yo / no era yo" en `cache/wake/labels.json`; progreso hacia 60 marcas
   con 20 tuyas para reentrenar) y Chat (escribirle a Miku, con "Solo texto" para que conteste sin voz; los turnos de
   voz también aparecen). Leer y marcar clips funciona con Miku apagada (Rust).
+- **Fase 5 (hecha, 3-nov):** `core/paths.py` separa programa y datos (`MIKU_HOME`); `miku.exe` distingue desarrollo
+  (carpeta con `core/.venv`) de instalado (Python en `%LOCALAPPDATA%\Miku Assistant\runtime`, datos en
+  `%APPDATA%\Miku Assistant`); asistente de primer arranque en el panel que lanza `installer/setup.ps1` (uv, Python
+  3.14, librerías de `requirements.lock`, PyTorch CUDA solo con NVIDIA, modelos de Whisper y ContentVec) con su
+  progreso; instalador NSIS de 220 MB (`npx tauri build`), para el usuario actual, en español, que al desinstalar
+  borra el runtime y conserva los datos. Icono de la app: la cara de Miku sacada del modelo Live2D.
+  Probado: `setup.ps1` en modo de prueba (carpetas, `.env` sin BOM, GPU, URLs), el modo desarrollo en vivo y los
+  archivos incluidos. **Sin probar todavía:** instalar el `.exe` y la descarga completa en una PC.
 
 ## Fases
 

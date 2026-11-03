@@ -35,7 +35,7 @@ from core.tools.windows import fullscreen_app_in_front
 
 logger = logging.getLogger("miku.pipeline")
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+from core.paths import CACHE
 
 # Spoken right after activation so it is obvious Miku is listening; kept very short
 ACK_PHRASES = ("¿Sí?", "¿Dime?", "¿Mm?", "¿Qué pasa?", "¡Aquí estoy!")
@@ -239,7 +239,7 @@ class MikuPipeline:
         base = "|".join(str(getattr(self.tts, k, "")) for k in ("voice", "rate", "pitch"))
         voice = f"{base}|{self.rvc.model_path}|{self.rvc.f0_up_key}|{self.rvc.index_rate}" if self.rvc is not None else base
         digest = hashlib.md5(f"{phrase}|{voice}".encode("utf-8")).hexdigest()
-        return ROOT_DIR / "cache" / "voice" / f"ack_{digest}.wav"
+        return CACHE / "voice" / f"ack_{digest}.wav"
 
     async def _ack_audio(self, phrase: str) -> Optional[Tuple[str, str]]:
         """The cue in Miku's voice (RVC, cached on disk). Not cached yet: converted now if RVC is loaded,
@@ -677,7 +677,7 @@ class MikuPipeline:
         Runs when Miku Assistant boots up and frontend connects.
         """
         # Once per day, as persona.md says: restarting the backend must not greet again (H-032)
-        marker = ROOT_DIR / "cache" / "last_greeting.txt"
+        marker = CACHE / "last_greeting.txt"
         today = date.today().isoformat()
         try:
             if marker.exists() and marker.read_text(encoding="ascii").strip() == today:

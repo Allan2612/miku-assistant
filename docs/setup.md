@@ -1,5 +1,27 @@
 # Preparación (lo que hace el usuario, no el agente)
 
+## Instalar Miku en otra PC (instalador)
+
+Para tus PCs y las de amigos de confianza. El instalador lleva la voz MikuDiva y el modelo Live2D, que son de
+terceros: no lo publiques.
+
+1. **Generarlo** (en esta PC, con Miku cerrada): en `app/`, `npx tauri build`. Sale en
+   `app/src-tauri/target/release/bundle/nsis/Miku Assistant_<versión>_x64-setup.exe` (~220 MB).
+2. **Instalarlo:** Windows avisará de "editor desconocido" (no está firmado): *Más información › Ejecutar de todas
+   formas*. Se instala para el usuario actual, sin pedir administrador, en `%LOCALAPPDATA%\Programs\Miku Assistant`.
+3. **Primer arranque:** el panel pide la API key de Gemini (puede dejarse para después) y la ciudad, y descarga Python,
+   las librerías y los modelos (~4 GB con tarjeta NVIDIA; sin NVIDIA no instala PyTorch y Miku contesta con
+   subtítulos, sin la voz RVC). Hace falta internet esa vez.
+4. **Dónde queda cada cosa:**
+   - el programa (código, modelos): la carpeta de instalación;
+   - Python y las librerías: `%LOCALAPPDATA%\Miku Assistant\runtime` (se borra al desinstalar);
+   - tus datos (ajustes, `.env`, memoria, recordatorios, logs): `%APPDATA%\Miku Assistant` (se conservan al
+     desinstalar o actualizar).
+5. **Extensión de Opera:** está en la carpeta de instalación, `browser-extension` (ver su README).
+
+En desarrollo (esta carpeta, con `core/.venv`) nada de eso cambia: `start.bat` y `stop.bat` siguen igual, y los datos
+siguen en `cache/`, `config.yaml` y `.env` del proyecto.
+
 ## Software
 - Windows 10/11 con el driver NVIDIA al día (RTX 3050, 8 GB)
 - **Python 3.11** (marcar "Add to PATH")

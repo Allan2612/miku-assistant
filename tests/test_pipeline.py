@@ -412,7 +412,7 @@ async def _one_voice():
     import tempfile
     from pathlib import Path
     import core.pipeline as pl
-    pl.ROOT_DIR = Path(tempfile.mkdtemp())  # cue cache in a temp folder
+    pl.CACHE = Path(tempfile.mkdtemp())  # cue cache in a temp folder
 
     # RVC fails: the answer is a subtitle, never the base voice
     server = AckServer()

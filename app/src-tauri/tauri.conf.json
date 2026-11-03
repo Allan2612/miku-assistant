@@ -43,13 +43,42 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "shortDescription": "Miku, tu asistente de voz para Windows",
+    "resources": {
+      "../../core/*.py": "core/",
+      "../../core/requirements.lock": "core/requirements.lock",
+      "../../core/tools/*.py": "core/tools/",
+      "../../core/infer_pack/*.py": "core/infer_pack/",
+      "../../core/infer_pack/LICENSE": "core/infer_pack/LICENSE",
+      "../../models/rvc/miku_diva.pth": "models/rvc/miku_diva.pth",
+      "../../models/rvc/miku_diva.index": "models/rvc/miku_diva.index",
+      "../../models/rvc/rmvpe.pt": "models/rvc/rmvpe.pt",
+      "../../models/wakeword/hey_miku.onnx": "models/wakeword/hey_miku.onnx",
+      "../../docs/funciones.md": "docs/funciones.md",
+      "../../config.yaml": "config.default.yaml",
+      "../../installer/setup.ps1": "installer/setup.ps1",
+      "../../browser-extension/*": "browser-extension/",
+      "../../browser-extension/icons/*": "browser-extension/icons/"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "Spanish"
+        ],
+        "displayLanguageSelector": false,
+        "installerHooks": "../../installer/hooks.nsh"
+      }
+    }
   }
 }

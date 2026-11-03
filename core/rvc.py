@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from core.config import RVCConfig
+from core.paths import CACHE
 
 logger = logging.getLogger("miku.rvc")
 
@@ -69,7 +70,7 @@ class RVCManager:
 
     @staticmethod
     def _log_file():
-        log_path = ROOT_DIR / "cache" / "rvc_worker.log"
+        log_path = CACHE / "rvc_worker.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         return open(log_path, "ab")
 

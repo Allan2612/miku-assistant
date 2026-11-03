@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { live2d } from "../live2d";
+import { renderSetup } from "./setup";
 import { onChatEvent, renderChat, renderWake } from "./voice";
 import { refreshReminders, renderConfig, renderFunctions, renderMemory, renderReminders, renderTools } from "./manage";
 import { MODEL, POWER_ICON, Reply, byId, comma, esc, head, icon, isTauri, link, offlineNote, size, state } from "./shared";
@@ -442,6 +443,12 @@ link.onEvent = (msg) => {
 
 async function bootstrap(): Promise<void> {
   if (isTauri) {
+    // Installed and never set up: the first-start wizard instead of the panel
+    const setup = await invoke<{ installed: boolean; ready: boolean }>("setup_state").catch(() => ({ installed: false, ready: true }));
+    if (setup.installed && !setup.ready) {
+      renderSetup();
+      return;
+    }
     state.backendOn = await invoke<boolean>("backend_state").catch(() => false);
     await listen<boolean>("backend-changed", (ev) => {
       state.backendOn = ev.payload;

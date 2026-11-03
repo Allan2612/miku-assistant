@@ -19,9 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "config.yaml"
-ENV = ROOT / ".env"
+from core.paths import CONFIG, ENV
 
 MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-3.5-flash",
           "gemini-3.8-flash"]

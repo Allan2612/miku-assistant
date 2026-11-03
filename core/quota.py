@@ -13,9 +13,11 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional
 
+from core.paths import CACHE
+
 logger = logging.getLogger("miku.quota")
 
-QUOTA_FILE = Path(__file__).resolve().parents[1] / "cache" / "quota.json"
+QUOTA_FILE = CACHE / "quota.json"
 # Requests per day on the free tier (docs/mejoras.md, 24-oct). Unknown models are counted, not judged
 DAILY_LIMITS = {
     "gemini-3.5-flash-lite": 500,

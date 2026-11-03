@@ -10,11 +10,12 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List
 
+from core.paths import CACHE
 from core.tools import tool
 
 logger = logging.getLogger("miku.tools.memory")
 
-MEMORY_FILE = Path(__file__).resolve().parents[2] / "cache" / "memory.json"
+MEMORY_FILE = CACHE / "memory.json"
 # Every conversation, one file per day: searched only when the user asks about it (no daily summary request)
 CONVERSATIONS_DIR = MEMORY_FILE.parent / "conversations"
 MAX_RECALL_CHARS = 1500
