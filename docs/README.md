@@ -2,6 +2,7 @@
 
 | Documento | Contenido |
 |---|---|
+| [funciones.md](funciones.md) | Todo lo que puede hacer Miku, qué es local (0 peticiones) y cómo pedirlo |
 | [architecture.md](architecture.md) | Procesos, stack, flujo de una petición, protocolo WebSocket y presupuesto de recursos |
 | [roadmap.md](roadmap.md) | Fases del proyecto y su estado |
 | [tools.md](tools.md) | Herramientas de control del PC y cuáles piden confirmación |
