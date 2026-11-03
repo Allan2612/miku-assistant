@@ -36,8 +36,15 @@ def test_settings_keep_comments_and_check_values():
     assert settings.CONFIG.with_suffix(".yaml.bak").read_text(encoding="utf-8") == before, "the old file is kept"
     assert "OBS_PASSWORD=secreto" in settings.ENV.read_text(encoding="utf-8")
 
+    # The hotkey (top-level key) and the microphone (a section the file did not have before 3-nov)
+    assert settings.set_({"hotkey": "Ctrl+Shift+K", "input_device": "Micrófono (Logitech G733 Gaming"}) == {"ok": True}
+    got = settings.get()
+    assert (got["hotkey"], got["input_device"]) == ("Ctrl+Shift+K", "Micrófono (Logitech G733 Gaming"), got
+    after = settings.CONFIG.read_text(encoding="utf-8")
+
     # Bad values never reach the file
-    for bad in ({"threshold": 5}, {"model": "gpt"}, {"weather_city": ""}, {"vocabulary": ["a\nb"]}):
+    for bad in ({"threshold": 5}, {"model": "gpt"}, {"weather_city": ""}, {"vocabulary": ["a\nb"]},
+                {"hotkey": "M"}, {"hotkey": "Ctrl+Alt+Esc"}):
         assert not settings.set_(bad)["ok"], bad
     assert settings.CONFIG.read_text(encoding="utf-8") == after
 

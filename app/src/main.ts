@@ -6,6 +6,7 @@
 
 import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { live2d } from "./live2d";
@@ -359,19 +360,28 @@ export async function toggleMiku(): Promise<void> {
 /**
  * Setup global hotkey (Ctrl+Alt+M) and tray events
  */
+async function useHotkey(hotkey: string): Promise<void> {
+  try {
+    await unregisterAll();
+    await register(hotkey, (event) => {
+      if (event.state === "Pressed") {
+        toggleMiku();
+      }
+    });
+    console.log(`[Hotkey] Registered global shortcut: ${hotkey}`);
+  } catch (err) {
+    console.warn(`[Hotkey] Could not register global shortcut "${hotkey}":`, err);
+  }
+}
+
 async function setupShortcutsAndTray(): Promise<void> {
   if (isTauri) {
-    try {
-      await unregisterAll();
-      await register(HOTKEY, (event) => {
-        if (event.state === "Pressed") {
-          toggleMiku();
-        }
-      });
-      console.log(`[Hotkey] Registered global shortcut: ${HOTKEY}`);
-    } catch (err) {
-      console.warn(`[Hotkey] Could not register global shortcut "${HOTKEY}":`, err);
-    }
+    // The one in config.yaml now (the panel can change it), else the one this build was made with
+    const saved = await invoke<string>("settings_get")
+      .then((text) => String(JSON.parse(text).hotkey || HOTKEY))
+      .catch(() => HOTKEY);
+    await useHotkey(saved);
+    await listen<string>("hotkey-changed", (event) => void useHotkey(event.payload));
 
     try {
       await listen<string>("tray-action", (event) => {

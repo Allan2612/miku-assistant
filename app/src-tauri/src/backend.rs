@@ -90,9 +90,9 @@ impl Backend {
         cmd
     }
 
-    /// `python -m core.settings <args>` as a short process (works with Miku off): JSON in on stdin, JSON out.
+    /// `python -m <module> <args>` as a short process (works with Miku off): JSON in on stdin, JSON out.
     /// python.exe, not pythonw.exe: pythonw has no stdout to read the answer from.
-    pub fn run_settings(&self, args: &[&str], input: &str) -> Result<String, String> {
+    pub fn run_module(&self, module: &str, args: &[&str], input: &str) -> Result<String, String> {
         use std::io::Write;
         let root = self.root.as_ref().ok_or("No encuentro la carpeta de Miku")?;
         if !self.ready() {
@@ -100,7 +100,7 @@ impl Backend {
         }
         let mut child = self
             .python(root, "python.exe")
-            .args(["-m", "core.settings"])
+            .args(["-m", module])
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -122,7 +122,7 @@ impl Backend {
     pub fn run_setup(&self, api_key: &str, city: &str, mut on_line: impl FnMut(&str)) -> Result<(), String> {
         let root = self.root.as_ref().ok_or("No encuentro la carpeta de Miku")?;
         let runtime = self.venv.parent().ok_or("Carpeta de Python no válida")?;
-        let mut child = Command::new("powershell.exe")
+        let child = Command::new("powershell.exe")
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
             .arg(root.join("installer").join("setup.ps1"))
             .env("MIKU_PROGRAM", root)
@@ -136,21 +136,21 @@ impl Backend {
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("No pude lanzar PowerShell: {e}"))?;
-        let mut last_error = String::new();
-        if let Some(out) = child.stdout.take() {
-            for line in BufReader::new(out).lines().map_while(Result::ok) {
-                if line.contains("\"state\":\"error\"") {
-                    last_error = line.clone();
-                }
-                on_line(&line);
-            }
-        }
-        let status = child.wait().map_err(|e| e.to_string())?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(if last_error.is_empty() { format!("La preparación falló ({status})") } else { last_error })
-        }
+        follow(child, &mut on_line, "La preparación falló")
+    }
+
+    /// Retrains "Hey Miku" (core/train_wakeword.py), its "@@{json}" progress lines passed to `on_line`.
+    pub fn run_train(&self, mut on_line: impl FnMut(&str)) -> Result<(), String> {
+        let root = self.root.as_ref().ok_or("No encuentro la carpeta de Miku")?;
+        let child = self
+            .python(root, "python.exe")
+            .args(["-m", "core.train_wakeword"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("No pude lanzar Python: {e}"))?;
+        follow(child, &mut on_line, "El entrenamiento falló")
     }
 
     /// Ours and still alive.
@@ -212,5 +212,24 @@ impl Backend {
             let _ = child.kill(); // the venv launcher
             let _ = child.wait();
         }
+    }
+}
+
+/// Reads a child's "@@{json}" progress lines as they come; its last error line is the error if it fails.
+fn follow(mut child: std::process::Child, on_line: &mut impl FnMut(&str), failed: &str) -> Result<(), String> {
+    let mut last_error = String::new();
+    if let Some(out) = child.stdout.take() {
+        for line in BufReader::new(out).lines().map_while(Result::ok) {
+            if line.contains("\"state\":\"error\"") || line.contains("\"state\": \"error\"") {
+                last_error = line.clone();
+            }
+            on_line(&line);
+        }
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(if last_error.is_empty() { format!("{failed} ({status})") } else { last_error })
     }
 }

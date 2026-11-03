@@ -144,6 +144,32 @@ def test_a_replayed_reminder_is_not_added_twice():
     asyncio.run(run())
 
 
+def test_rings_after_the_pc_slept():
+    """Suspended PC: asyncio's clock may stop, the wall clock does not. A reminder due while it slept rings within
+    WAKE_CHECK_S of waking up, not an hour later."""
+    async def run():
+        heard = []
+
+        async def notify(msg):
+            heard.append(msg)
+
+        timers._TIMERS.clear()
+        timers.set_timer_notifier(notify, loop=asyncio.get_running_loop())
+        check, real = timers.WAKE_CHECK_S, timers.time.time
+        timers.WAKE_CHECK_S = 0.05
+        try:
+            timers.set_timer(60, "pizza")
+            await asyncio.sleep(0.1)
+            assert heard == []
+            timers.time.time = lambda: real() + 3601  # the PC slept an hour
+            await asyncio.sleep(0.3)
+        finally:
+            timers.time.time, timers.WAKE_CHECK_S = real, check
+        assert heard == ["¡Tu temporizador de pizza ha terminado!"], heard
+
+    asyncio.run(run())
+
+
 def test_my_day():
     """"¿Qué tengo hoy?": today's reminders in time order, then the pending notes."""
     import core.tools.notes as notes
@@ -181,5 +207,6 @@ def test_timers_persist():
 if __name__ == "__main__":
     test_timers_persist()
     test_my_day()
+    test_rings_after_the_pc_slept()
     test_a_replayed_reminder_is_not_added_twice()
     print("ok")

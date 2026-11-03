@@ -65,7 +65,7 @@ async fn backend_stop(app: AppHandle) -> Result<(), String> {
 }
 
 fn settings(app: &AppHandle, args: &[&str], input: &str) -> Result<String, String> {
-    app.state::<Power>().backend.run_settings(args, input)
+    app.state::<Power>().backend.run_module("core.settings", args, input)
 }
 
 #[tauri::command]
@@ -81,6 +81,11 @@ async fn settings_set(app: AppHandle, changes: String) -> Result<String, String>
 #[tauri::command]
 async fn settings_tools(app: AppHandle) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || settings(&app, &["tools"], "")).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn settings_inputs(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || settings(&app, &["inputs"], "")).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -210,6 +215,32 @@ fn wake_label(app: AppHandle, folder: String, name: String, label: Option<String
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
+/// Whether there are enough marks (and PyTorch) to retrain "Hey Miku": {"ready", "yours", "marks", "torch"}.
+#[tauri::command]
+async fn wake_train_state(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<Power>().backend.run_module("core.train_wakeword", &["--check"], ""))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Retrains "Hey Miku" with the marks ("train-progress" events); a running Miku restarts to load the new model.
+#[tauri::command]
+async fn wake_train(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let backend = app.state::<Power>().backend.clone();
+        backend.run_train(|line| {
+            let _ = app.emit("train-progress", line.to_string());
+        })?;
+        if backend_on(&app) {
+            stop_backend(&app);
+            start_backend(&app)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The last `lines` lines of cache/core.log, read from the file: the panel shows them with Miku off too.
 #[tauri::command]
 fn read_log(app: AppHandle, lines: usize) -> Result<String, String> {
@@ -219,14 +250,133 @@ fn read_log(app: AppHandle, lines: usize) -> Result<String, String> {
     Ok(all[all.len().saturating_sub(lines.min(2000))..].join("\n"))
 }
 
+// ---------- the panel's background music (a file the user puts in the data folder) ----------
+
+const MUSIC_EXT: [&str; 5] = ["mp3", "ogg", "wav", "m4a", "flac"];
+
+fn music_dir(app: &AppHandle) -> std::path::PathBuf {
+    app.state::<Power>().backend.data().join("panel-music")
+}
+
+/// The first audio file in the music folder (by name), as an ArrayBuffer for the panel's player.
+#[tauri::command]
+fn panel_music(app: AppHandle) -> Result<tauri::ipc::Response, String> {
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(music_dir(&app))
+        .map_err(|_| "No hay carpeta de música".to_string())?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| MUSIC_EXT.contains(&e.to_lowercase().as_str())))
+        .collect();
+    files.sort();
+    let first = files.first().ok_or("La carpeta de música está vacía")?;
+    std::fs::read(first).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+}
+
+/// Opens the music folder in Explorer (made if missing): the user drops a song there.
+#[tauri::command]
+fn open_music_folder(app: AppHandle) -> Result<(), String> {
+    let dir = music_dir(&app);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::process::Command::new("explorer").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+// ---------- one Miku at a time ----------
+
+/// A second miku.exe (opened again by hand, or autostart plus start.bat) asks the first one to open its panel and
+/// leaves: two tray icons and two backends fighting for the port helped nobody.
+const INSTANCE_PORT: u16 = 8766;
+const INSTANCE_HELLO: &[u8] = b"miku-panel\n";
+const INSTANCE_OK: &[u8] = b"ok";
+
+/// The listener when this is the first Miku; exits the process when another one answered.
+fn single_instance() -> Option<std::net::TcpListener> {
+    use std::io::{Read, Write};
+    match std::net::TcpListener::bind(("127.0.0.1", INSTANCE_PORT)) {
+        Ok(listener) => Some(listener),
+        Err(_) => {
+            // The port is taken: only leave if it really is Miku that answers (another program could use it)
+            if let Ok(mut s) = std::net::TcpStream::connect(("127.0.0.1", INSTANCE_PORT)) {
+                let _ = s.set_read_timeout(Some(Duration::from_secs(1)));
+                let mut reply = [0u8; 2];
+                if s.write_all(INSTANCE_HELLO).is_ok() && s.read_exact(&mut reply).is_ok() && reply == INSTANCE_OK {
+                    std::process::exit(0);
+                }
+            }
+            None
+        }
+    }
+}
+
+fn serve_instance(app: AppHandle, listener: std::net::TcpListener) {
+    use std::io::{Read, Write};
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut hello = [0u8; 11];
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+            if stream.read_exact(&mut hello).is_ok() && hello == INSTANCE_HELLO {
+                let _ = stream.write_all(INSTANCE_OK);
+                open_panel(&app);
+            }
+        }
+    });
+}
+
+// ---------- start with Windows ----------
+
+const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+const RUN_NAME: &str = "Miku Assistant";
+
+/// The Startup-folder shortcut install_autostart.bat used to make (development): replaced by the Run entry.
+fn old_startup_shortcut() -> Option<std::path::PathBuf> {
+    std::env::var_os("APPDATA").map(|a| {
+        std::path::PathBuf::from(a).join(r"Microsoft\Windows\Start Menu\Programs\Startup\MikuAssistant.lnk")
+    })
+}
+
+fn reg(args: &[&str]) -> bool {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("reg")
+        .args(args)
+        .creation_flags(0x0800_0000)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+fn autostart_get() -> bool {
+    reg(&["query", RUN_KEY, "/v", RUN_NAME]) || old_startup_shortcut().is_some_and(|p| p.is_file())
+}
+
+/// On: Windows starts this miku.exe with --tray (only the tray icon) at sign-in. Off: removes it.
+#[tauri::command]
+fn autostart_set(enabled: bool) -> Result<bool, String> {
+    if let Some(old) = old_startup_shortcut() {
+        let _ = std::fs::remove_file(old);
+    }
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let value = format!("\"{}\" --tray", exe.display());
+        if !reg(&["add", RUN_KEY, "/v", RUN_NAME, "/t", "REG_SZ", "/d", &value, "/f"]) {
+            return Err("Windows no dejó guardar el arranque automático".into());
+        }
+    } else {
+        reg(&["delete", RUN_KEY, "/v", RUN_NAME, "/f"]);
+    }
+    Ok(autostart_get())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let instance = single_instance();
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             backend_state, backend_start, backend_stop, backend_restart, read_log, read_functions_doc,
-            settings_get, settings_set, settings_tools, settings_testkey, wake_clips, wake_clip_audio, wake_label,
-            setup_state, setup_run
+            settings_get, settings_set, settings_tools, settings_testkey, wake_clips, wake_clip_audio, wake_label, wake_train_state, wake_train,
+            setup_state, setup_run, autostart_get, autostart_set, settings_inputs, panel_music, open_music_folder
         ])
         .setup(|app| {
             // The frontend positions the window (positionWindow in main.ts) using the work area
@@ -325,6 +475,9 @@ pub fn run() {
                 .build(app)?;
 
             app.manage(tray);
+            if let Some(listener) = instance {
+                serve_instance(app.handle().clone(), listener);
+            }
 
             Ok(())
         })

@@ -24,12 +24,41 @@ VAD_SPEECH = 0.5    # speech probability that starts the phrase
 VAD_SILENCE = 0.35  # below this, the chunk counts as silence
 
 
+
+def list_inputs() -> List[str]:
+    """The microphones, as the panel offers them: Windows' default API only (every API lists each device again)."""
+    try:
+        api = sd.query_devices(kind="input")["hostapi"]
+        names = [d["name"] for d in sd.query_devices() if d["max_input_channels"] > 0 and d["hostapi"] == api]
+    except Exception as e:
+        logger.warning("Could not list the microphones: %s", e)
+        return []
+    return list(dict.fromkeys(names))
+
+
+def find_input(name: str) -> Optional[int]:
+    """The microphone called `name` (config.yaml -> audio.input_device), or None for Windows' default. One that is
+    gone (an unplugged headset) falls back to the default instead of leaving Miku deaf."""
+    if not name:
+        return None
+    try:
+        api = sd.query_devices(kind="input")["hostapi"]
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_input_channels"] > 0 and d["hostapi"] == api and d["name"] == name:
+                return i
+    except Exception as e:
+        logger.warning("Could not look for the microphone %r: %s", name, e)
+        return None
+    logger.warning("Microphone %r not found: using Windows' default.", name)
+    return None
+
 class AudioInput:
     """Handles on-demand microphone capture with VAD and instant stream teardown."""
 
-    def __init__(self, sample_rate: int = 16000, channels: int = 1) -> None:
+    def __init__(self, sample_rate: int = 16000, channels: int = 1, device_name: str = "") -> None:
         self.sample_rate = sample_rate
         self.channels = channels
+        self.device_name = device_name  # config.yaml -> audio.input_device ("" = Windows' default)
         self._block_size = 512  # 32ms at 16kHz (also the silero-vad chunk size)
         self._vad: Optional[StreamingVAD] = None
         self._vad_failed = False
@@ -102,6 +131,7 @@ class AudioInput:
 
         try:
             stream = sd.InputStream(
+                device=find_input(self.device_name),
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 dtype="float32",

@@ -37,6 +37,7 @@ BUILTIN_MODELS = {"alexa", "hey_mycroft", "hey_jarvis", "hey_rhasspy", "timer", 
 CLIPS_DIR = CACHE / "wake"
 CLIP_CHUNKS = 25  # x 80 ms = the last 2 s
 MAX_CLIPS = 200
+TRAINED = CLIPS_DIR / "hey_miku.onnx"  # in the data folder: a program update never overwrites it
 # A trigger whose clip never gets this loud is not a voice (3-nov: 15 of 61 false triggers were near silence; the
 # quietest real "Hey Miku" of 28 peaked at 0.0128). Loudest 0.2 s, as a fraction of full scale
 MIN_CLIP_PEAK = 0.006
@@ -77,7 +78,9 @@ class WakeWordListener:
         config: WakewordConfig,
         on_wake: Callable[[np.ndarray], Coroutine[Any, Any, None]],
         loop: Optional[asyncio.AbstractEventLoop] = None,
+        device_name: str = "",
     ) -> None:
+        self.device_name = device_name
         self.enabled: bool = config.enabled
         self.model_path: str = config.model
         self.threshold: float = config.threshold
@@ -105,6 +108,8 @@ class WakeWordListener:
         Returns (model_identifier, target_key_name).
         """
         candidate_path = Path(self.model_path)
+        if candidate_path.name == TRAINED.name and TRAINED.is_file():
+            candidate_path = TRAINED  # retrained with the user's voice (core/train_wakeword.py)
         if candidate_path.is_file():
             target_key = candidate_path.stem
             logger.info("Found custom wakeword model file: %s (key: '%s')", candidate_path, target_key)
@@ -165,7 +170,10 @@ class WakeWordListener:
                 self._process_chunk(indata)
 
             # openWakeWord expects 16kHz, 16-bit PCM mono, blocksize 1280 (80 ms chunk)
+            from core.audio_in import find_input
+
             self._stream = sd.InputStream(
+                device=find_input(self.device_name),
                 samplerate=16000,
                 channels=1,
                 dtype="int16",

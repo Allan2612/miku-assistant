@@ -88,6 +88,11 @@ class ToolsConfig:
 
 
 @dataclass(slots=True)
+class AudioConfig:
+    input_device: str = ""  # a microphone's name; "" = Windows' default
+
+
+@dataclass(slots=True)
 class AppConfig:
     hotkey: str = "Ctrl+Alt+M"
     language: str = "es"
@@ -102,6 +107,7 @@ class AppConfig:
     wakeword: WakewordConfig = field(default_factory=WakewordConfig)
     live2d: Live2DConfig = field(default_factory=Live2DConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
+    audio: AudioConfig = field(default_factory=AudioConfig)
     apps: dict[str, str] = field(default_factory=dict)
     # name -> steps [{tool, args}], run locally by run_routine / "modo <name>"
     routines: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
@@ -201,6 +207,7 @@ def load_config(
             weather_city=str(tools_data.get("weather_city") or ToolsConfig().weather_city),
             disabled=[str(t) for t in tools_data.get("disabled") or []],
         ),
+        audio=AudioConfig(input_device=str((raw_data.get("audio") or {}).get("input_device") or "")),
         apps=dict(apps_data),
         routines={str(k).lower(): list(v or []) for k, v in (raw_data.get("routines") or {}).items()},
     )

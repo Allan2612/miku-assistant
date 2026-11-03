@@ -5,6 +5,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { byId, comma, esc, head, icon, isTauri, link, offlineNote, state } from "./shared";
 
 const X_ICON = "M6 6l12 12M18 6 6 18";
@@ -56,6 +57,9 @@ async function saveSettings(changes: Record<string, unknown>, msgId: string, btn
 // ---------- Configuración ----------
 let cfg: any = null;
 let draft: any = null;
+let mics: string[] = [];
+let autostart = false;
+const HOTKEY_RE = /^((ctrl|alt|shift|super)\+){1,3}([a-z0-9]|f([1-9]|1[0-9]|2[0-4])|space)$/i;
 
 export function renderConfig(): void {
   view().innerHTML = `${head("CONFIGURACIÓN", "Ajustes de Miku", "Se guardan en config.yaml y .env. Las claves nunca salen de tu PC.")}<div id="cfg"><span class="dim">Cargando…</span></div>`;
@@ -63,9 +67,11 @@ export function renderConfig(): void {
     byId("cfg")!.innerHTML = `<div class="offline">Los ajustes solo se cambian desde la app.</div>`;
     return;
   }
-  invoke<string>("settings_get")
-    .then((text) => {
+  Promise.all([invoke<string>("settings_get"), invoke<string>("settings_inputs").catch(() => "[]"), invoke<boolean>("autostart_get").catch(() => false)])
+    .then(([text, inputs, auto]) => {
       cfg = JSON.parse(text);
+      mics = JSON.parse(inputs);
+      autostart = auto;
       draft = { ...cfg, vocabulary: [...cfg.vocabulary] };
       paintConfig();
     })
@@ -90,11 +96,13 @@ function paintConfig(): void {
           <input id="thr" class="range" type="range" min="0.2" max="0.8" step="0.05" value="${d.threshold}">
           <span class="dim">Más bajo: te oye mejor, pero se activa sola más a menudo.</span></div>
       </section>
-      <section class="card" aria-label="Atajo y micrófono"><h2>Atajo y micrófono</h2>
-        <div class="field"><label for="hotkey">Atajo para llamarla</label><input id="hotkey" class="input mono" readonly value="${esc(d.hotkey)}">
-          <span class="dim">Se cambia en config.yaml y necesita volver a compilar la app.</span></div>
-        <div class="field"><label for="mic">Micrófono</label><input id="mic" class="input" readonly value="El predeterminado de Windows">
-          <span class="dim">Cámbialo en Configuración de Windows › Sonido.</span></div>
+      <section class="card" aria-label="Arranque, atajo y micrófono"><h2>Arranque, atajo y micrófono</h2>
+        ${switchHtml("sw-auto", "Arrancar con Windows", "Solo el icono de la bandeja, sin abrir el panel. Se aplica al momento.", autostart)}
+        <div class="field"><label for="hotkey">Atajo para llamarla</label><input id="hotkey" class="input mono" value="${esc(d.hotkey)}" placeholder="Ctrl+Alt+M">
+          <span class="dim">Teclas Ctrl, Alt o Shift y una letra, número o F1-F24.</span></div>
+        <div class="field"><label for="mic">Micrófono</label>
+          <select id="mic" class="select"><option value="">El predeterminado de Windows</option>${mics.map((m) => `<option${m === d.input_device ? " selected" : ""}>${esc(m)}</option>`).join("")}
+          ${d.input_device && !mics.includes(d.input_device) ? `<option selected>${esc(d.input_device)} (no conectado)</option>` : ""}</select></div>
       </section>
       <section class="card" aria-label="Clima y OBS"><h2>Clima y OBS</h2>
         <div class="field"><label for="city">Ciudad del clima (Ciudad, País)</label><input id="city" class="input" value="${esc(d.weather_city)}"></div>
@@ -115,6 +123,8 @@ function paintConfig(): void {
       draft.threshold = Number(el.value);
       byId("thrv")!.textContent = comma(draft.threshold, 2);
     } else if (el.id === "city") draft.weather_city = el.value;
+    else if (el.id === "hotkey") draft.hotkey = el.value.trim();
+    else if (el.id === "mic") draft.input_device = el.value.replace(/ \(no conectado\)$/, "");
     else if (el.id === "model") draft.gemini = { ...draft.gemini, model: el.value };
   };
   view().oninput = onEdit;
@@ -141,6 +151,14 @@ async function onConfigClick(ev: MouseEvent): Promise<void> {
   if (el.dataset.word !== undefined) {
     draft.vocabulary.splice(Number(el.dataset.word), 1);
     paintWords();
+  } else if (el.id === "sw-auto") {
+    try {
+      autostart = await invoke<boolean>("autostart_set", { enabled: !autostart });
+      el.setAttribute("aria-checked", String(autostart));
+      say("cfg-msg", autostart ? "Miku arrancará con Windows." : "Miku ya no arranca con Windows.", "ok");
+    } catch (err) {
+      say("cfg-msg", String(err), "bad");
+    }
   } else if (el.id === "sw-rvc" || el.id === "sw-wake") {
     const key = el.id === "sw-rvc" ? "rvc_enabled" : "wakeword_enabled";
     draft[key] = !draft[key];
@@ -156,7 +174,11 @@ async function onConfigClick(ev: MouseEvent): Promise<void> {
   } else if (el.id === "cfg-save") {
     const changes: Record<string, unknown> = {};
     if (draft.gemini.model !== cfg.gemini.model) changes.model = draft.gemini.model;
-    for (const k of ["rvc_enabled", "wakeword_enabled", "threshold", "weather_city"]) if (draft[k] !== cfg[k]) changes[k] = draft[k];
+    for (const k of ["rvc_enabled", "wakeword_enabled", "threshold", "weather_city", "hotkey", "input_device"]) if (draft[k] !== cfg[k]) changes[k] = draft[k];
+    if (changes.hotkey !== undefined && !HOTKEY_RE.test(String(changes.hotkey))) {
+      say("cfg-msg", "Atajo no válido: por ejemplo Ctrl+Alt+M.", "bad");
+      return;
+    }
     if (draft.vocabulary.join("|") !== cfg.vocabulary.join("|")) changes.vocabulary = draft.vocabulary;
     const key = (byId("apikey") as HTMLInputElement).value.trim();
     const obs = (byId("obspw") as HTMLInputElement).value.trim();
@@ -167,6 +189,7 @@ async function onConfigClick(ev: MouseEvent): Promise<void> {
       return;
     }
     if (await saveSettings(changes, "cfg-msg", el as HTMLButtonElement)) {
+      if (changes.hotkey) await emit("hotkey-changed", changes.hotkey); // Miku's window takes the new one now
       cfg = JSON.parse(await invoke<string>("settings_get"));
       draft = { ...cfg, vocabulary: [...cfg.vocabulary] };
       (byId("apikey") as HTMLInputElement).value = "";

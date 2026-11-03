@@ -6,6 +6,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { live2d } from "../live2d";
+import { driveEqualizer, followVisibility, musicWanted, toggleMusic } from "./music";
 import { renderSetup } from "./setup";
 import { onChatEvent, renderChat, renderWake } from "./voice";
 import { refreshReminders, renderConfig, renderFunctions, renderMemory, renderReminders, renderTools } from "./manage";
@@ -61,6 +62,7 @@ function go(id: string): void {
 
 
 // ---------- Inicio ----------
+const MUSIC_ICON = "M9 18V5l11-2v13M9 18a3 3 0 1 1-3-3 3 3 0 0 1 3 3zM20 16a3 3 0 1 1-3-3 3 3 0 0 1 3 3z";
 let stage: HTMLDivElement | null = null;
 let mikuReady = false;
 
@@ -94,7 +96,11 @@ function renderInicio(): void {
       <div class="hero-text">
         <div id="eq" class="eq" aria-hidden="true">${Array.from({ length: 28 }, (_, i) => `<span style="height:${20 + Math.round(Math.abs(Math.sin(i * 1.7)) * 44)}px;animation-delay:${((i % 7) * 0.13).toFixed(2)}s"></span>`).join("")}</div>
         <div><div id="hero-title" class="hero-title"></div><div id="hero-text" class="muted"></div></div>
-        <button type="button" id="power" class="power"><span id="power-label"></span><span class="ic">${icon(POWER_ICON)}</span></button>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+          <button type="button" id="power" class="power"><span id="power-label"></span><span class="ic">${icon(POWER_ICON)}</span></button>
+          <button type="button" id="music" class="btn ghost" style="min-height:54px;border-radius:999px;padding:0 20px" aria-pressed="${musicWanted()}">${icon(MUSIC_ICON, 16)} Música</button>
+          <span id="music-msg" class="msg"></span>
+        </div>
       </div>
     </div></section>
     <div class="grid">
@@ -104,6 +110,7 @@ function renderInicio(): void {
     </div>`;
   byId("stage-slot")!.replaceWith(mikuStage());
   live2d.startTicker();
+  driveEqualizer();
   paintPower();
   paintInicio(lastStatus);
 }
@@ -403,7 +410,7 @@ async function tick(): Promise<void> {
 }
 
 document.addEventListener("click", (ev) => {
-  const el = (ev.target as HTMLElement).closest<HTMLElement>("[data-go],[data-filter],#power,#log-pause");
+  const el = (ev.target as HTMLElement).closest<HTMLElement>("[data-go],[data-filter],#power,#log-pause,#music,#open-music");
   if (!el) return;
   if (el.dataset.go) go(el.dataset.go);
   else if (el.dataset.filter) {
@@ -411,6 +418,14 @@ document.addEventListener("click", (ev) => {
     document.querySelectorAll<HTMLElement>("[data-filter]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.filter === logFilter)));
     paintLogs(true);
   } else if (el.id === "power") void togglePower();
+  else if (el.id === "music") {
+    void toggleMusic().then((err) => {
+      el.setAttribute("aria-pressed", String(musicWanted()));
+      byId("music-msg")!.innerHTML = err
+        ? `Pon una canción (MP3 u OGG) en la carpeta de música. <button type="button" id="open-music" class="btn small">Abrir carpeta</button>`
+        : "";
+    });
+  } else if (el.id === "open-music") void invoke("open_music_folder");
   else if (el.id === "log-pause") {
     logPaused = !logPaused;
     el.setAttribute("aria-pressed", String(logPaused));
@@ -428,6 +443,7 @@ document.addEventListener("input", (ev) => {
 
 // Hidden panel: no polling, no Live2D drawing
 document.addEventListener("visibilitychange", () => {
+  followVisibility();
   if (current.id !== "inicio") return;
   if (document.hidden) live2d.stopTicker();
   else live2d.startTicker();

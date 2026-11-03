@@ -46,7 +46,19 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - Miku se despide ("¡Adiós!", "¡Chao!"…) antes de ocultarse por inactividad.
 - "Apunta que X" y "qué pendientes tengo" en el atajo local.
 
+- **Panel de control y app `miku.exe`** (`docs/plan-panel-instalador.md`). Secciones:
+  - Inicio, Recursos (CPU, memoria y GPU de cada proceso de Miku), Cuotas y Logs;
+  - Configuración (incluye arrancar con Windows, el atajo y el micrófono), Herramientas, Funciones, Recordatorios y
+    Memoria;
+  - Palabra clave: escuchar y marcar cada activación, y botón «Reentrenar» (`core/train_wakeword.py`);
+  - Chat y música de fondo opcional.
+  Abrir `miku.exe` otra vez muestra el panel, sin una segunda copia.
+- **Instalador NSIS** para otras PCs. Separa el programa de los datos, y el primer arranque descarga Python y las
+  librerías (PyTorch solo con NVIDIA).
+
 ### Corregido
+- Un recordatorio ya no se retrasa si el PC se suspende: se mira con el reloj de pared cada 30 s.
+- Gemini espera 8 s en vez de 10 antes de pasar al siguiente modelo.
 - Auditoría del 2-nov: una pregunta con una palabra de despedida ("¿Cómo se dice adiós en japonés?", "vete a YouTube") ya no la despide; "Me voy a acordar de eso" en su respuesta ya no la oculta; un solo fallo de Gemini ya no deja el resto de la sesión en el modelo de reserva (y un Gemma fallido ya no le quita el audio al siguiente); ocultarla desde la bandeja mientras habla ya no abre el micrófono con ella oculta; si no llega el fin de una despedida, se oculta igual; "¿A qué hora cierra el súper?" y "borra mis pendientes" van a Gemini en vez de dar la hora o leer las notas; un argumento mal puesto en `shutdown_pc` da un error en vez de dejar el turno mudo. Borradas unas 90 líneas de una ruta de respuesta sin RVC que nunca se usaba y otro código muerto.
 - Órdenes dobles con la segunda en "usted" o mal transcrita ("Póngale pausa y sérame todas las ventanas"): el atajo local solo pausaba; ahora toda la frase va a Gemini.
 - "¡Sí!" respondiendo a una pregunta suya se descartaba como eco del "¿Sí?" de activación, y ella se iba: ese filtro solo aplica justo después del aviso.

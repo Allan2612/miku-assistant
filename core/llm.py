@@ -180,9 +180,10 @@ CHAT_HINT = ("(Aviso del sistema: este mensaje es solo charla, sin ninguna orden
 _ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
 # Follow-up requests after the first one: tool results back to the model, a nudge, or a second tool step
 MAX_TOOL_ROUNDS = 3
-# A request that hangs waits this long before the next model in the chain: 15 s twice per 504 (log 1-nov), when a
-# normal answer takes 1-6 s
-GEMINI_TIMEOUT_MS = 10_000
+# A request that hangs waits this long before the next model in the chain. 3-nov, 333 answers in the logs: median
+# 1.9 s, only 6 between 8 and 10 s, and 46 failures that each waited the full 10 s. A cut answer is not lost: the
+# next model gets the turn, usually in ~2 s
+GEMINI_TIMEOUT_MS = 8_000
 # Cooldown after the 1st, 2nd and 3rd+ failure in a row of the same model (the 1st keeps the usual 15/60 s)
 REPEAT_FAILURE_COOLDOWN_S = (0.0, 120.0, 600.0)
 HISTORY_MAX_AGE_S = 12 * 3600  # a saved conversation older than this comes back marked as a past one

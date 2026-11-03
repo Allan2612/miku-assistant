@@ -134,8 +134,7 @@ Al usuario le gusta todo. Cambios pedidos:
   umbral, ciudad, OBS, palabras de Whisper; se guarda con Miku apagada, `core/settings.py` edita config.yaml valor a
   valor sin perder comentarios y deja config.yaml.bak), Herramientas (las 46, apagar alguna: `tools.disabled`),
   Funciones (funciones.md con frases que se le mandan a Miku), Recordatorios y pendientes, Memoria y conversaciones.
-  El atajo y el micrófono se muestran pero no se cambian aquí (el atajo va compilado en la app; el micrófono es el de
-  Windows). Barras de scroll oscuras.
+  Barras de scroll oscuras. (El atajo y el micrófono se cambian desde aquí desde los extras.)
 - **Fase 4 (hecha, 3-nov):** Palabra clave (activaciones, casi disparos e ignoradas de `cache/wake`, con reproductor,
   "¿Qué oyó?" con Whisper y las marcas "era yo / no era yo" en `cache/wake/labels.json`; progreso hacia 60 marcas
   con 20 tuyas para reentrenar) y Chat (escribirle a Miku, con "Solo texto" para que conteste sin voz; los turnos de
@@ -148,6 +147,15 @@ Al usuario le gusta todo. Cambios pedidos:
   borra el runtime y conserva los datos. Icono de la app: la cara de Miku sacada del modelo Live2D.
   Probado: `setup.ps1` en modo de prueba (carpetas, `.env` sin BOM, GPU, URLs), el modo desarrollo en vivo y los
   archivos incluidos. **Sin probar todavía:** instalar el `.exe` y la descarga completa en una PC.
+- **Extras (hechos, 3-nov):**
+  - Una sola instancia: abrir `miku.exe` otra vez muestra el panel, por TCP en 127.0.0.1:8766.
+  - "Arrancar con Windows" en Configuración (HKCU Run, con `--tray`).
+  - El atajo y el micrófono se cambian desde el panel (`hotkey`, `audio.input_device`).
+  - Música de fondo opcional en Inicio: una canción del usuario en `<datos>/panel-music`; el ecualizador baila con ella.
+  - Botón «Reentrenar» en Palabra clave: `core/train_wakeword.py`, con 60 marcas, 20 de ellas tuyas, y PyTorch.
+    Usa tus clips, variaciones de ellos y voces de edge-tts. Solo instala el modelo nuevo si en clips que no vio oye
+    tus llamadas y se dispara sola igual o mejor que el actual. Lo guarda en `cache/wake/hey_miku.onnx`, que una
+    actualización no pisa.
 
 ## Fases
 

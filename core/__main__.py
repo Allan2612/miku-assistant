@@ -123,7 +123,7 @@ async def async_main() -> None:
 
     rvc = RVCManager(config=config.rvc)
 
-    audio_in = AudioInput(sample_rate=16000, channels=1)
+    audio_in = AudioInput(sample_rate=16000, channels=1, device_name=config.audio.input_device)
 
     resources = ResourceManager(unload_after_minutes=config.behavior.unload_after_minutes)
     resources.register_rvc(rvc)
@@ -165,6 +165,7 @@ async def async_main() -> None:
         config=config.wakeword,
         on_wake=lambda clip: pipeline.handle_voice_activation(wake_clip=clip),
         loop=loop,
+        device_name=config.audio.input_device,
     )
     pipeline.set_wakeword(wakeword)
     wakeword.start()

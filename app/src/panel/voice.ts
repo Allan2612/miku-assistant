@@ -4,6 +4,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { byId, esc, head, icon, isTauri, link, state } from "./shared";
 
 const view = () => byId("view")!;
@@ -19,6 +20,8 @@ let clips: Clip[] = [];
 let wakeFilter = "all";
 let player: HTMLAudioElement | null = null;
 let playing = "";
+let training = false;
+let trainMsg = "";
 
 const keyOf = (c: Clip) => (c.folder ? `${c.folder}/${c.name}` : c.name);
 const KIND: Record<string, [string, string]> = {
@@ -70,7 +73,9 @@ function paintWake(): void {
     <div class="card kpi" style="flex:2 1 320px"><div class="card-head"><span class="muted" style="font-size:12px">${ready ? "Listo para reentrenar" : "Para reentrenar"}</span>
       <span class="mono" style="color:var(--teal-l)">${labeled} de ${RETRAIN_CLIPS}</span></div>
       <div class="bar"><div style="width:${Math.min(100, (labeled / RETRAIN_CLIPS) * 100)}%"></div></div>
-      <span class="dim">${yes} tuyas (hacen falta ${RETRAIN_YOURS}) · ${labeled - yes} que no eras tú</span></div>`;
+      <span class="dim">${yes} tuyas (hacen falta ${RETRAIN_YOURS}) · ${labeled - yes} que no eras tú</span>
+      <div class="row-wrap" style="align-items:center;gap:12px"><button type="button" class="btn small" id="wk-train"${ready && !training ? "" : " disabled"}>${training ? "Entrenando…" : "Reentrenar"}</button>
+        <span id="wk-train-msg" class="dim" aria-live="polite">${esc(trainMsg || (ready ? "Tarda unos minutos y necesita internet. Solo se cambia si el nuevo te oye mejor." : ""))}</span></div></div>`;
   const keep = FILTERS.find(([id]) => id === wakeFilter)![2];
   const shown = clips.filter(keep).slice(0, 80);
   byId("wk-list")!.innerHTML = shown.length
@@ -135,6 +140,29 @@ async function onWakeClick(ev: MouseEvent): Promise<void> {
     await invoke("wake_label", { folder: clip.folder, name: clip.name, label });
     clip.label = label;
     paintWake();
+  } else if (el.id === "wk-train") {
+    training = true;
+    trainMsg = "Empezando…";
+    paintWake();
+    const stop = await listen<string>("train-progress", (e) => {
+      try {
+        const p = JSON.parse(e.payload.replace(/^@@/, ""));
+        trainMsg = p.state === "done" && p.pct === 100 ? p.msg : `${p.pct}% · ${p.msg}`;
+      } catch {
+        return; // not a progress line
+      }
+      const msg = byId("wk-train-msg");
+      if (msg) msg.textContent = trainMsg;
+    });
+    try {
+      await invoke("wake_train");
+    } catch (err) {
+      trainMsg = `No se pudo: ${String(err).replace(/^@@.*"msg":\s*"([^"]*)".*$/, "$1")}`;
+    } finally {
+      stop();
+      training = false;
+      if (byId("wk-stats")) paintWake();
+    }
   } else if (el.dataset.heard) {
     const clip = findClip(el.dataset.heard);
     if (!clip) return;

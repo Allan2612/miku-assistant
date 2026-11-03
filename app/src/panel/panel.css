@@ -91,6 +91,7 @@ h1 { margin: 0; font-size: 38px; font-weight: 600; letter-spacing: -0.02em; }
 .eq { display: flex; align-items: flex-end; gap: 5px; height: 64px; }
 .eq span { width: 6px; border-radius: 3px; background: linear-gradient(180deg, #b8fff8, var(--teal)); transform-origin: bottom; animation: eq 1.3s var(--ease) infinite; }
 .eq.speaking span { animation-duration: 0.55s; }
+.eq.music span { animation: none; transition: transform 0.09s ease-out; }
 .eq.off span { animation: none; transform: scaleY(0.08); background: #2a3539; }
 @keyframes eq { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
 
@@ -205,3 +206,5 @@ h1 { margin: 0; font-size: 38px; font-weight: 600; letter-spacing: -0.02em; }
 .bubble.miku { align-self: flex-start; background: rgba(57, 197, 187, 0.1); color: #d9fbf8; border-bottom-left-radius: 6px; }
 .bubble small { display: block; font-family: var(--mono); font-size: 11px; color: var(--dim); margin-bottom: 3px; }
 .chat { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; padding-right: 6px; }
+
+#music[aria-pressed="true"] { background: rgba(255, 90, 170, 0.14); color: var(--pink-l); }

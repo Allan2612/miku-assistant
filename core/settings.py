@@ -108,7 +108,15 @@ def get() -> Dict[str, Any]:
         "vocabulary": [w.strip() for w in c.stt.vocabulary.rstrip(".").split(",") if w.strip()],
         "obs": {"has_password": bool(_env_get("OBS_PASSWORD"))},
         "disabled_tools": list(c.tools.disabled),
+        "input_device": c.audio.input_device,
     }
+
+
+def inputs() -> List[str]:
+    """The microphones the panel offers (a separate call: listing them asks Windows for its devices)."""
+    from core.audio_in import list_inputs
+
+    return list_inputs()
 
 
 def _validate(ch: Dict[str, Any]) -> List[str]:
@@ -125,6 +133,12 @@ def _validate(ch: Dict[str, Any]) -> List[str]:
     if "vocabulary" in ch and not (isinstance(ch["vocabulary"], list) and len(ch["vocabulary"]) <= 60
                                   and all(isinstance(w, str) and 0 < len(w) <= 40 and "\n" not in w for w in ch["vocabulary"])):
         errors.append("Palabras de Whisper: hasta 60, de hasta 40 caracteres.")
+    # "Ctrl+Alt+M": modifiers, then one key (letter, digit, F1-F24, Space)
+    if "hotkey" in ch and not (isinstance(ch["hotkey"], str) and re.fullmatch(
+            r"(?i)((ctrl|alt|shift|super)\+){1,3}([a-z0-9]|f([1-9]|1[0-9]|2[0-4])|space)", ch["hotkey"])):
+        errors.append("Atajo no válido: una o más teclas Ctrl, Alt, Shift y una letra, número o F1-F24 (ej: Ctrl+Alt+M).")
+    if "input_device" in ch and not (isinstance(ch["input_device"], str) and len(ch["input_device"]) <= 120):
+        errors.append("Micrófono no válido.")
     if "disabled_tools" in ch and not (isinstance(ch["disabled_tools"], list) and all(isinstance(t, str) for t in ch["disabled_tools"])):
         errors.append("Lista de herramientas no válida.")
     for secret in ("api_key", "obs_password"):
@@ -142,7 +156,7 @@ def set_(ch: Dict[str, Any]) -> Dict[str, Any]:
     text = CONFIG.read_text(encoding="utf-8")
     edits = {"model": ("llm", "model"), "rvc_enabled": ("rvc", "enabled"), "wakeword_enabled": ("wakeword", "enabled"),
              "threshold": ("wakeword", "threshold"), "weather_city": ("tools", "weather_city"),
-             "disabled_tools": ("tools", "disabled")}
+             "disabled_tools": ("tools", "disabled"), "hotkey": ("", "hotkey"), "input_device": ("audio", "input_device")}
     for field, (section, key) in edits.items():
         if field in ch:
             text = set_value(text, section, key, ch[field])
@@ -155,7 +169,8 @@ def set_(ch: Dict[str, Any]) -> Dict[str, Any]:
         c = load_config(tmp, ENV)
         expected = {"model": c.llm.model, "rvc_enabled": c.rvc.enabled, "wakeword_enabled": c.wakeword.enabled,
                     "threshold": c.wakeword.threshold, "weather_city": c.tools.weather_city,
-                    "disabled_tools": list(c.tools.disabled)}
+                    "disabled_tools": list(c.tools.disabled), "hotkey": c.hotkey,
+                    "input_device": c.audio.input_device}
         wrong = [f for f, v in expected.items() if f in ch and ch[f] != v]
         if wrong:
             return {"ok": False, "error": f"No se guardó bien: {', '.join(wrong)}. config.yaml no se tocó."}
@@ -207,10 +222,12 @@ def main() -> None:
         out = set_(json.loads(sys.stdin.read() or "{}"))
     elif cmd == "tools":
         out = tools()
+    elif cmd == "inputs":
+        out = inputs()
     elif cmd == "testkey":
         out = test_key(sys.stdin.read())
     else:
-        out = {"ok": False, "error": "uso: get | set | tools | testkey"}
+        out = {"ok": False, "error": "uso: get | set | tools | inputs | testkey"}
     sys.stdout.write(json.dumps(out, ensure_ascii=False))
 
 

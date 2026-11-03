@@ -32,6 +32,7 @@ MISSED_GRACE_S = 6 * 3600
 MISSED_DELAY_S = 15.0
 DAY_S, WEEK_S = 86400, 7 * 86400
 DUPLICATE_WINDOW_S = 90
+WAKE_CHECK_S = 30.0  # longest nap of a timer: how late it can ring after the PC wakes up
 
 _WEEKDAYS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 _MONTHS = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
@@ -144,8 +145,12 @@ def _schedule_worker(timer_id: int, duration_sec: float, label: str) -> Any:
 
 async def _timer_worker(timer_id: int, duration_seconds: float, label: str) -> None:
     """Async background task that sleeps for duration_seconds and notifies user."""
+    # Against the wall clock, in short naps: asyncio's clock may stop while the PC sleeps, and one long sleep would
+    # then ring as late as the PC slept. This way it rings at most WAKE_CHECK_S after the PC wakes up
+    due = time.time() + duration_seconds
     try:
-        await asyncio.sleep(duration_seconds)
+        while (left := due - time.time()) > 0:
+            await asyncio.sleep(min(left, WAKE_CHECK_S))
     except asyncio.CancelledError:
         # cancel_timer already removed it; on backend shutdown it stays saved and comes back next start
         logger.info("Timer #%d was cancelled.", timer_id)
