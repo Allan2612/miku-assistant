@@ -32,6 +32,12 @@ TABLE = [
     ("Listo, eso era todo, gracias", "farewell"),
     ("No te necesito", "farewell"),
     ("Bueno, nos vemos mañana", "farewell"),
+    # "Leave it there": the user does not want to go on (user, 3-nov)
+    ("Eso es todo. Déjalo ahí.", "farewell"),
+    ("Déjalo ahí", "farewell"),
+    ("Mejor déjalo", "farewell"),
+    ("Déjalo ahí nomás", "farewell"),
+    ("Déjalo para mañana", "chat"),  # postpones something: Gemini answers
     # A goodbye word inside a question or an order is not a goodbye (audit 2-nov: she said bye instead of answering)
     ("¿Cómo se dice adiós en japonés?", "chat"),
     ("¿Eso es todo lo que sabes?", "chat"),

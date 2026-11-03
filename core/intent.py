@@ -49,11 +49,12 @@ HIDE_NOW = {"ocúltate", "ocultate", "ocúltese", "ocultese", "cúltese", "culte
 _BYE_WORDS = {"gracias", "chao", "chau", "adiós", "adios", "bye", "olvídalo", "olvidalo", "déjalo", "dejalo", "listo",
               "nada"}
 _BYE_FILLER = {"ya", "no", "ok", "vale", "bueno", "muchas", "mil", "eso", "es", "era", "sería", "seria", "todo", "así",
-               "asi", "está", "esta", "bien", "por", "ahora", "de", "verdad", "entonces", "pues", "más", "mas"}
+               "asi", "está", "esta", "bien", "por", "ahora", "de", "verdad", "entonces", "pues", "más", "mas", "ahí", "ahi", "mejor",
+               "nomás", "nomas"}
 # Words that do not change a hide order: "Nada, nada. Ocúltese", "Ya, Miku, vete", "apágate un rato"
 _HIDE_FILLER = {"ya", "nada", "ok", "vale", "bueno", "listo", "ahora", "porfa", "por", "favor", "un", "rato"}
 # What may stand around a goodbye phrase: "bueno, nos vemos mañana", "ya terminé por hoy, gracias"
-_KEYWORD_FILLER = _BYE_WORDS | _BYE_FILLER | _HIDE_FILLER | {"mañana", "pronto", "hoy", "cuídate", "cuidate", "ahí", "ahi"}
+_KEYWORD_FILLER = _BYE_WORDS | _BYE_FILLER | _HIDE_FILLER | {"mañana", "pronto", "hoy", "cuídate", "cuidate"}
 # Every way Whisper writes "apágate" / "apáguese": "Apáquese", "apagase", "Apague ese, Miku" (logs 2-nov: she stayed,
 # or took it for "turn off the PC")
 _TURN_YOURSELF_OFF = re.compile(r"ap[aá]n?[gq][uü]?[aeé]?(?:te|se|ce)|apag[uü]e ese")
