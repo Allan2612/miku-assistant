@@ -89,6 +89,11 @@ async fn settings_inputs(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn settings_testobs(app: AppHandle, password: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || settings(&app, &["testobs"], &password)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn settings_testkey(app: AppHandle, key: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || settings(&app, &["testkey"], &key)).await.map_err(|e| e.to_string())?
 }
@@ -241,42 +246,89 @@ async fn wake_train(app: AppHandle) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
-/// The last `lines` lines of cache/core.log, read from the file: the panel shows them with Miku off too.
-#[tauri::command]
-fn read_log(app: AppHandle, lines: usize) -> Result<String, String> {
-    let text = std::fs::read(app.state::<Power>().backend.data().join("cache").join("core.log")).map_err(|e| e.to_string())?;
-    let text = String::from_utf8_lossy(&text);
-    let all: Vec<&str> = text.lines().collect();
-    Ok(all[all.len().saturating_sub(lines.min(2000))..].join("\n"))
+// ---------- Logs: read by Rust, so they show with Miku off too; never written or deleted here ----------
+
+/// core.log and its rotated copies, oldest first (core.log.3 … core.log).
+fn log_files(app: &AppHandle) -> Vec<std::path::PathBuf> {
+    let cache = app.state::<Power>().backend.data().join("cache");
+    (1..=3).rev().map(|i| cache.join(format!("core.log.{i}"))).chain([cache.join("core.log")]).filter(|p| p.is_file()).collect()
 }
 
-// ---------- the panel's background music (a file the user puts in the data folder) ----------
-
-const MUSIC_EXT: [&str; 5] = ["mp3", "ogg", "wav", "m4a", "flac"];
-
-fn music_dir(app: &AppHandle) -> std::path::PathBuf {
-    app.state::<Power>().backend.data().join("panel-music")
+/// `lines` lines of the log ending `skip` lines before its end, across the rotated copies: the panel opens with
+/// the newest and asks for older ones on demand. `offset` is where log_tail goes on from.
+#[tauri::command]
+fn read_log(app: AppHandle, lines: usize, skip: usize) -> Result<serde_json::Value, String> {
+    let files = log_files(&app);
+    let mut all = String::new();
+    for f in &files {
+        all.push_str(&String::from_utf8_lossy(&std::fs::read(f).map_err(|e| e.to_string())?));
+    }
+    let every: Vec<&str> = all.lines().collect();
+    let end = every.len().saturating_sub(skip);
+    let start = end.saturating_sub(lines.min(5000));
+    let offset = files.last().and_then(|f| f.metadata().ok()).map_or(0, |m| m.len());
+    Ok(serde_json::json!({ "text": every[start..end].join("\n"), "more": start > 0, "offset": offset }))
 }
 
-/// The first audio file in the music folder (by name), as an ArrayBuffer for the panel's player.
+/// What core.log gained since `offset` (whole lines only). `reset`: the log rotated, read it again from the end.
 #[tauri::command]
-fn panel_music(app: AppHandle) -> Result<tauri::ipc::Response, String> {
-    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(music_dir(&app))
-        .map_err(|_| "No hay carpeta de música".to_string())?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|e| e.to_str()).is_some_and(|e| MUSIC_EXT.contains(&e.to_lowercase().as_str())))
-        .collect();
-    files.sort();
-    let first = files.first().ok_or("La carpeta de música está vacía")?;
-    std::fs::read(first).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+fn log_tail(app: AppHandle, offset: u64) -> Result<serde_json::Value, String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let path = app.state::<Power>().backend.data().join("cache").join("core.log");
+    let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
+    let len = file.metadata().map_err(|e| e.to_string())?.len();
+    if len < offset {
+        return Ok(serde_json::json!({ "reset": true }));
+    }
+    file.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+    let mut bytes = Vec::new();
+    file.take(4 * 1024 * 1024).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    let whole = bytes.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1); // a half-written line waits
+    Ok(serde_json::json!({ "text": String::from_utf8_lossy(&bytes[..whole]), "offset": offset + whole as u64 }))
 }
 
-/// Opens the music folder in Explorer (made if missing): the user drops a song there.
+// ---------- Almacenamiento (core/storage.py) and opening Miku's folders ----------
+
 #[tauri::command]
-fn open_music_folder(app: AppHandle) -> Result<(), String> {
-    let dir = music_dir(&app);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+async fn storage_scan(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<Power>().backend.run_module("core.storage", &["scan"], ""))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Frees the voice cache or the speech models Miku no longer uses: core/storage.py refuses anything else.
+#[tauri::command]
+async fn storage_clean(app: AppHandle, what: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<Power>().backend.run_module("core.storage", &["clean", &what], ""))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Opens one of Miku's folders in Explorer, by name: the panel never passes a path.
+#[tauri::command]
+fn open_folder(app: AppHandle, which: String) -> Result<(), String> {
+    let backend = &app.state::<Power>().backend;
+    let data = backend.data().to_path_buf();
+    let root = backend.root().map(|r| r.to_path_buf()).ok_or("No encuentro la carpeta de Miku")?;
+    let hub = std::env::var_os("HF_HUB_CACHE").map(std::path::PathBuf::from).unwrap_or_else(|| {
+        std::env::var_os("HF_HOME").map(std::path::PathBuf::from).unwrap_or_else(|| {
+            std::path::PathBuf::from(std::env::var_os("USERPROFILE").unwrap_or_default()).join(".cache").join("huggingface")
+        }).join("hub")
+    });
+    let dir = match which.as_str() {
+        "data" => data,
+        "logs" => data.join("cache"),
+        "wake" => data.join("cache").join("wake"),
+        "voice" => data.join("cache").join("voice"),
+        "models" => root.join("models"),
+        "program" => root,
+        "runtime" => backend.runtime(),
+        "speech" | "unused" => hub,
+        _ => return Err("Carpeta desconocida".into()),
+    };
+    if !dir.is_dir() {
+        return Err("Esa carpeta no existe todavía".into());
+    }
     std::process::Command::new("explorer").arg(&dir).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
@@ -374,9 +426,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            backend_state, backend_start, backend_stop, backend_restart, read_log, read_functions_doc,
+            backend_state, backend_start, backend_stop, backend_restart, read_log, log_tail, read_functions_doc,
             settings_get, settings_set, settings_tools, settings_testkey, wake_clips, wake_clip_audio, wake_label, wake_train_state, wake_train,
-            setup_state, setup_run, autostart_get, autostart_set, settings_inputs, panel_music, open_music_folder
+            setup_state, setup_run, autostart_get, autostart_set, settings_inputs, settings_testobs, storage_scan, storage_clean, open_folder
         ])
         .setup(|app| {
             // The frontend positions the window (positionWindow in main.ts) using the work area

@@ -28,6 +28,29 @@ _procs: Dict[int, psutil.Process] = {}  # kept between calls: cpu_percent() meas
 _gpu: Any = None
 _gpu_failed = False
 _obs_cache = (0.0, False)
+_vram_size: Optional[int] = None
+
+
+def _vram_total() -> int:
+    """The graphics card's own memory, in bytes (0 if unknown): the scale of the panel's VRAM chart.
+    From the display driver's registry key: WMI's AdapterRAM stops at 4 GB."""
+    global _vram_size
+    if _vram_size is None:
+        _vram_size = 0
+        try:
+            import winreg
+
+            key = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as root:
+                for i in range(winreg.QueryInfoKey(root)[0]):
+                    try:
+                        with winreg.OpenKey(root, winreg.EnumKey(root, i)) as sub:
+                            _vram_size = max(_vram_size, int(winreg.QueryValueEx(sub, "HardwareInformation.qwMemorySize")[0]))
+                    except (OSError, ValueError):
+                        continue
+        except OSError:
+            pass
+    return _vram_size
 
 
 def _gpu_counters() -> Any:
@@ -88,6 +111,8 @@ def processes() -> Dict[str, Any]:
         "gpu_known": _gpu is not None,
         "gpu_total": gpu_total,
         "total": {k: sum(g[k] for g in groups) for k in ("cpu", "ram", "vram")},
+        "ram_total": psutil.virtual_memory().total,
+        "vram_total": _vram_total(),
     }
 
 
@@ -184,6 +209,29 @@ def conversation(day: str) -> Dict[str, Any]:
     return {"day": day, "turns": turns}
 
 
+def search(text: str, limit: int = 40) -> Dict[str, Any]:
+    """Turns of every archived day whose words contain `text` (the panel's search in Memoria), newest first."""
+    import json
+
+    from core.tools.memory import CONVERSATIONS_DIR
+
+    q = (text or "").strip().lower()
+    hits: List[Dict[str, Any]] = []
+    if len(q) < 2 or not CONVERSATIONS_DIR.exists():
+        return {"q": text, "hits": hits}
+    for path in sorted(CONVERSATIONS_DIR.glob("*.jsonl"), reverse=True):
+        for line in reversed(path.read_text(encoding="utf-8").splitlines()):
+            try:
+                turn = json.loads(line)
+            except ValueError:
+                continue
+            if q in f"{turn.get('user', '')} {turn.get('miku', '')}".lower():
+                hits.append({"day": path.stem, **turn})
+                if len(hits) >= limit:
+                    return {"q": text, "hits": hits}
+    return {"q": text, "hits": hits}
+
+
 def act(action: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """Changes made from the panel, through the same tools Miku uses: the same checks, the same files."""
     from core.tools import memory, notes, timers
@@ -278,6 +326,8 @@ def answer(pipeline: Any, what: str, args: Optional[Dict[str, Any]] = None) -> O
         return memory_view()
     if what == "conversation":
         return conversation(str(args.get("day", "")))
+    if what == "search":
+        return search(str(args.get("q", "")))
     if what.startswith("do:"):
         return act(what[3:], args)
     return None

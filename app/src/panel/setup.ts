@@ -15,7 +15,7 @@ const PARTS: [string, string][] = [
   ["uv", "Instalador de Python (uv)"],
   ["python", "Python 3.14"],
   ["libs", "Librerías de Miku · ~600 MB"],
-  ["torch", "PyTorch con CUDA, para la voz · ~2,5 GB"],
+  ["torch", "PyTorch con CUDA, para la voz · descarga ~2,5 GB, ocupa ~4 GB"],
   ["models", "Modelos de Whisper y de voz · ~900 MB"],
 ];
 
@@ -64,7 +64,7 @@ function paint(): void {
 function body(): string {
   const next = (label: string) => `<div style="display:flex;justify-content:flex-end;gap:10px"><button type="button" id="next" class="power off">${label}<span class="ic">→</span></button></div>`;
   if (step === 0)
-    return `<p class="sub">Vamos a dejar a Miku lista en tu PC. Te pido dos datos y luego descargo lo que necesita para escucharte y hablarte: unos 4 GB, una sola vez.</p>
+    return `<p class="sub">Vamos a dejar a Miku lista en tu PC. Te pido dos datos y luego descargo lo que necesita para escucharte y hablarte, una sola vez: con tarjeta NVIDIA descarga unos 4 GB y ocupa unos 6,5 GB; sin ella, unos 2,5 GB.</p>
       <p class="dim">Tus datos (ajustes, memoria, recordatorios) se guardan en %APPDATA%\\Miku Assistant y nunca salen de tu PC salvo lo que le preguntas a Gemini.</p>${next("Empezar")}`;
   if (step === 1)
     return `<p class="sub">Miku piensa con Gemini, de Google. Crea una clave gratis en <b class="mono">aistudio.google.com/apikey</b> y pégala aquí.</p>

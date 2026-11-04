@@ -33,12 +33,14 @@ Para empezar, lee el [README.md](../README.md) y [docs/architecture.md](architec
   - una sola instancia;
   - arrancar con Windows;
   - atajo y micrófono desde el panel;
-  - música en Inicio;
-  - botón «Reentrenar» de «Hey Miku».
+  - botón «Reentrenar» de «Hey Miku»;
+  - rediseño de UI/UX del panel: paginación, una sola barra de scroll por página, gráficos con escala, página de
+    Almacenamiento, sin música ([docs/plan-panel-ux.md](plan-panel-ux.md)).
+- `core.log` lleva ahora la fecha en cada línea (`2026-11-03 17:21:28.359 [INFO] …`), para separar días en Logs.
 - Los recordatorios suenan aunque el PC se haya suspendido. Se miran con el reloj de pared cada 30 s
   ([core/tools/timers.py](../core/tools/timers.py)).
-- El tiempo de espera de Gemini bajó a 8 s ([core/llm.py](../core/llm.py)). En los logs, la mediana era 1,9 s;
-  46 peticiones fallidas esperaron 10 s.
+- El tiempo de espera de Gemini sigue en 10 s: es el mínimo que acepta la API. Bajarlo a 8 s hizo fallar todas las
+  peticiones el 3-nov entre 17:18 y 17:21 (400 "Minimum allowed deadline is 10s"); un test lo vigila.
 - La palabra clave:
   - ignora los disparos en silencio (`MIN_CLIP_PEAK`);
   - guarda los casi disparos en `cache/wake/near`.
@@ -64,8 +66,8 @@ Para empezar, lee el [README.md](../README.md) y [docs/architecture.md](architec
 - **Probar en el PC del usuario (lo hace él):**
   - instalar el `.exe` en otra PC;
   - en la app real: el panel completo (Live2D, encender y apagar, logs, reproductor de clips, "¿Qué oyó?", chat "Solo
-    texto", cerrar = ocultar, Apagar/Encender en la bandeja, música, arranque con Windows, cambio de atajo y de
-    micrófono).
+    texto", cerrar = ocultar, Apagar/Encender en la bandeja, arranque con Windows, cambio de atajo y de
+    micrófono, Almacenamiento y «Liberar», marcar clips con el teclado).
 - **Reentrenar «Hey Miku»:** el usuario marca 60 clips (20 suyos) en Palabra clave y pulsa «Reentrenar».
   - Se probó con marcas falsas en modo `--dry` (≈1 min 15 s).
   - Sin marcas reales todavía no hay resultado.

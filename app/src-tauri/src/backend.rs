@@ -67,6 +67,11 @@ impl Backend {
         self.root.as_deref()
     }
 
+    /// Python and the libraries: the virtualenv in development, the whole runtime folder once installed.
+    pub fn runtime(&self) -> PathBuf {
+        if self.installed { self.venv.parent().map_or_else(|| self.venv.clone(), Path::to_path_buf) } else { self.venv.clone() }
+    }
+
     pub fn data(&self) -> &Path {
         &self.data
     }

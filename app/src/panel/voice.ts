@@ -1,11 +1,11 @@
 /**
- * Panel pages around Miku's voice (phase 4): Palabra clave (listen to every "Hey Miku" and label it, for retraining
- * the model) and Chat (write to her; voice turns show up too).
+ * Panel pages around Miku's voice: Palabra clave (listen to every "Hey Miku", label it from the keyboard, retrain the
+ * model) and Chat (write to her; voice turns show up too).
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { byId, esc, head, icon, isTauri, link, state } from "./shared";
+import { byId, clampPage, comma, dayLabel, esc, head, icon, isTauri, link, localDay, offlineNote, pageItems, pager, state } from "./shared";
 
 const view = () => byId("view")!;
 const PLAY = "M8 5.5v13l11-6.5z";
@@ -13,11 +13,15 @@ const STOP = "M7 7h10v10H7z";
 const SEND = "M4 12h14M13 6l6 6-6 6";
 const RETRAIN_CLIPS = 60;
 const RETRAIN_YOURS = 20;
+const PER_PAGE = 15;
 
 // ---------- Palabra clave ----------
 interface Clip { folder: string; name: string; label: "yes" | "no" | null; heard: string | null }
 let clips: Clip[] = [];
+let loaded = false;
 let wakeFilter = "all";
+let wakePage = 1;
+let selected = "";
 let player: HTMLAudioElement | null = null;
 let playing = "";
 let training = false;
@@ -26,15 +30,15 @@ let trainMsg = "";
 const keyOf = (c: Clip) => (c.folder ? `${c.folder}/${c.name}` : c.name);
 const KIND: Record<string, [string, string]> = {
   "": ["ACTIVACIÓN", "ok"],
-  near: ["CASI DISPARO", "gem"],
-  silent: ["IGNORADA: SILENCIO", "off"],
+  near: ["CASI DISPARO", "warn"],
+  silent: ["IGNORADA: CASI SILENCIO", "off"],
 };
 const FILTERS: [string, string, (c: Clip) => boolean][] = [
   ["all", "Todas", () => true],
+  ["todo", "Sin marcar", (c) => !c.label],
   ["act", "Activaciones", (c) => c.folder === ""],
   ["near", "Casi disparos", (c) => c.folder === "near"],
   ["silent", "Ignoradas", (c) => c.folder === "silent"],
-  ["todo", "Sin marcar", (c) => !c.label],
 ];
 
 function clipTime(name: string): { day: string; at: string; score: number } {
@@ -42,103 +46,167 @@ function clipTime(name: string): { day: string; at: string; score: number } {
   return { day: `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`, at: `${rest.slice(0, 2)}:${rest.slice(2, 4)}:${rest.slice(4, 6)}`, score: Number(rest.slice(7, 12)) };
 }
 
+const shownClips = () => clips.filter(FILTERS.find(([id]) => id === wakeFilter)![2]);
+
 export function renderWake(): void {
-  view().innerHTML = `${head("PALABRA CLAVE", "«Hey Miku»", "Escucha cada activación y dime si eras tú. Con 60 marcas se puede reentrenar el modelo para que te oiga mejor y se active menos sola.")}
-    <div id="wk-stats" class="row-wrap"></div>
-    <div class="toolbar"><div class="chips" role="group" aria-label="Filtrar">${FILTERS.map(([id, label]) => `<button type="button" class="chip" data-wf="${id}" aria-pressed="${id === wakeFilter}">${label}</button>`).join("")}</div>
-      <span id="wk-msg" class="msg"></span></div>
-    <section class="card" aria-label="Clips"><div id="wk-list"><span class="dim">Cargando…</span></div></section>`;
+  view().innerHTML = `${head("Palabra clave", `Escucha cada activación y dime si eras tú. Con ${RETRAIN_CLIPS} marcas (${RETRAIN_YOURS} tuyas) puedes reentrenarla para que te oiga mejor.`)}
+    <section class="card" id="wk-sum" aria-label="Resumen"></section>
+    <div class="toolbar"><div class="chips" role="group" aria-label="Filtrar" id="wk-filters"></div>
+      <span class="keys"><span id="wk-msg" class="msg" aria-live="polite"></span> Teclado: <kbd>↑</kbd><kbd>↓</kbd> elegir · <kbd>Espacio</kbd> escuchar · <kbd>S</kbd> era yo · <kbd>N</kbd> no era yo</span></div>
+    <section class="card" aria-label="Clips" style="padding:10px 12px"><div id="wk-list"><span class="dim">Cargando…</span></div></section>`;
   view().onclick = onWakeClick;
   if (!isTauri) return;
   invoke<{ clips: Clip[] }>("wake_clips")
     .then((d) => {
       clips = d.clips;
+      loaded = true;
+      if (!selected || !clips.some((c) => keyOf(c) === selected)) selected = keyOf(shownClips()[0] ?? clips[0] ?? ({ folder: "", name: "" } as Clip));
       paintWake();
     })
     .catch((err) => (byId("wk-list")!.innerHTML = `<span class="msg bad">${esc(err)}</span>`));
 }
 
 function paintWake(): void {
-  const today = localDay("");
+  if (!byId("wk-list")) return;
+  const today = localDay().replace(/-/g, "");
   const todays = clips.filter((c) => c.name.startsWith(today));
   const yes = clips.filter((c) => c.label === "yes").length;
   const labeled = clips.filter((c) => c.label).length;
   const ready = labeled >= RETRAIN_CLIPS && yes >= RETRAIN_YOURS;
-  const stat = (label: string, value: number, color: string) =>
-    `<div class="card kpi"><span class="muted" style="font-size:12px">${label}</span><span class="big" style="color:${color}">${value}</span></div>`;
-  byId("wk-stats")!.innerHTML = `
-    ${stat("Activaciones hoy", todays.filter((c) => c.folder === "").length, "var(--text)")}
-    ${stat("Ignoradas hoy (silencio)", todays.filter((c) => c.folder === "silent").length, "#a9bfbd")}
-    ${stat("Casi disparos hoy", todays.filter((c) => c.folder === "near").length, "var(--pink-l)")}
-    <div class="card kpi" style="flex:2 1 320px"><div class="card-head"><span class="muted" style="font-size:12px">${ready ? "Listo para reentrenar" : "Para reentrenar"}</span>
-      <span class="mono" style="color:var(--teal-l)">${labeled} de ${RETRAIN_CLIPS}</span></div>
-      <div class="bar"><div style="width:${Math.min(100, (labeled / RETRAIN_CLIPS) * 100)}%"></div></div>
-      <span class="dim">${yes} tuyas (hacen falta ${RETRAIN_YOURS}) · ${labeled - yes} que no eras tú</span>
-      <div class="row-wrap" style="align-items:center;gap:12px"><button type="button" class="btn small" id="wk-train"${ready && !training ? "" : " disabled"}>${training ? "Entrenando…" : "Reentrenar"}</button>
-        <span id="wk-train-msg" class="dim" aria-live="polite">${esc(trainMsg || (ready ? "Tarda unos minutos y necesita internet. Solo se cambia si el nuevo te oye mejor." : ""))}</span></div></div>`;
-  const keep = FILTERS.find(([id]) => id === wakeFilter)![2];
-  const shown = clips.filter(keep).slice(0, 80);
-  byId("wk-list")!.innerHTML = shown.length
-    ? shown.map((c) => {
+  const count = (folder: string) => todays.filter((c) => c.folder === folder).length;
+  byId("wk-sum")!.innerHTML = `
+    <div class="card-head"><span style="font-size:14px">Hoy: <b class="mono">${count("")}</b> activaciones · <b class="mono">${count("silent")}</b> ignoradas por silencio · <b class="mono">${count("near")}</b> casi disparos</span>
+      <span class="mono" style="color:var(--teal-l)">${labeled} de ${RETRAIN_CLIPS} marcas</span></div>
+    <div class="bar" role="img" aria-label="${labeled} de ${RETRAIN_CLIPS} marcas"><div style="width:${Math.min(100, (labeled / RETRAIN_CLIPS) * 100)}%"></div></div>
+    <div class="toolbar"><span class="dim">${yes} tuyas${yes < RETRAIN_YOURS ? ` (faltan ${RETRAIN_YOURS - yes})` : ""} · ${labeled - yes} que no eras tú</span>
+      <div class="inline"><span id="wk-train-msg" class="dim" aria-live="polite">${esc(trainMsg || (ready ? "Tarda unos minutos y necesita internet. Solo se cambia si el nuevo te oye mejor." : ""))}</span>
+        <button type="button" class="btn small" id="wk-train"${ready && !training ? "" : " disabled"}>${training ? "Entrenando…" : "Reentrenar"}</button></div></div>`;
+  byId("wk-filters")!.innerHTML = FILTERS.map(([id, label, keep]) => `<button type="button" class="chip" data-wf="${id}" aria-pressed="${id === wakeFilter}">${label}<span class="n">${clips.filter(keep).length}</span></button>`).join("");
+  const list = shownClips();
+  wakePage = clampPage(wakePage, list.length, PER_PAGE);
+  byId("wk-list")!.innerHTML = list.length
+    ? pageItems(list, wakePage, PER_PAGE).map((c) => {
         const { day, at, score } = clipTime(c.name);
         const [kind, cls] = KIND[c.folder] ?? KIND[""];
         const key = esc(keyOf(c));
         const heard = c.heard === null
-          ? `<button type="button" class="btn small ghost" style="align-self:flex-start" data-heard="${key}"${state.backendOn ? "" : " disabled title=\"Enciende a Miku\""}>¿Qué oyó?</button>`
-          : `<span style="font-size:14px;color:var(--soft)">Oyó: ${c.heard ? `«${esc(c.heard)}»` : "nada"}</span>`;
-        return `<div class="list-row" style="min-height:70px;gap:14px">
-          <button type="button" class="btn" style="width:44px;padding:0;border-radius:22px" data-play="${key}" aria-label="Escuchar el clip de las ${at}">${icon(playing === keyOf(c) ? STOP : PLAY, 16)}</button>
-          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
-            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px"><span class="mono dim">${day.slice(5)} ${at}</span>
-              <span class="mono" style="font-size:12px">puntuación ${score.toFixed(3).replace(".", ",")}</span><span class="pill ${cls}">${kind}</span></div>
-            ${heard}</div>
+          ? `<button type="button" class="btn small ghost" data-heard="${key}"${state.backendOn ? "" : ' disabled title="Enciende a Miku"'}>¿Qué oyó?</button>`
+          : `<span class="ellipsis" style="font-size:13px;color:var(--soft)" title="${esc(c.heard)}">Oyó: ${c.heard ? `«${esc(c.heard)}»` : "nada"}</span>`;
+        return `<div class="clip${keyOf(c) === selected ? " sel" : ""}" data-row="${key}">
+          <button type="button" class="btn play" data-play="${key}" aria-label="Escuchar el clip de las ${at}">${icon(playing === keyOf(c) ? STOP : PLAY, 15)}</button>
+          <div style="display:flex;flex-direction:column;gap:3px"><span class="mono dim">${day.slice(5).replace("-", "/")} ${at}</span><span><span class="pill ${cls}">${kind}</span></span></div>
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">${heard}${c.folder !== "silent" ? `<span class="mono dim" style="flex:none" data-tip="Lo segura que estaba de oír «Hey Miku» (0 a 1)">${comma(score, 2)}</span>` : ""}</div>
           <div class="chips" role="group" aria-label="¿Eras tú?">
             <button type="button" class="chip" data-label="yes" data-key="${key}" aria-pressed="${c.label === "yes"}">Era yo</button>
-            <button type="button" class="chip" data-label="no" data-key="${key}" aria-pressed="${c.label === "no"}" style="${c.label === "no" ? "background:var(--pink);border-color:var(--pink);color:#2a0a18" : ""}">No era yo</button></div>
+            <button type="button" class="chip" data-label="no" data-key="${key}" aria-pressed="${c.label === "no"}" style="${c.label === "no" ? "background:var(--coral);border-color:var(--coral);color:#2a0a08" : ""}">No era yo</button></div>
         </div>`;
-      }).join("")
-    : `<span class="dim">Nada aquí todavía.</span>`;
+      }).join("") + pager("clips", list.length, wakePage, PER_PAGE, "clips")
+    : `<span class="dim">${loaded ? "Nada aquí." : "Cargando…"}</span>`;
 }
 
 const findClip = (key: string) => clips.find((c) => keyOf(c) === key);
 
+/** Selects a clip and shows its page. */
+function select(key: string, scroll = true): void {
+  selected = key;
+  const idx = shownClips().findIndex((c) => keyOf(c) === key);
+  if (idx >= 0) wakePage = Math.floor(idx / PER_PAGE) + 1;
+  paintWake();
+  if (scroll) byId("wk-list")?.querySelector(".clip.sel")?.scrollIntoView({ block: "nearest" });
+}
+
+async function play(key: string): Promise<void> {
+  const clip = findClip(key);
+  if (!clip) return;
+  player?.pause();
+  if (playing === key) {
+    playing = "";
+    paintWake();
+    return;
+  }
+  try {
+    const bytes = await invoke<ArrayBuffer>("wake_clip_audio", { folder: clip.folder, name: clip.name });
+    const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+    player = new Audio(url);
+    playing = key;
+    player.onended = () => {
+      URL.revokeObjectURL(url);
+      playing = "";
+      paintWake();
+    };
+    await player.play();
+  } catch (err) {
+    byId("wk-msg")!.textContent = `No pude reproducirlo: ${err}`;
+  }
+  paintWake();
+}
+
+async function label(key: string, value: "yes" | "no", advance: boolean): Promise<void> {
+  const clip = findClip(key);
+  if (!clip) return;
+  const next = clip.label === value ? null : value; // the same one again: unmark
+  await invoke("wake_label", { folder: clip.folder, name: clip.name, label: next });
+  clip.label = next;
+  if (advance && next) {
+    // On to the next clip without a mark (the list may be "Sin marcar": this one just left it)
+    const list = clips.filter(FILTERS.find(([id]) => id === wakeFilter)![2]);
+    const all = shownClipsWith(clip);
+    const after = all.slice(all.findIndex((c) => keyOf(c) === key) + 1).find((c) => !c.label);
+    if (after) return select(keyOf(after));
+    if (list.length) return select(keyOf(list[0]));
+  }
+  paintWake();
+}
+
+/** The filtered list as it was before `clip` changed (so "the next one" is found from where it was). */
+const shownClipsWith = (clip: Clip) => clips.filter((c) => c === clip || FILTERS.find(([id]) => id === wakeFilter)![2](c));
+
+/** Keyboard on Palabra clave: ↑/↓ choose, Space listens, S = it was me, N = it was not. */
+export function onWakeKey(ev: KeyboardEvent): void {
+  if (!clips.length) return;
+  const list = shownClips();
+  const idx = list.findIndex((c) => keyOf(c) === selected);
+  const k = ev.key.toLowerCase();
+  if (k === "arrowdown" || k === "j" || k === "arrowup" || k === "k") {
+    ev.preventDefault();
+    const down = k === "arrowdown" || k === "j";
+    const to = list[Math.min(list.length - 1, Math.max(0, idx < 0 ? 0 : idx + (down ? 1 : -1)))];
+    if (to) select(keyOf(to));
+  } else if (k === " " && (ev.target as HTMLElement).tagName !== "BUTTON") {
+    ev.preventDefault();
+    if (selected) void play(selected);
+  } else if ((k === "s" || k === "y") && selected) void label(selected, "yes", true);
+  else if (k === "n" && selected) void label(selected, "no", true);
+}
+
 async function onWakeClick(ev: MouseEvent): Promise<void> {
-  const el = (ev.target as HTMLElement).closest<HTMLElement>("button");
+  const target = ev.target as HTMLElement;
+  const el = target.closest<HTMLElement>("button");
+  const row = target.closest<HTMLElement>("[data-row]");
+  if (row && row.dataset.row !== selected) select(row.dataset.row!, false);
   if (!el) return;
   if (el.dataset.wf) {
     wakeFilter = el.dataset.wf;
-    document.querySelectorAll<HTMLElement>("[data-wf]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.wf === wakeFilter)));
+    wakePage = 1;
+    const first = shownClips()[0];
+    if (first && !shownClips().some((c) => keyOf(c) === selected)) selected = keyOf(first);
     paintWake();
-  } else if (el.dataset.play) {
-    const clip = findClip(el.dataset.play);
-    if (!clip) return;
-    player?.pause();
-    if (playing === el.dataset.play) {
-      playing = "";
-      paintWake();
-      return;
-    }
-    try {
-      const bytes = await invoke<ArrayBuffer>("wake_clip_audio", { folder: clip.folder, name: clip.name });
-      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
-      player = new Audio(url);
-      playing = el.dataset.play;
-      player.onended = () => {
-        URL.revokeObjectURL(url);
-        playing = "";
-        paintWake();
-      };
-      await player.play();
-    } catch (err) {
-      byId("wk-msg")!.textContent = `No pude reproducirlo: ${err}`;
-    }
+  } else if (el.dataset.pager) {
+    wakePage = Number(el.dataset.page);
+    const first = pageItems(shownClips(), wakePage, PER_PAGE)[0];
+    if (first) selected = keyOf(first);
     paintWake();
-  } else if (el.dataset.label && el.dataset.key) {
-    const clip = findClip(el.dataset.key);
+    byId("wk-list")?.scrollIntoView({ block: "start" });
+  } else if (el.dataset.play) void play(el.dataset.play);
+  else if (el.dataset.label && el.dataset.key) void label(el.dataset.key, el.dataset.label as "yes" | "no", false);
+  else if (el.dataset.heard) {
+    const clip = findClip(el.dataset.heard);
     if (!clip) return;
-    const label = clip.label === el.dataset.label ? null : (el.dataset.label as "yes" | "no"); // again: unmark
-    await invoke("wake_label", { folder: clip.folder, name: clip.name, label });
-    clip.label = label;
+    el.textContent = "Escuchando…";
+    (el as HTMLButtonElement).disabled = true;
+    const res = await link.request("do:transcribe_clip", { folder: clip.folder, name: clip.name });
+    if (res?.ok) clip.heard = res.result;
+    else byId("wk-msg")!.textContent = res?.result ?? "Miku no respondió.";
     paintWake();
   } else if (el.id === "wk-train") {
     training = true;
@@ -147,7 +215,7 @@ async function onWakeClick(ev: MouseEvent): Promise<void> {
     const stop = await listen<string>("train-progress", (e) => {
       try {
         const p = JSON.parse(e.payload.replace(/^@@/, ""));
-        trainMsg = p.state === "done" && p.pct === 100 ? p.msg : `${p.pct}% · ${p.msg}`;
+        trainMsg = p.state === "done" && p.pct === 100 ? p.msg : `${p.pct} % · ${p.msg}`;
       } catch {
         return; // not a progress line
       }
@@ -161,49 +229,39 @@ async function onWakeClick(ev: MouseEvent): Promise<void> {
     } finally {
       stop();
       training = false;
-      if (byId("wk-stats")) paintWake();
+      paintWake();
     }
-  } else if (el.dataset.heard) {
-    const clip = findClip(el.dataset.heard);
-    if (!clip) return;
-    el.textContent = "Escuchando…";
-    (el as HTMLButtonElement).disabled = true;
-    const res = await link.request("do:transcribe_clip", { folder: clip.folder, name: clip.name });
-    if (res?.ok) clip.heard = res.result;
-    else byId("wk-msg")!.textContent = res?.result ?? "Miku no respondió.";
-    paintWake();
   }
 }
 
 // ---------- Chat ----------
-interface Msg { who: "user" | "miku"; text: string; at: string }
+interface Msg { who: "user" | "miku"; text: string; at: string; day: string }
 const chatLog: Msg[] = [];
 let chatLoaded = false;
+let olderDays: string[] | null = null; // days with a conversation before the ones shown, newest first
 let thinking = false;
 let quiet = localStorage.getItem("miku-chat-quiet") === "1";
 let echoTimer: number | null = null;
 
 const nowHM = () => new Date().toTimeString().slice(0, 5);
-/** Today in the PC's own time zone (toISOString is UTC: after 18:00 in Costa Rica it is already tomorrow). */
-const localDay = (sep = "-") => {
-  const d = new Date();
-  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join(sep);
-};
 
 export function renderChat(): void {
-  view().innerHTML = `${head("CHAT", "Escríbele a Miku", "Para cuando no puedes hablar. Lo que le dices por voz también aparece aquí.")}
-    <section class="card" aria-label="Conversación" style="flex:1;min-height:420px">
-      <div id="chat" class="chat" style="flex:1;max-height:none;min-height:300px" aria-live="polite"></div>
+  const on = state.backendOn;
+  view().innerHTML = `${head("Chat", "Para cuando no puedes hablar. Lo que le dices por voz también aparece aquí.")}
+    ${on ? "" : offlineNote()}
+    <section class="card grow" aria-label="Conversación">
+      <div id="chat" class="chat grow" aria-live="polite"></div>
       <div id="typing" class="dim" style="min-height:18px"></div>
       <div class="inline"><label for="chat-in" class="sr">Mensaje</label>
-        <input id="chat-in" class="input" placeholder="${state.backendOn ? "Escribe algo… (Enter para enviar)" : "Enciende a Miku para escribirle"}" maxlength="1000" autocomplete="off">
-        <button type="button" id="chat-send" class="btn" aria-label="Enviar">${icon(SEND, 16)}</button></div>
-      <div class="switch-row" style="min-height:36px"><div><b style="font-size:13px">Solo texto</b><span class="dim">Miku contesta aquí, sin voz (útil en partida).</span></div>
+        <input id="chat-in" class="input" placeholder="${on ? "Escribe algo… (Enter para enviar)" : "Enciende a Miku para escribirle"}" maxlength="1000" autocomplete="off"${on ? "" : " disabled"}>
+        <button type="button" id="chat-send" class="btn" aria-label="Enviar"${on ? "" : " disabled"}>${icon(SEND, 16)}</button></div>
+      <div class="switch-row" style="min-height:34px"><div><b style="font-size:13px">Solo texto</b><span class="dim">Miku contesta aquí, sin voz (útil en partida).</span></div>
         <button type="button" class="switch" role="switch" id="chat-quiet" aria-checked="${quiet}" aria-label="Solo texto"><span></span></button></div>
     </section>`;
   view().onclick = (ev) => {
     const el = (ev.target as HTMLElement).closest<HTMLElement>("button");
     if (el?.id === "chat-send") sendChat();
+    else if (el?.id === "chat-older") void loadOlder();
     else if (el?.id === "chat-quiet") {
       quiet = !quiet;
       localStorage.setItem("miku-chat-quiet", quiet ? "1" : "0");
@@ -213,26 +271,48 @@ export function renderChat(): void {
   view().onkeydown = (ev) => {
     if (ev.key === "Enter" && (ev.target as HTMLElement).id === "chat-in") sendChat();
   };
-  paintChat();
-  if (!chatLoaded && state.backendOn) {
+  paintChat(true);
+  if (!chatLoaded && on) {
     chatLoaded = true;
     const today = localDay();
     void link.request("conversation", { day: today }).then((d) => {
       if (!d) return;
-      const earlier: Msg[] = d.turns.slice(-30).flatMap((t: any) => [{ who: "user", text: t.user, at: t.at }, { who: "miku", text: t.miku, at: t.at }]);
-      chatLog.unshift(...earlier);
-      paintChat();
+      chatLog.unshift(...turnsOf(d.turns, today));
+      paintChat(true);
+    });
+    void link.request("memory").then((d) => {
+      olderDays = d ? d.days.filter((day: string) => day < today) : [];
+      paintChat(false);
     });
   }
 }
 
-function paintChat(): void {
+const turnsOf = (turns: any[], day: string): Msg[] =>
+  turns.flatMap((t: any) => [{ who: "user" as const, text: t.user, at: t.at, day }, { who: "miku" as const, text: t.miku, at: t.at, day }]);
+
+async function loadOlder(): Promise<void> {
+  const day = olderDays?.shift();
+  if (!day) return;
+  const box = byId("chat");
+  const fromBottom = box ? box.scrollHeight - box.scrollTop : 0;
+  const d = await link.request("conversation", { day });
+  if (d) chatLog.unshift(...turnsOf(d.turns, day));
+  paintChat(false);
+  if (box) box.scrollTop = box.scrollHeight - fromBottom;
+}
+
+function paintChat(toBottom: boolean): void {
   const box = byId("chat");
   if (!box) return;
-  box.innerHTML = chatLog.length
-    ? chatLog.map((m) => `<div class="bubble ${m.who}"><small>${esc(m.at)}</small>${esc(m.text)}</div>`).join("")
-    : `<span class="dim">Todavía no habéis hablado hoy.</span>`;
-  box.scrollTop = box.scrollHeight;
+  let lastDay = "";
+  const older = olderDays?.length ? `<button type="button" class="btn small ghost" id="chat-older" style="align-self:center">Cargar ${esc(dayLabel(olderDays[0]))}</button>` : "";
+  box.innerHTML = older + (chatLog.length
+    ? chatLog.map((m) => {
+        const sep = m.day !== lastDay ? `<div class="daysep">${esc(dayLabel((lastDay = m.day), true))}</div>` : "";
+        return `${sep}<div class="bubble ${m.who}"><small>${esc(m.at)}</small>${esc(m.text)}</div>`;
+      }).join("")
+    : `<span class="dim">Todavía no han hablado hoy.</span>`);
+  if (toBottom) box.scrollTop = box.scrollHeight;
   const typing = byId("typing");
   if (typing) typing.textContent = thinking ? "Miku está pensando…" : "";
 }
@@ -242,7 +322,7 @@ function sendChat(): void {
   const text = input?.value.trim();
   if (!input || !text) return;
   if (!state.backendOn || !link.send({ type: "text_input", text, quiet })) {
-    byId("typing")!.textContent = "Miku está apagada: enciéndela desde Inicio.";
+    byId("typing")!.textContent = "Miku está apagada: enciéndela para escribirle.";
     return;
   }
   input.value = "";
@@ -261,10 +341,11 @@ export function onChatEvent(msg: Record<string, any>): void {
       clearTimeout(echoTimer);
       echoTimer = null;
     }
-    chatLog.push({ who: msg.who, text: String(msg.text), at: nowHM() });
-    if (chatLog.length > 200) chatLog.shift();
+    chatLog.push({ who: msg.who, text: String(msg.text), at: nowHM(), day: localDay() });
+    if (chatLog.length > 400) chatLog.shift();
   } else if (msg.type === "state") {
     thinking = msg.value === "thinking";
   } else return;
-  paintChat();
+  const box = byId("chat");
+  paintChat(!box || box.scrollHeight - box.scrollTop - box.clientHeight < 60);
 }

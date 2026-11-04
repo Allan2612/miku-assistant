@@ -151,11 +151,12 @@ Al usuario le gusta todo. Cambios pedidos:
   - Una sola instancia: abrir `miku.exe` otra vez muestra el panel, por TCP en 127.0.0.1:8766.
   - "Arrancar con Windows" en Configuración (HKCU Run, con `--tray`).
   - El atajo y el micrófono se cambian desde el panel (`hotkey`, `audio.input_device`).
-  - Música de fondo opcional en Inicio: una canción del usuario en `<datos>/panel-music`; el ecualizador baila con ella.
   - Botón «Reentrenar» en Palabra clave: `core/train_wakeword.py`, con 60 marcas, 20 de ellas tuyas, y PyTorch.
     Usa tus clips, variaciones de ellos y voces de edge-tts. Solo instala el modelo nuevo si en clips que no vio oye
     tus llamadas y se dispara sola igual o mejor que el actual. Lo guarda en `cache/wake/hey_miku.onnx`, que una
     actualización no pisa.
+- **Rediseño de UI/UX (3-nov):** auditoría pantalla por pantalla, paginación, Almacenamiento y quitar la música:
+  ver [plan-panel-ux.md](plan-panel-ux.md).
 
 ## Fases
 

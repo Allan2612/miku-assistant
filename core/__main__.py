@@ -78,7 +78,7 @@ async def async_main() -> None:
         level=numeric_level,
         # Milliseconds: activation latency (wake word -> cue -> mic) is invisible at 1 s resolution
         format="%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
+        datefmt="%Y-%m-%d %H:%M:%S",  # the date: the panel's Logs separates days
         handlers=handlers,
     )
 

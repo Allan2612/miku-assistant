@@ -6,6 +6,7 @@ Run by miku.exe as a short process, so it works with Miku off:
     python -m core.settings set < JSON    -> {"ok": true} or {"ok": false, "error": "..."}
     python -m core.settings tools         -> the tools, for the Herramientas page
     python -m core.settings testkey < KEY -> whether a Gemini API key works (empty: the saved one)
+    python -m core.settings testobs < PW  -> whether OBS answers with that password (empty: the saved one)
 
 config.yaml is written by editing one value inside its section's braces (PyYAML would drop every comment), then
 read back with load_config to check it; the previous file stays as config.yaml.bak.
@@ -214,6 +215,19 @@ def test_key(key: str) -> Dict[str, Any]:
                 else f"No pude comprobarla: {msg[:120]}"}
 
 
+def test_obs(password: str) -> Dict[str, Any]:
+    """Asks a running OBS for its version with that password: changes nothing in OBS."""
+    from core.tools import obs
+
+    if password.strip():
+        obs._password = lambda: password.strip()  # this short process only
+    try:
+        version = obs._request("GetVersion")
+        return {"ok": True, "version": version.get("obsVersion", "")}
+    except obs.ObsError as e:
+        return {"ok": False, "error": str(e)}
+
+
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "get":
@@ -226,8 +240,10 @@ def main() -> None:
         out = inputs()
     elif cmd == "testkey":
         out = test_key(sys.stdin.read())
+    elif cmd == "testobs":
+        out = test_obs(sys.stdin.read())
     else:
-        out = {"ok": False, "error": "uso: get | set | tools | inputs | testkey"}
+        out = {"ok": False, "error": "uso: get | set | tools | inputs | testkey | testobs"}
     sys.stdout.write(json.dumps(out, ensure_ascii=False))
 
 

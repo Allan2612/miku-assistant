@@ -75,6 +75,11 @@ def responses_sent(request):
 AUDIO = np.zeros(16000, dtype=np.float32)
 
 
+def test_timeout_is_one_the_api_accepts():
+    # 3-nov: 8 s made every request fail with 400 "Minimum allowed deadline is 10s"
+    assert llm.GEMINI_TIMEOUT_MS >= 10_000
+
+
 def test_action_results_go_back_and_the_answer_comes_from_them():
     ran.clear()
     b, models = brain(reply("", ("open_app", {"app_name": "spotify"}), ("set_volume", {"level": 30})),
@@ -389,4 +394,5 @@ if __name__ == "__main__":
     test_fast_path_takes_no_request()
     test_pc_state_rides_in_the_request_but_not_in_the_history()
     test_history_survives_a_restart_and_keeps_reminders()
+    test_timeout_is_one_the_api_accepts()
     print("ok")

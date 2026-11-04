@@ -1,70 +1,83 @@
 /**
- * Miku Assistant panel: Inicio, Recursos, Cuotas and Logs (phase 2). The other sections say what they will hold.
+ * Miku Assistant panel: the sidebar and the "Estado" pages (Inicio, Recursos, Cuotas, Logs); Almacenamiento lives in
+ * storage.ts, the rest in manage.ts and voice.ts.
  * Data: the backend over the WebSocket (panel_hello / panel_get), the log and the on/off switch through Rust.
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { live2d } from "../live2d";
-import { driveEqualizer, followVisibility, musicWanted, toggleMusic } from "./music";
 import { renderSetup } from "./setup";
-import { onChatEvent, renderChat, renderWake } from "./voice";
-import { refreshReminders, renderConfig, renderFunctions, renderMemory, renderReminders, renderTools } from "./manage";
-import { MODEL, POWER_ICON, Reply, byId, comma, esc, head, icon, isTauri, link, offlineNote, size, state } from "./shared";
-
+import { renderStorage } from "./storage";
+import { onChatEvent, onWakeKey, renderChat, renderWake } from "./voice";
+import { openConversation, refreshReminders, renderConfig, renderFunctions, renderMemory, renderReminders, renderTools } from "./manage";
+import {
+  MODEL, POWER_ICON, Point, Reply, actions, ask, byId, comma, esc, flushUndo, head, icon, isTauri, lineChart, link, localDay,
+  niceMax, noAnswer, offlineNote, paint, size, state,
+} from "./shared";
 
 // ---------- sections ----------
 interface Section {
   id: string;
   label: string;
+  group: string;
   d: string;
   render: () => void;
   refresh?: () => Promise<void>;
   every?: number; // seconds between refreshes while shown
+  fill?: boolean; // the page fills the window and only its list scrolls
+  onKey?: (ev: KeyboardEvent) => void;
 }
 
 const SECTIONS: Section[] = [
-  { id: "inicio", label: "Inicio", d: "M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z", render: renderInicio, refresh: refreshInicio, every: 3 },
-  { id: "recursos", label: "Recursos", d: "M3 12h4l2.5-6 5 12 2.5-6H21", render: renderRecursos, refresh: refreshRecursos, every: 2 },
-  { id: "cuotas", label: "Cuotas", d: "M12 3v9h9M20.5 15A9 9 0 1 1 9 3.5", render: renderCuotas, refresh: refreshCuotas, every: 10 },
-  { id: "logs", label: "Logs", d: "M4 5h16v14H4zM7.5 9.5 10 12l-2.5 2.5M12.5 15h4", render: renderLogs, refresh: refreshLogs, every: 1.5 },
-  { id: "config", label: "Configuración", d: "M4 7h10M18 7h2M4 17h4M12 17h8M16 4.5v5M10 14.5v5", render: renderConfig },
-  { id: "herramientas", label: "Herramientas", d: "M14.7 6.3a4 4 0 0 0 5 5L11 20a2.1 2.1 0 0 1-3-3l8.7-8.7a4 4 0 0 1-2-2z", render: renderTools },
-  { id: "funciones", label: "Funciones", d: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", render: renderFunctions },
-  { id: "recordatorios", label: "Recordatorios", d: "M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0", render: renderReminders, refresh: refreshReminders, every: 5 },
-  { id: "memoria", label: "Memoria", d: "M6 4h12v17l-6-4-6 4z", render: renderMemory },
-  { id: "palabra", label: "Palabra clave", d: "M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21", render: renderWake },
-  { id: "chat", label: "Chat", d: "M4 5h16v11H9l-5 4z", render: renderChat },
+  { id: "inicio", group: "ESTADO", label: "Inicio", d: "M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z", render: renderInicio, refresh: refreshInicio, every: 3 },
+  { id: "recursos", group: "ESTADO", label: "Recursos", d: "M3 12h4l2.5-6 5 12 2.5-6H21", render: renderRecursos, refresh: async () => paintRecursos(), every: 2 },
+  { id: "almacenamiento", group: "ESTADO", label: "Almacenamiento", d: "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3", render: renderStorage },
+  { id: "cuotas", group: "ESTADO", label: "Cuotas", d: "M12 3v9h9M20.5 15A9 9 0 1 1 9 3.5", render: renderCuotas, refresh: refreshCuotas, every: 10 },
+  { id: "logs", group: "ESTADO", label: "Logs", d: "M4 5h16v14H4zM7.5 9.5 10 12l-2.5 2.5M12.5 15h4", render: renderLogs, refresh: refreshLogs, every: 1.5, fill: true },
+  { id: "config", group: "MIKU", label: "Configuración", d: "M4 7h10M18 7h2M4 17h4M12 17h8M16 4.5v5M10 14.5v5", render: renderConfig },
+  { id: "herramientas", group: "MIKU", label: "Herramientas", d: "M14.7 6.3a4 4 0 0 0 5 5L11 20a2.1 2.1 0 0 1-3-3l8.7-8.7a4 4 0 0 1-2-2z", render: renderTools },
+  { id: "funciones", group: "MIKU", label: "Funciones", d: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z", render: renderFunctions },
+  { id: "palabra", group: "MIKU", label: "Palabra clave", d: "M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21", render: renderWake, onKey: onWakeKey },
+  { id: "recordatorios", group: "LO TUYO", label: "Recordatorios", d: "M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0", render: renderReminders, refresh: refreshReminders, every: 5 },
+  { id: "memoria", group: "LO TUYO", label: "Memoria", d: "M6 4h12v17l-6-4-6 4z", render: renderMemory },
+  { id: "chat", group: "LO TUYO", label: "Chat", d: "M4 5h16v11H9l-5 4z", render: renderChat, fill: true },
 ];
 
 let current: Section = SECTIONS[0];
-let lastRefresh = 0;
+let lastRefresh = -Infinity;
 
 function renderNav(): void {
-  byId("nav")!.innerHTML = SECTIONS.map(
-    (s) => `<button type="button" class="nav-btn" data-go="${s.id}"${s === current ? ' aria-current="page"' : ""}>${icon(s.d)}<span>${esc(s.label)}</span></button>`,
-  ).join("");
+  let group = "";
+  byId("nav")!.innerHTML = SECTIONS.map((s) => {
+    const label = s.group !== group ? `<div class="nav-group" aria-hidden="true">${(group = s.group)}</div>` : "";
+    return `${label}<button type="button" class="nav-btn" data-go="${s.id}"${s === current ? ' aria-current="page"' : ""}>${icon(s.d)}<span>${esc(s.label)}</span></button>`;
+  }).join("");
 }
 
-function go(id: string): void {
+async function go(id: string): Promise<void> {
   const next = SECTIONS.find((s) => s.id === id);
   if (!next) return;
+  if (actions.leaveGuard?.() && !(await ask("Hay cambios sin guardar", "Si cambias de página se pierden.", "Salir sin guardar", true))) return;
+  actions.leaveGuard = null;
+  flushUndo(); // a deletion waiting for "Deshacer" happens now
   if (current.id === "inicio" && next.id !== "inicio") live2d.stopTicker();
   current = next;
   renderNav();
   const v = byId("view")!; // each page sets its own handlers
   v.onclick = v.oninput = v.onchange = v.onkeydown = null;
+  v.className = `view${current.fill ? " fill" : ""}`;
   v.scrollTop = 0;
   current.render();
-  lastRefresh = 0;
-  tick();
+  lastRefresh = -Infinity;
+  void tick();
 }
-
+actions.go = (id) => void go(id);
 
 // ---------- Inicio ----------
-const MUSIC_ICON = "M9 18V5l11-2v13M9 18a3 3 0 1 1-3-3 3 3 0 0 1 3 3zM20 16a3 3 0 1 1-3-3 3 3 0 0 1 3 3z";
 let stage: HTMLDivElement | null = null;
 let mikuReady = false;
+let lastStatus: Reply = null;
 
 function mikuStage(): HTMLDivElement {
   if (stage) return stage;
@@ -76,7 +89,7 @@ function mikuStage(): HTMLDivElement {
   stage.appendChild(canvas);
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   live2d
-    .init(canvas, 240 * dpr, 280 * dpr, 30)
+    .init(canvas, 196 * dpr, 228 * dpr, 30)
     // A different path string than Miku's window: her saved framing (localStorage, keyed by path) is for 420x620
     .then(() => live2d.loadModel(`/${MODEL.replace(/^\/+/, "")}`, 0))
     .then(() => {
@@ -90,45 +103,43 @@ function mikuStage(): HTMLDivElement {
 function renderInicio(): void {
   const now = new Date().toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long" });
   byId("view")!.innerHTML = `
-    ${head("INICIO", "", "", `<span class="meta">${esc(now)}</span>`)}
+    ${head("Inicio", "", `<span class="meta">${esc(now)}</span>`)}
     <section class="hero" aria-label="Estado de Miku"><div class="hero-in">
       <div id="stage-slot"></div>
       <div class="hero-text">
-        <div id="eq" class="eq" aria-hidden="true">${Array.from({ length: 28 }, (_, i) => `<span style="height:${20 + Math.round(Math.abs(Math.sin(i * 1.7)) * 44)}px;animation-delay:${((i % 7) * 0.13).toFixed(2)}s"></span>`).join("")}</div>
-        <div><div id="hero-title" class="hero-title"></div><div id="hero-text" class="muted"></div></div>
-        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
-          <button type="button" id="power" class="power"><span id="power-label"></span><span class="ic">${icon(POWER_ICON)}</span></button>
-          <button type="button" id="music" class="btn ghost" style="min-height:54px;border-radius:999px;padding:0 20px" aria-pressed="${musicWanted()}">${icon(MUSIC_ICON, 16)} Música</button>
-          <span id="music-msg" class="msg"></span>
-        </div>
+        <div id="eq" class="eq" aria-hidden="true">${Array.from({ length: 28 }, (_, i) => `<span style="height:${18 + Math.round(Math.abs(Math.sin(i * 1.7)) * 30)}px;animation-delay:${((i % 7) * 0.08).toFixed(2)}s"></span>`).join("")}</div>
+        <div><div id="hero-title" class="hero-title"></div><div id="hero-text" class="muted" aria-live="polite"></div></div>
+        <button type="button" id="power" class="power"><span id="power-label"></span><span class="ic">${icon(POWER_ICON)}</span></button>
       </div>
     </div></section>
     <div class="grid">
-      <section class="card" aria-label="Piezas"><h2>Piezas</h2><div id="tiles" class="tiles"></div></section>
-      <section class="card" aria-label="Lo último que hizo"><div class="card-head"><h2>Hoy</h2><button type="button" class="chip" data-go="logs">Ver logs</button></div><div id="recent"></div></section>
-      <section class="card" aria-label="Cuota de Gemini"><div class="card-head"><h2>Cuota de Gemini</h2><button type="button" class="chip" data-go="cuotas">Detalle</button></div><div id="quota-mini" style="display:flex;flex-direction:column;gap:12px"></div></section>
+      <section class="card" aria-label="Piezas"><h2>Piezas</h2><div id="tiles" class="pieces"></div></section>
+      <section class="card" aria-label="Lo último que le dijiste"><div class="card-head"><h2>Hoy</h2><button type="button" class="chip" data-go="memoria">Conversaciones</button></div><div id="recent"></div></section>
+      <section class="card" aria-label="Cuota de Gemini"><div class="card-head"><h2>Cuota de Gemini</h2><button type="button" class="chip" data-go="cuotas">Detalle</button></div><div id="quota-mini" style="display:flex;flex-direction:column;gap:10px"></div></section>
     </div>`;
   byId("stage-slot")!.replaceWith(mikuStage());
   live2d.startTicker();
-  driveEqualizer();
-  paintPower();
   paintInicio(lastStatus);
 }
-
-let lastStatus: Reply = null;
 
 async function refreshInicio(): Promise<void> {
   lastStatus = state.backendOn ? await link.request("status") : null;
   if (current.id === "inicio") paintInicio(lastStatus);
 }
 
+/** What she is doing right now, from her "state" events. */
+function activityText(s: Reply): string {
+  if (!state.backendOn) return "No usa micrófono, CPU ni VRAM. Enciéndela cuando quieras.";
+  if (!s) return "Arrancando…";
+  if (state.activity === "listening") return "Te está escuchando…";
+  if (state.activity === "thinking") return "Pensando la respuesta…";
+  if (state.activity === "speaking") return "Hablando";
+  if (s.fullscreen) return "Hay algo a pantalla completa: te responde solo con voz";
+  return `Esperando «Hey Miku» o ${state.hotkey}`;
+}
+
 function paintPower(): void {
   const on = state.backendOn;
-  byId("title") && (byId("title")!.textContent = on ? "Todo en orden" : "Miku está apagada");
-  byId("subtitle") &&
-    (byId("subtitle")!.textContent = on
-      ? "Miku te escucha. Di «Hey Miku» o pulsa Ctrl+Alt+M."
-      : "No usa micrófono, CPU ni VRAM. Enciéndela cuando quieras.");
   const btn = byId("power") as HTMLButtonElement | null;
   if (btn) {
     btn.className = `power ${on ? "on" : "off"}`;
@@ -136,66 +147,46 @@ function paintPower(): void {
     byId("power-label")!.textContent = state.powerBusy ? (on ? "Apagando…" : "Encendiendo…") : on ? "Apagar Miku" : "Encender Miku";
   }
   byId("hero-title") && (byId("hero-title")!.textContent = on ? "Encendida" : "Apagada");
+  byId("hero-text") && (byId("hero-text")!.textContent = activityText(lastStatus));
   const eq = byId("eq");
   if (eq) eq.className = `eq${on ? (state.speaking ? " speaking" : "") : " off"}`;
   stage?.classList.toggle("off", !on);
   if (mikuReady) live2d.setExpression(on ? "happy" : "neutral");
-  byId("side-dot")!.style.background = on ? "#39c5bb" : "#56666a";
-  byId("side-dot")!.style.boxShadow = on ? "0 0 10px #39c5bb" : "none";
+  byId("side-dot")!.className = `dot${on ? " ok" : ""}`;
   byId("side-text")!.textContent = state.powerBusy ? "Cambiando…" : on ? "Encendida" : "Apagada";
 }
 
 function paintInicio(s: Reply): void {
   paintPower();
   const on = state.backendOn;
-  const heroText = byId("hero-text");
-  if (heroText) {
-    heroText.textContent = !on
-      ? "VRAM liberada · el panel sigue abierto"
-      : !s
-        ? "Arrancando…"
-        : s.fullscreen
-          ? "Hay algo a pantalla completa: responde solo con voz"
-          : `Escuchando «Hey Miku»${s.rvc?.loaded ? " · voz RVC lista en la GPU" : ""}`;
-  }
-  const tiles = byId("tiles");
-  if (tiles) {
-    const g = s?.gemini;
-    const primaryWait = g?.cooldowns?.[g.primary];
-    const rows: [string, string, string][] = !on || !s
-      ? [["Backend", on ? "Arrancando…" : "Detenido", "#56666a"], ["Voz RVC", "—", "#56666a"], ["Palabra clave", "—", "#56666a"], ["Extensión de Opera", "—", "#56666a"], ["OBS", "—", "#56666a"], ["Gemini", "—", "#56666a"]]
-      : [
-          ["Backend", `Activo · PID ${s.pid}`, "#39c5bb"],
-          ["Voz RVC", !s.rvc.enabled ? "Desactivada" : s.rvc.loaded ? "Cargada en la GPU" : "Se carga al hablar", s.rvc.enabled ? "#39c5bb" : "#56666a"],
-          ["Palabra clave", !s.wakeword.enabled ? "Desactivada" : s.wakeword.listening ? `Escuchando · umbral ${comma(s.wakeword.threshold, 2)}` : "En pausa mientras conversa", s.wakeword.enabled ? "#39c5bb" : "#56666a"],
-          ["Extensión de Opera", s.opera.connected ? `Conectada · ${s.opera.tabs} pestañas` : "Sin conectar", s.opera.connected ? "#39c5bb" : "#56666a"],
-          ["OBS", s.obs ? "Abierto" : "Cerrado", s.obs ? "#39c5bb" : "#56666a"],
-          ["Gemini", primaryWait ? `Principal en pausa ${Math.ceil(primaryWait / 60)} min` : `En uso: ${g.last_model || g.primary}`, primaryWait ? "#f2b544" : "#39c5bb"],
-        ];
-    tiles.innerHTML = rows.map(([n, t, c]) => `<div class="tile"><b><span class="dot" style="background:${c}"></span>${esc(n)}</b><span>${esc(t)}</span></div>`).join("");
-  }
-  const recent = byId("recent");
-  if (recent) {
-    const turns: any[] = s?.recent ?? [];
-    recent.innerHTML = !on
-      ? `<span class="dim">Sin actividad mientras está apagada.</span>`
-      : !turns.length
-        ? `<span class="dim">Todavía nada desde que arrancó.</span>`
-        : turns
-            .map((t) => `<div class="list-row"><span class="mono dim" style="width:44px">${esc(t.at)}</span><span style="flex:1;font-size:13px;color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.user)}</span><span class="pill ${t.kind === "local" ? "ok" : "gem"}">${t.kind === "local" ? "LOCAL" : "GEMINI"}</span></div>`)
-            .join("");
-  }
-  const q = byId("quota-mini");
-  if (q) {
-    const g = s?.gemini;
-    q.innerHTML = !on || !g
-      ? `<span class="dim">Se ve con Miku encendida.</span>`
-      : `<div style="display:flex;align-items:baseline;gap:8px"><b class="mono" style="font-size:38px;font-weight:500;color:var(--teal-l)">${g.used}</b><span class="muted">de ${g.limit ?? "?"} peticiones</span></div>
-         <div class="bar"><div style="width:${g.limit ? Math.min(100, (g.used / g.limit) * 100) : 0}%"></div></div>
-         <span class="dim">Modelo en uso: ${esc(g.last_model || g.primary)}</span>
-         ${g.cooldowns?.[g.primary] ? `<span style="font-size:12px;color:var(--amber)">El principal está saturado · vuelve a probar en ${Math.ceil(g.cooldowns[g.primary] / 60)} min</span>` : ""}
-         <span class="dim">Se renueva a las ${esc(g.reset)}</span>`;
-  }
+  const g = s?.gemini;
+  const primaryWait = g?.cooldowns?.[g.primary];
+  const rows: [string, string, string][] = !on || !s
+    ? ["Backend", "Voz RVC", "Palabra clave", "Extensión de Opera", "OBS", "Gemini"].map((n, i) => [n, i ? "—" : on ? "Arrancando…" : "Detenido", ""])
+    : [
+        ["Backend", `Activo · PID ${s.pid}`, "ok"],
+        ["Voz RVC", !s.rvc.enabled ? "Desactivada · solo subtítulos" : s.rvc.loaded ? "Cargada en la GPU" : "Se carga al hablar", s.rvc.enabled ? "ok" : ""],
+        ["Palabra clave", !s.wakeword.enabled ? "Desactivada · solo con el atajo" : s.wakeword.listening ? `Escuchando · umbral ${comma(s.wakeword.threshold, 2)}` : "En pausa mientras conversa", s.wakeword.enabled ? "ok" : ""],
+        ["Extensión de Opera", s.opera.connected ? `Conectada · ${s.opera.tabs} pestañas` : "Sin conectar · abre Opera con la extensión de Miku", s.opera.connected ? "ok" : "warn"],
+        ["OBS", s.obs ? "Abierto · clips y grabación por voz" : "Cerrado", s.obs ? "ok" : ""],
+        ["Gemini", primaryWait ? `Principal saturado · vuelve en ${Math.ceil(primaryWait / 60)} min` : `En uso: ${g.last_model || g.primary}`, primaryWait ? "warn" : "ok"],
+      ];
+  paint(byId("tiles"), rows.map(([n, t, c]) => `<div class="piece"><span class="dot ${c}" aria-hidden="true"></span><b>${esc(n)}</b><span class="ellipsis" title="${esc(t)}">${esc(t)}</span></div>`).join(""));
+  const turns: any[] = s?.recent ?? [];
+  paint(byId("recent"), !on
+    ? `<span class="dim">Sin actividad mientras está apagada.</span>`
+    : !turns.length
+      ? `<span class="dim">Todavía nada desde que arrancó.</span>`
+      : turns.slice(0, 5).map((t) => `<div class="list-row"><button type="button" class="turn" data-turn="${esc(t.at)}" style="display:flex;align-items:center;gap:12px;min-width:0" title="Ver la conversación">
+          <span class="mono dim" style="width:40px">${esc(t.at)}</span><span class="ellipsis" style="flex:1;font-size:13px;color:var(--soft)">${esc(t.user)}</span>
+          <span class="pill ${t.kind === "local" ? "ok" : "gem"}">${t.kind === "local" ? "LOCAL" : "GEMINI"}</span></button></div>`).join(""));
+  paint(byId("quota-mini"), !on || !g
+    ? `<span class="dim">Se ve con Miku encendida.</span>`
+    : `<div style="display:flex;align-items:baseline;gap:8px"><b class="mono" style="font-size:34px;font-weight:500;color:var(--teal-l)">${g.used}</b><span class="muted">de ${g.limit ?? "?"} peticiones hoy</span></div>
+       <div class="bar" role="img" aria-label="${g.used} de ${g.limit ?? "?"}"><div style="width:${g.limit ? Math.min(100, (g.used / g.limit) * 100) : 0}%;${g.limit && g.used / g.limit >= 0.8 ? "background:var(--amber)" : ""}"></div></div>
+       <span class="dim">Modelo en uso: ${esc(g.last_model || g.primary)}</span>
+       ${primaryWait ? `<span class="msg warn" style="font-size:12px">El principal está saturado · vuelve a probar en ${Math.ceil(primaryWait / 60)} min</span>` : ""}
+       <span class="dim">Se renueva a las ${esc(g.reset)}</span>`);
 }
 
 async function togglePower(): Promise<void> {
@@ -211,198 +202,303 @@ async function togglePower(): Promise<void> {
   state.powerBusy = false;
   if (state.backendOn) link.connect();
   paintPower();
-  lastRefresh = 0;
+  current.render(); // pages that said "Miku está apagada" load their data now
+  lastRefresh = -Infinity;
 }
+actions.power = togglePower;
 
-// ---------- Recursos ----------
-const cpuHist: number[] = [];
-const vramHist: number[] = [];
+// ---------- Recursos: sampled every 2 s while the panel is open, so the charts are already full when opened ----------
+const SPAN = 120_000;
+const cpuPts: Point[] = [];
+const vramPts: Point[] = [];
+let res: Reply = null;
+let lastSample = 0;
+
+async function sampleResources(): Promise<void> {
+  if (!state.backendOn || performance.now() - lastSample < 1950) return;
+  lastSample = performance.now();
+  res = await link.request("processes");
+  if (!res) return;
+  const t = Date.now();
+  cpuPts.push({ t, v: res.total.cpu });
+  vramPts.push({ t, v: res.total.vram });
+  for (const pts of [cpuPts, vramPts]) while (pts.length && pts[0].t < t - SPAN - 10_000) pts.shift();
+}
 
 function renderRecursos(): void {
   byId("view")!.innerHTML = `
-    ${head("RECURSOS", "Lo que consume Miku", "Los mismos procesos que salen agrupados como «Miku Assistant» en el Administrador de tareas.", `<span class="pill gem">En vivo · cada 2 s</span>`)}
-    <div id="res-body" style="display:flex;flex-direction:column;gap:18px"></div>`;
-  paintRecursos(null);
+    ${head("Recursos", "Lo que consume Miku: los mismos procesos que salen agrupados como «Miku Assistant» en el Administrador de tareas.", `<span class="pill ok">En vivo · cada 2 s</span>`)}
+    <div id="res-body" class="stack"></div>`;
+  paintRecursos();
 }
 
-async function refreshRecursos(): Promise<void> {
-  const data = state.backendOn ? await link.request("processes") : null;
-  if (data) {
-    cpuHist.push(data.total.cpu);
-    vramHist.push(data.total.vram);
-    for (const h of [cpuHist, vramHist]) if (h.length > 60) h.shift();
-  }
-  if (current.id === "recursos") paintRecursos(data);
-}
-
-function chart(values: number[], color: string, fill: string, label: string): string {
-  const max = Math.max(1, ...values) * 1.15;
-  const span = Math.max(1, values.length - 1); // the full width from the first samples on
-  const pts = values.map((v, i) => `${((i / span) * 300).toFixed(1)},${(90 - (v / max) * 84).toFixed(1)}`).join(" ");
-  return `<svg class="chart" role="img" aria-label="${esc(label)}" viewBox="0 0 300 90" preserveAspectRatio="none">
-    ${values.length > 1 ? `<polyline points="0,90 ${pts} 300,90" fill="${fill}" stroke="none"></polyline><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"></polyline>` : ""}
-  </svg>`;
-}
-
-function paintRecursos(d: Reply): void {
+function paintRecursos(): void {
   const body = byId("res-body");
   if (!body) return;
-  if (!state.backendOn) {
-    body.innerHTML = offlineNote();
-    return;
-  }
-  if (!d) {
-    body.innerHTML = body.innerHTML || `<span class="dim">Midiendo…</span>`;
-    return;
-  }
+  if (!state.backendOn) return paint(body, offlineNote());
+  const d = res;
+  if (!d) return paint(body, `<span class="dim">Midiendo…</span>`);
   const gk = d.gpu_known;
-  const kpis = [
-    ["CPU de Miku", `${comma(d.total.cpu)} %`, "de toda la CPU"],
-    ["Memoria", size(d.total.ram), `${d.groups.reduce((n: number, g: any) => n + g.count, 0)} procesos`],
-    ["VRAM", gk ? size(d.total.vram) : "—", gk ? "voz RVC y dibujo" : "sin contadores de GPU"],
-    ["GPU total", gk ? `${Math.round(d.gpu_total)} %` : "—", "con todo lo que tengas abierto"],
-  ];
-  const maxRam = Math.max(1, ...d.groups.map((g: any) => g.ram));
+  const kpi = (label: string, value: string, note: string, color: string) =>
+    `<div class="card kpi"><span class="muted" style="font-size:12px">${label}</span><span class="big" style="color:${color}">${value}</span><span class="dim">${note}</span></div>`;
+  const cpuMax = niceMax(Math.max(0, ...cpuPts.map((p) => p.v)), [5, 10, 25, 50, 100]);
+  const gb = 1024 ** 3;
+  const vramMax = d.vram_total || niceMax(Math.max(0, ...vramPts.map((p) => p.v)), [1, 2, 4, 8, 12, 16, 24].map((g) => g * gb));
+  const count = d.groups.reduce((n: number, g: any) => n + g.count, 0);
   body.innerHTML = `
-    <div class="row-wrap">${kpis.map(([l, v, n], i) => `<div class="card kpi"><span class="muted" style="font-size:12px">${l}</span><span class="big" style="color:${i === 2 ? "var(--pink-l)" : "var(--teal-l)"}">${v}</span><span class="dim">${n}</span></div>`).join("")}</div>
     <div class="row-wrap">
-      <section class="card" style="flex:3 1 520px;overflow-x:auto" aria-label="Procesos"><h2>Procesos</h2>
-        <div class="table">
-          <span class="th">PROCESO</span><span class="th">CPU</span><span class="th">MEMORIA</span><span class="th">VRAM</span><span class="th">GPU</span>
-          ${d.groups.map((g: any) => `
-            <div class="name"><b>${esc(g.name)}${g.count > 1 ? ` <span class="dim">(${g.count})</span>` : ""}</b><span>${esc(g.what)}</span></div>
-            <span class="mono">${comma(g.cpu)} %</span>
-            <div style="display:flex;align-items:center;gap:10px"><div class="bar" style="flex:1"><div style="width:${(g.ram / maxRam) * 100}%"></div></div><span class="mono" style="width:60px;text-align:right">${size(g.ram)}</span></div>
-            <span class="mono" style="color:${g.vram > 0 ? "var(--pink-l)" : "var(--dim)"}">${gk && g.vram > 0 ? size(g.vram) : "—"}</span>
-            <span class="mono">${gk ? `${Math.round(g.gpu)} %` : "—"}</span>`).join("")}
-        </div>
-      </section>
-      <div style="flex:2 1 300px;display:flex;flex-direction:column;gap:18px;min-width:0">
-        <section class="card" aria-label="CPU"><div class="card-head"><h2>CPU</h2><span class="mono" style="color:var(--teal-l)">${comma(d.total.cpu)} %</span></div>${chart(cpuHist, "#39c5bb", "rgba(57,197,187,0.10)", "CPU de Miku en los últimos 2 minutos")}<span class="dim">Últimos 2 minutos</span></section>
-        <section class="card" aria-label="VRAM"><div class="card-head"><h2>VRAM</h2><span class="mono" style="color:var(--pink-l)">${gk ? size(d.total.vram) : "—"}</span></div>${chart(vramHist, "#ff5aaa", "rgba(255,90,170,0.10)", "VRAM de Miku en los últimos 2 minutos")}<span class="dim">Últimos 2 minutos</span></section>
+      ${kpi("CPU de Miku", `${comma(d.total.cpu)} %`, "de toda la CPU", "var(--teal-l)")}
+      ${kpi("Memoria", size(d.total.ram), `de ${size(d.ram_total)} del PC · ${count} procesos`, "var(--teal-l)")}
+      ${kpi("VRAM", gk ? size(d.total.vram) : "—", gk ? (d.vram_total ? `de ${size(d.vram_total)} de la tarjeta` : "voz RVC y dibujo") : "sin contadores de GPU", "var(--violet)")}
+    </div>
+    <section class="card" style="overflow-x:auto" aria-label="Procesos"><div class="card-head"><h2>Procesos</h2>${gk ? `<span class="dim">GPU de todo el PC: ${Math.round(d.gpu_total)} %</span>` : ""}</div>
+      <div class="table">
+        <span class="th">PROCESO</span><span class="th">CPU</span><span class="th">MEMORIA (DEL PC)</span><span class="th">VRAM</span><span class="th">GPU</span>
+        ${d.groups.map((g: any) => `
+          <div class="name"><b>${esc(g.name)}${g.count > 1 ? ` <span class="dim">(${g.count})</span>` : ""}</b><span>${esc(g.what)}</span></div>
+          <span class="mono">${comma(g.cpu)} %</span>
+          <div style="display:flex;align-items:center;gap:10px" title="${comma((g.ram / d.ram_total) * 100)} % de la memoria del PC"><div class="bar" style="flex:1"><div style="width:${Math.max(1, (g.ram / d.ram_total) * 100)}%"></div></div><span class="mono" style="width:64px;text-align:right">${size(g.ram)}</span></div>
+          <span class="mono" style="color:${g.vram > 0 ? "var(--violet)" : "var(--dim)"}">${gk && g.vram > 0 ? size(g.vram) : "—"}</span>
+          <span class="mono">${gk ? `${Math.round(g.gpu)} %` : "—"}</span>`).join("")}
       </div>
+    </section>
+    <div class="grid">
+      <section class="card" aria-label="CPU"><div class="card-head"><h2>CPU de Miku</h2><span class="mono" style="color:var(--teal-l)">${comma(d.total.cpu)} %</span></div>
+        ${lineChart("cpu", cpuPts, { span: SPAN, max: cpuMax, color: "#39c5bb", fill: "rgba(57,197,187,0.10)", fmt: (v) => `${comma(v, v < 10 ? 1 : 0)} %`, label: "CPU de Miku en los últimos 2 minutos" })}</section>
+      <section class="card" aria-label="VRAM"><div class="card-head"><h2>VRAM de Miku</h2><span class="mono" style="color:var(--violet)">${gk ? size(d.total.vram) : "—"}</span></div>
+        ${lineChart("vram", vramPts, { span: SPAN, max: vramMax, color: "#b59cff", fill: "rgba(181,156,255,0.10)", fmt: (v) => size(v), label: "VRAM de Miku en los últimos 2 minutos" })}</section>
     </div>`;
 }
 
 // ---------- Cuotas ----------
+let quotaData: Reply = null;
+let quotaAsked = false;
+
 function renderCuotas(): void {
   byId("view")!.innerHTML = `
-    ${head("CUOTAS", "Peticiones a Gemini", "Plan gratuito. Solo cuentan las respuestas: una petición rechazada no gasta cuota.")}
-    <div id="q-body" style="display:flex;flex-direction:column;gap:18px"></div>`;
-  paintCuotas(null);
+    ${head("Cuotas", "Peticiones a Gemini en el plan gratuito. Solo cuentan las respuestas: una petición rechazada no gasta cuota.")}
+    <div id="q-body" class="stack"></div>`;
+  quotaAsked = false;
+  paintCuotas();
 }
 
 async function refreshCuotas(): Promise<void> {
-  const data = state.backendOn ? await link.request("quota") : null;
-  if (current.id === "cuotas") paintCuotas(data);
+  quotaData = state.backendOn ? await link.request("quota") : null;
+  quotaAsked = true;
+  if (current.id === "cuotas") paintCuotas();
 }
 
-function paintCuotas(d: Reply): void {
+function paintCuotas(): void {
   const body = byId("q-body");
   if (!body) return;
-  if (!state.backendOn) {
-    body.innerHTML = offlineNote();
-    return;
-  }
-  if (!d) {
-    body.innerHTML = body.innerHTML || `<span class="dim">Cargando…</span>`;
-    return;
-  }
+  if (!state.backendOn) return paint(body, offlineNote());
+  const d = quotaData;
+  if (!d) return paint(body, quotaAsked ? noAnswer() : `<span class="dim">Cargando…</span>`);
   const main = d.models.find((m: any) => m.primary) ?? d.models[0];
   const frac = main.limit ? Math.min(1, main.used / main.limit) : 0;
-  const circ = 2 * Math.PI * 80;
+  const circ = 2 * Math.PI * 70;
   const fmt = (n: number) => n.toLocaleString("es");
-  const waitText = (s: number) => (s >= 60 ? `En pausa ${Math.ceil(s / 60)} min` : `En pausa ${s} s`);
+  const status = (m: any) => {
+    if (m.cooldown) return `<span class="pill warn">En pausa ${m.cooldown >= 60 ? `${Math.ceil(m.cooldown / 60)} min` : `${m.cooldown} s`}</span>`;
+    if (m.limit && m.used >= m.limit) return `<span class="pill bad">Agotado hoy</span>`;
+    if (m.limit && m.used / m.limit >= 0.8) return `<span class="pill warn">Casi agotado</span>`;
+    return "";
+  };
   const week = d.week.map((w: any) => {
+    const entries = Object.entries(w.counts as Record<string, number>);
     const mainN = w.counts[d.primary] ?? 0;
-    const backN = Object.entries(w.counts).reduce((n: number, [m, c]) => (m === d.primary ? n : n + (c as number)), 0);
-    return { day: w.day, mainN, backN };
+    const back = entries.filter(([m, c]) => m !== d.primary && c);
+    return { day: w.day, mainN, backN: back.reduce((n, [, c]) => n + c, 0), back };
   });
-  const top = Math.max(1, ...week.map((w: any) => w.mainN + w.backN));
-  const dayName = (iso: string, i: number) => (i === 6 ? "hoy" : new Date(`${iso}T12:00:00`).toLocaleDateString("es", { weekday: "short" }));
-  body.innerHTML = `
+  const top = niceMax(Math.max(1, ...week.map((w: any) => w.mainN + w.backN)), [10, 25, 50, 100, 200, 300, 500, 750, 1000, 2000, 5000]);
+  const shortDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString("es", { weekday: "short", day: "numeric" });
+  paint(body, `
     <div class="row-wrap">
-      <section class="card" style="flex:1 1 300px;align-items:center;text-align:center" aria-label="Modelo principal">
-        <div class="ring-wrap"><svg width="190" height="190" viewBox="0 0 190 190" role="img" aria-label="${main.used} de ${main.limit ?? "?"} peticiones hoy">
-          <circle cx="95" cy="95" r="80" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="12"></circle>
-          <circle cx="95" cy="95" r="80" fill="none" stroke="#39c5bb" stroke-width="12" stroke-linecap="round" stroke-dasharray="${(circ * frac).toFixed(1)} ${circ.toFixed(1)}"></circle></svg>
+      <section class="card" style="flex:1 1 280px;align-items:center;text-align:center" aria-label="Modelo principal">
+        <div class="ring-wrap"><svg width="170" height="170" viewBox="0 0 170 170" role="img" aria-label="${main.used} de ${main.limit ?? "?"} peticiones hoy">
+          <circle cx="85" cy="85" r="70" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="12"></circle>
+          <circle cx="85" cy="85" r="70" fill="none" stroke="${frac >= 0.8 ? "#f2b544" : "#39c5bb"}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${(circ * frac).toFixed(1)} ${circ.toFixed(1)}"></circle></svg>
           <div class="ring-num"><b>${fmt(main.used)}</b><span class="muted" style="font-size:13px">de ${main.limit ? fmt(main.limit) : "?"} hoy</span></div></div>
         <b style="font-size:16px;font-weight:600">${esc(main.model)}</b>
         <span class="muted" style="font-size:13px">Modelo principal${main.limit ? ` · quedan ${fmt(Math.max(0, main.limit - main.used))}` : ""}</span>
-        ${main.cooldown ? `<span class="pill warn">${waitText(main.cooldown)}</span>` : `<span class="pill ok">Listo</span>`}
-        <span class="dim">La cuota se renueva a las ${esc(d.reset)} (medianoche del Pacífico)</span>
+        ${status(main) || `<span class="pill ok">Respondiendo</span>`}
+        <span class="dim">Se renueva a las ${esc(d.reset)} (medianoche del Pacífico)</span>
       </section>
-      <section class="card" style="flex:2 1 440px" aria-label="Modelos de respaldo"><h2>Modelos de respaldo</h2>
+      <section class="card" style="flex:2 1 420px" aria-label="Modelos de respaldo"><h2>Modelos de respaldo</h2>
         <p class="muted" style="margin:0;font-size:13px">Si el principal falla, Miku dice «Un momento…» y prueba el siguiente, en este orden.</p>
-        ${d.models.filter((m: any) => !m.primary).map((m: any) => `
-          <div class="list-row" style="flex-direction:column;align-items:stretch;gap:8px;padding:10px 0">
-            <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-size:14px">${esc(m.model)}</span>
-              <span style="display:flex;gap:10px;align-items:center"><span class="mono" style="font-size:13px">${fmt(m.used)} / ${m.limit ? fmt(m.limit) : "?"}</span><span class="pill ${m.cooldown ? "warn" : "ok"}">${m.cooldown ? waitText(m.cooldown) : "Listo"}</span></span></div>
-            <div class="bar"><div style="width:${m.limit ? Math.max(1.5, Math.min(100, (m.used / m.limit) * 100)) : 0}%;background:${m.limit && m.used / m.limit > 0.9 ? "var(--amber)" : "var(--teal)"}"></div></div>
-          </div>`).join("")}
+        ${d.models.filter((m: any) => !m.primary).map((m: any, i: number) => {
+          const f = m.limit ? m.used / m.limit : 0;
+          return `<div class="list-row" style="flex-direction:column;align-items:stretch;gap:8px;padding:9px 0">
+            <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><span style="display:flex;align-items:center;gap:10px;font-size:14px"><span class="order">${i + 1}</span>${esc(m.model)}</span>
+              <span style="display:flex;gap:10px;align-items:center">${status(m)}<span class="mono" style="font-size:13px">${fmt(m.used)} / ${m.limit ? fmt(m.limit) : "?"}</span></span></div>
+            <div class="bar"><div style="width:${m.used ? Math.max(1.5, Math.min(100, f * 100)) : 0}%;background:${f >= 0.8 ? "var(--amber)" : "var(--blue)"}"></div></div></div>`;
+        }).join("")}
       </section>
     </div>
-    <section class="card" aria-label="Últimos 7 días"><div class="card-head"><h2>Últimos 7 días</h2><span class="dim">Principal (turquesa) y respaldo (rosa)</span></div>
-      <div class="week">${week.map((w: any, i: number) => `<div><span class="mono dim" style="font-size:11px">${w.mainN + w.backN}</span>
-        <div class="stack" aria-hidden="true"><div style="height:${Math.round((w.backN / top) * 100)}px;border-radius:6px 6px 2px 2px;background:var(--pink)"></div><div style="height:${Math.round((w.mainN / top) * 100)}px;border-radius:2px 2px 6px 6px;background:var(--teal)"></div></div>
-        <span style="font-size:12px;color:${i === 6 ? "var(--teal-l)" : "var(--dim)"}">${esc(dayName(w.day, i))}</span></div>`).join("")}</div>
-    </section>`;
+    <section class="card" aria-label="Últimos 7 días"><div class="card-head"><h2>Últimos 7 días</h2>
+      <div class="legend"><span><i class="swatch" style="background:var(--teal)"></i>Principal</span><span><i class="swatch" style="background:var(--blue)"></i>Respaldo</span></div></div>
+      <div class="bars">
+        <div class="y" style="display:flex;flex-direction:column;justify-content:space-between;height:140px;font-family:var(--mono);font-size:10.5px;color:var(--dim);text-align:right"><span>${fmt(top)}</span><span>${fmt(top / 2)}</span><span>0</span></div>
+        <div class="cols"><div class="guide" style="top:0"></div><div class="guide" style="top:50%"></div>
+          ${week.map((w: any) => {
+            const tip = `${shortDay(w.day)}\nPrincipal: ${w.mainN}\nRespaldo: ${w.backN}${w.back.length ? `\n${w.back.map(([m, c]: [string, number]) => `  ${m}: ${c}`).join("\n")}` : ""}`;
+            return `<div class="col" data-tip="${esc(tip)}" tabindex="0" aria-label="${esc(tip.replace(/\n/g, ", "))}"><span class="mono dim" style="font-size:11px">${w.mainN + w.backN}</span>
+              <div style="height:${((w.backN / top) * 100).toFixed(1)}%;border-radius:5px 5px 0 0;background:var(--blue)"></div>
+              <div style="height:${((w.mainN / top) * 100).toFixed(1)}%;border-radius:${w.backN ? "0" : "5px 5px"} 0 0;background:var(--teal)"></div></div>`;
+          }).join("")}
+        </div>
+        <div class="days">${week.map((w: any, i: number) => `<span style="${i === 6 ? "color:var(--teal-l)" : ""}">${i === 6 ? "hoy" : esc(shortDay(w.day))}</span>`).join("")}</div>
+      </div>
+    </section>`);
 }
 
-// ---------- Logs ----------
+// ---------- Logs: only new lines are added (text stays selectable); older ones load on demand ----------
+const LOG_RE = /^(?:(\d{4}-\d{2}-\d{2}) )?(\d\d:\d\d:\d\d(?:\.\d{3})?) \[(\w+)\] ([\w.]+): (.*)$/;
 const LOG_FILTERS: [string, string, (l: LogLine) => boolean][] = [
   ["all", "Todo", () => true],
-  ["error", "Errores", (l) => l.lvl === "WARNING" || l.lvl === "ERROR"],
+  ["error", "Avisos y errores", (l) => l.lvl === "WARNING" || l.lvl === "ERROR" || l.lvl === "CRITICAL"],
   ["gemini", "Gemini", (l) => l.src === "llm"],
   ["wake", "Palabra clave", (l) => l.src === "wakeword"],
   ["tools", "Herramientas", (l) => l.src.startsWith("tools")],
 ];
-interface LogLine { t: string; lvl: string; src: string; msg: string }
+interface LogLine { d: string; t: string; lvl: string; src: string; msg: string }
+const log = { lines: [] as LogLine[], raw: 0, offset: 0, more: false, loaded: false, busy: false };
 let logFilter = "all";
 let logQuery = "";
 let logPaused = false;
-let logLines: LogLine[] = [];
+
+/** Parses log text; a line that is not a new entry (a traceback) belongs to the entry before it. */
+function parseLog(text: string, prev?: LogLine): LogLine[] {
+  const out: LogLine[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = LOG_RE.exec(line);
+    if (m) out.push({ d: m[1] ?? "", t: m[2], lvl: m[3], src: m[4].replace(/^miku\./, "").replace(/^websockets\./, "ws."), msg: m[5] });
+    else if (line.trim() && (out[out.length - 1] ?? prev)) (out[out.length - 1] ?? prev)!.msg += `\n${line}`;
+  }
+  return out;
+}
+
+const logKeep = (l: LogLine) => LOG_FILTERS.find(([id]) => id === logFilter)![2](l) && (!logQuery || l.msg.toLowerCase().includes(logQuery.toLowerCase()));
+
+function logRow(l: LogLine): string {
+  let msg = esc(l.msg);
+  if (logQuery) {
+    const parts = l.msg.split(new RegExp(`(${logQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "i"));
+    msg = parts.map((p, i) => (i % 2 ? `<mark>${esc(p)}</mark>` : esc(p))).join("");
+  }
+  const cls = l.lvl === "WARNING" ? " warn" : l.lvl === "ERROR" || l.lvl === "CRITICAL" ? " err" : "";
+  return `<div class="logline${cls}"><span>${esc(l.t)}</span><span class="lv">${esc(l.lvl === "WARNING" ? "WARN" : l.lvl)}</span><span title="${esc(l.src)}">${esc(l.src)}</span><span>${msg}</span></div>`;
+}
+
+/** The rows of `lines`, with a separator each time the day changes (`lastDay`: the day of the row before them). */
+function logRows(lines: LogLine[], lastDay: string): string {
+  let html = "";
+  for (const l of lines) {
+    if (!logKeep(l)) continue;
+    if (l.d && l.d !== lastDay) html += `<div class="logday">${esc(dayLabelLog(l.d))}</div>`;
+    if (l.d) lastDay = l.d;
+    html += logRow(l);
+  }
+  return html;
+}
+const dayLabelLog = (d: string) => (d === localDay() ? "Hoy" : new Date(`${d}T12:00:00`).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long" }));
+let logLastDay = "";
 
 function renderLogs(): void {
   byId("view")!.innerHTML = `
-    ${head("LOGS", "Qué está pasando", "cache/core.log en vivo. Solo lectura: el panel nunca borra los logs.")}
+    ${head("Logs", "cache/core.log en vivo. Solo lectura: el panel nunca borra los logs.")}
     <div class="toolbar">
-      <div class="chips" role="group" aria-label="Filtrar">${LOG_FILTERS.map(([id, label]) => `<button type="button" class="chip" data-filter="${id}" aria-pressed="${id === logFilter}">${label}</button>`).join("")}</div>
+      <div class="chips" role="group" aria-label="Filtrar">${LOG_FILTERS.map(([id, label]) => `<button type="button" class="chip" data-filter="${id}" aria-pressed="${id === logFilter}">${label}<span class="n" id="n-${id}"></span></button>`).join("")}</div>
       <div class="chips"><label for="log-q" class="sr">Buscar en el log</label><input id="log-q" class="search" type="search" placeholder="Buscar…" value="${esc(logQuery)}">
-        <button type="button" class="chip" id="log-pause" aria-pressed="${logPaused}">${logPaused ? "Seguir" : "Pausar"}</button></div>
+        <button type="button" class="chip" id="log-pause" aria-pressed="${logPaused}">${logPaused ? "Seguir" : "Pausar"}</button>
+        <button type="button" class="chip" data-open="logs">Abrir carpeta</button></div>
     </div>
-    <div id="logbox" class="logbox" aria-live="off"></div>`;
-  paintLogs(true);
+    <div id="logbox" class="logbox grow" aria-live="off"><span class="dim">Cargando…</span></div>`;
+  if (log.loaded) paintLogs(true);
+}
+
+function paintCounts(): void {
+  for (const [id, , keep] of LOG_FILTERS) paint(byId(`n-${id}`), String(log.lines.filter(keep).length));
+}
+
+function paintLogs(jump: boolean, keepFromBottom?: number): void {
+  const box = byId("logbox");
+  if (!box) return;
+  const html = logRows(log.lines, "");
+  const more = log.more ? `<div class="logmore"><button type="button" class="btn small ghost" id="log-older">Cargar líneas más antiguas</button></div>` : "";
+  box.innerHTML = more + (html || `<div class="dim" style="padding:30px 8px">Nada de este tipo en lo cargado.${log.more ? " Prueba a cargar líneas más antiguas." : ""}</div>`);
+  logLastDay = [...log.lines].reverse().find((l) => l.d)?.d ?? "";
+  if (keepFromBottom !== undefined) box.scrollTop = box.scrollHeight - keepFromBottom;
+  else if (jump) box.scrollTop = box.scrollHeight;
+  paintCounts();
+}
+
+async function loadLog(): Promise<void> {
+  const r = await invoke<{ text: string; more: boolean; offset: number }>("read_log", { lines: 1500, skip: 0 });
+  log.lines = parseLog(r.text);
+  log.raw = r.text ? r.text.split("\n").length : 0;
+  log.more = r.more;
+  log.offset = r.offset;
+  log.loaded = true;
+  if (current.id === "logs") paintLogs(true);
+}
+
+async function loadOlder(): Promise<void> {
+  const box = byId("logbox");
+  const fromBottom = box ? box.scrollHeight - box.scrollTop : 0;
+  const r = await invoke<{ text: string; more: boolean }>("read_log", { lines: 2000, skip: log.raw });
+  log.lines = [...parseLog(r.text), ...log.lines];
+  log.raw += r.text ? r.text.split("\n").length : 0;
+  log.more = r.more;
+  if (current.id === "logs") paintLogs(false, fromBottom);
 }
 
 async function refreshLogs(): Promise<void> {
-  if (logPaused || !isTauri) return;
+  if (!isTauri || log.busy) return;
+  log.busy = true;
   try {
-    const text = await invoke<string>("read_log", { lines: 1500 });
-    const re = /^(\d\d:\d\d:\d\d(?:\.\d{3})?) \[(\w+)\] ([\w.]+): (.*)$/;
-    logLines = text.split(/\r?\n/).map((l) => re.exec(l)).filter(Boolean).map((m) => ({ t: m![1], lvl: m![2], src: m![3].replace(/^miku\./, "").replace(/^websockets\./, "ws."), msg: m![4] }));
+    if (!log.loaded) await loadLog();
+    else if (!logPaused) {
+      const r = await invoke<{ text?: string; offset?: number; reset?: boolean }>("log_tail", { offset: log.offset });
+      if (r.reset) {
+        log.loaded = false; // the log rotated: read it again from the end
+        await loadLog();
+      } else if (r.text) {
+        const prev = log.lines[log.lines.length - 1];
+        const before = prev ? prev.msg.length : 0;
+        const fresh = parseLog(r.text, prev);
+        log.offset = r.offset!;
+        log.raw += r.text.replace(/\n$/, "").split("\n").length;
+        log.lines.push(...fresh);
+        const box = byId("logbox");
+        if (current.id === "logs" && box) {
+          if (prev && prev.msg.length !== before) paintLogs(false, box.scrollHeight - box.scrollTop); // a traceback grew
+          else {
+            const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+            const html = logRows(fresh, logLastDay);
+            if (html) {
+              box.querySelector(":scope > .dim")?.remove();
+              box.insertAdjacentHTML("beforeend", html);
+            }
+            logLastDay = [...fresh].reverse().find((l) => l.d)?.d ?? logLastDay;
+            if (atBottom) box.scrollTop = box.scrollHeight;
+            paintCounts();
+          }
+        }
+      }
+    }
   } catch (err) {
     console.warn("[Panel] log:", err);
+  } finally {
+    log.busy = false;
   }
-  if (current.id === "logs") paintLogs(false);
-}
-
-function paintLogs(jump: boolean): void {
-  const box = byId("logbox");
-  if (!box) return;
-  const atBottom = jump || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  const keep = LOG_FILTERS.find(([id]) => id === logFilter)![2];
-  const q = logQuery.toLowerCase();
-  const shown = logLines.filter((l) => keep(l) && (!q || l.msg.toLowerCase().includes(q))).slice(-400);
-  box.innerHTML = shown.length
-    ? shown.map((l) => `<div class="logline${l.lvl === "WARNING" ? " warn" : l.lvl === "ERROR" ? " err" : ""}"><span class="dim">${esc(l.t)}</span><span style="color:${l.lvl === "WARNING" ? "var(--amber)" : l.lvl === "ERROR" ? "var(--pink-l)" : "var(--teal-l)"}">${esc(l.lvl === "WARNING" ? "WARN" : l.lvl)}</span><span style="color:#9db3b1">${esc(l.src)}</span><span style="color:var(--soft)">${esc(l.msg)}</span></div>`).join("")
-    : `<div class="dim" style="padding:30px 8px">Nada de este tipo en las últimas líneas.</div>`;
-  if (atBottom) box.scrollTop = box.scrollHeight;
 }
 
 // ---------- loop and events ----------
 async function tick(): Promise<void> {
-  if (document.hidden || !current.refresh) return;
+  if (document.hidden) return;
+  void sampleResources();
+  if (!current.refresh) return;
   const now = performance.now();
   if (now - lastRefresh < (current.every ?? 2) * 1000 - 50) return;
   lastRefresh = now;
@@ -410,23 +506,23 @@ async function tick(): Promise<void> {
 }
 
 document.addEventListener("click", (ev) => {
-  const el = (ev.target as HTMLElement).closest<HTMLElement>("[data-go],[data-filter],#power,#log-pause,#music,#open-music");
+  const el = (ev.target as HTMLElement).closest<HTMLElement>("[data-go],[data-filter],[data-power],[data-retry],[data-open],[data-turn],#power,#log-pause,#log-older");
   if (!el) return;
-  if (el.dataset.go) go(el.dataset.go);
+  if (el.dataset.go) void go(el.dataset.go);
   else if (el.dataset.filter) {
     logFilter = el.dataset.filter;
     document.querySelectorAll<HTMLElement>("[data-filter]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.filter === logFilter)));
     paintLogs(true);
-  } else if (el.id === "power") void togglePower();
-  else if (el.id === "music") {
-    void toggleMusic().then((err) => {
-      el.setAttribute("aria-pressed", String(musicWanted()));
-      byId("music-msg")!.innerHTML = err
-        ? `Pon una canción (MP3 u OGG) en la carpeta de música. <button type="button" id="open-music" class="btn small">Abrir carpeta</button>`
-        : "";
-    });
-  } else if (el.id === "open-music") void invoke("open_music_folder");
-  else if (el.id === "log-pause") {
+  } else if (el.id === "power" || el.dataset.power !== undefined) void togglePower();
+  else if (el.dataset.retry !== undefined) current.render();
+  else if (el.dataset.open) invoke("open_folder", { which: el.dataset.open }).catch((err) => console.warn("[Panel] folder:", err));
+  else if (el.dataset.turn) {
+    openConversation(localDay(), el.dataset.turn);
+    void go("memoria");
+  } else if (el.id === "log-older") {
+    (el as HTMLButtonElement).disabled = true;
+    void loadOlder();
+  } else if (el.id === "log-pause") {
     logPaused = !logPaused;
     el.setAttribute("aria-pressed", String(logPaused));
     el.textContent = logPaused ? "Seguir" : "Pausar";
@@ -441,9 +537,13 @@ document.addEventListener("input", (ev) => {
   }
 });
 
+document.addEventListener("keydown", (ev) => {
+  const tag = (ev.target as HTMLElement).tagName;
+  if (current.onKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") current.onKey(ev);
+});
+
 // Hidden panel: no polling, no Live2D drawing
 document.addEventListener("visibilitychange", () => {
-  followVisibility();
   if (current.id !== "inicio") return;
   if (document.hidden) live2d.stopTicker();
   else live2d.startTicker();
@@ -452,6 +552,7 @@ document.addEventListener("visibilitychange", () => {
 link.onEvent = (msg) => {
   onChatEvent(msg);
   if (msg.type === "state") {
+    state.activity = String(msg.value);
     state.speaking = msg.value === "speaking";
     if (current.id === "inicio") paintPower();
   }
@@ -470,13 +571,16 @@ async function bootstrap(): Promise<void> {
       state.backendOn = ev.payload;
       if (state.backendOn) link.connect();
       if (current.id === "inicio") paintPower();
-      lastRefresh = 0;
+      lastRefresh = -Infinity;
     });
+    await listen<string>("hotkey-changed", (ev) => (state.hotkey = ev.payload));
+    invoke<string>("settings_get").then((t) => (state.hotkey = JSON.parse(t).hotkey || state.hotkey)).catch(() => {});
   } else {
     state.backendOn = true; // in a plain browser (vite dev or preview) there is no Rust to ask: the WebSocket decides
   }
   if (state.backendOn) link.connect();
   renderNav();
+  byId("view")!.className = "view";
   current.render();
   window.setInterval(() => void tick(), 500);
   // The backend can be started or stopped from elsewhere (start.bat, stop.bat): check now and then
