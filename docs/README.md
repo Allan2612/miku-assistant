@@ -2,6 +2,9 @@
 
 | Documento | Contenido |
 |---|---|
+| [handoff.md](handoff.md) | Contexto completo para retomar el proyecto en una conversación nueva |
+| [agente-nueva-pc.md](agente-nueva-pc.md) | Runbook para que un agente prepare otra PC para desarrollar, de principio a fin |
+| [plan-panel-ux.md](plan-panel-ux.md) | Auditoría de UI/UX del panel y lo que se hizo (paginación, gráficos, Almacenamiento) |
 | [plan-funciones.md](plan-funciones.md) | Plan de las ocho funciones del 3-nov (modo pantalla completa, OBS, clima, cuota…) |
 | [funciones.md](funciones.md) | Todo lo que puede hacer Miku, qué es local (0 peticiones) y cómo pedirlo |
 | [architecture.md](architecture.md) | Procesos, stack, flujo de una petición, protocolo WebSocket y presupuesto de recursos |
