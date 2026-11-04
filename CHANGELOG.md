@@ -41,6 +41,9 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
   conversaciones.
 - Un color, un significado: turquesa bien, ámbar aviso, coral error o borrar, violeta VRAM, azul Gemini.
 - Quitada la música de fondo del panel.
+- Configuración › La ventana de Miku: en qué pantalla aparece (se mueve al guardar) y un cuadro para escribirle bajo
+  ella, apagado por defecto.
+- Las pantallas de carga del panel muestran filas de lo que viene y qué está leyendo, en vez de «Cargando…».
 
 ### Añadido
 - **Miku se mueve con vida propia** (`docs/plan-expresiones.md`, fases 1-6): motor de capas propio en lugar de las animaciones al azar del modelo. Respira y se balancea con ruido suave, cambia el peso cada 8-15 s, parpadea como una persona (a veces dos veces, y al mirar a otro lado), mueve los ojos a saltos y la cabeza los sigue; el pelo, la corbata y la falda reaccionan.
@@ -78,6 +81,16 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
   librerías (PyTorch solo con NVIDIA).
 
 ### Corregido
+- **La cuota se gastaba sin que el panel lo mostrara.** Google cuenta cada petición enviada, también las que fallan
+  por saturación (3-nov: `gemini-3-flash-preview` dijo «agotado» tras 20 enviadas, con solo 17 contadas). Ahora se
+  cuenta cada envío. Un modelo ya agotado hoy no se intenta, y Gemma (14.400 al día) va antes que los de 20 al día.
+  Además, una acción sencilla que sale bien («abre Spotify», «guarda eso») ya no pide una segunda petición solo para
+  decir «listo»: su resultado es la respuesta.
+- **Activaciones falsas:**
+  - Un «Adiós», «No» o «Nada» tras una activación sin «Miku» en el clip ya no recibe respuesta: se oculta en silencio.
+  - Cada activación anota si fue real (se oyó «Miku») o falsa. Palabra clave las ofrece como sugerencias para llegar
+    a las 60 marcas y reentrenar; hoy hay 78.
+- Los clips de «Hey Miku» se oían demasiado bajos (el micrófono graba a unos −27 dB): se suben al reproducirlos.
 - Un recordatorio ya no se retrasa si el PC se suspende: se mira con el reloj de pared cada 30 s.
 - Gemini vuelve a esperar 10 s antes de pasar al siguiente modelo: es el mínimo de la API, y con 8 s fallaban todas
   las peticiones.

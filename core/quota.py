@@ -1,8 +1,9 @@
 """
 Miku Assistant - Gemini requests used today, per model (free tier).
 
-Google resets the daily quota at midnight Pacific time. Only answered requests are counted: a rejected one
-(429, 503) spends nothing. Saved in cache/quota.json, so a restart does not reset the count.
+Google resets the daily quota at midnight Pacific time. Every request sent is counted, answered or not: Google
+counts the ones that time out too (3-nov: gemini-3-flash-preview said "quota exhausted" after 20 sent, of which only
+17 had answered). Saved in cache/quota.json, so a restart does not reset the count.
 """
 
 from __future__ import annotations
@@ -64,7 +65,7 @@ def _today(data: Dict) -> Dict:
 
 
 def count(model: str, primary: str) -> Optional[str]:
-    """Counts one answered request. Returns a warning to say once a day when the primary model reaches 90%."""
+    """Counts one request sent. Returns a warning to say once a day when the primary model reaches 90%."""
     data = _today(_load())
     data["counts"][model] = data["counts"].get(model, 0) + 1
     # Per day, for the panel's last-7-days chart
@@ -85,6 +86,12 @@ def count(model: str, primary: str) -> Optional[str]:
     except OSError as e:
         logger.warning("Could not save the quota count: %s", e)
     return warning
+
+
+def spent(model: str) -> bool:
+    """Today's bucket of this model is used up: trying it only wastes a request and the user's time."""
+    limit = DAILY_LIMITS.get(model)
+    return bool(limit) and _today(_load())["counts"].get(model, 0) >= limit
 
 
 def snapshot() -> Dict:

@@ -127,6 +127,12 @@ export function head(title: string, sub: string, right = ""): string {
 
 export const offlineNote = () =>
   `<div class="offline">Miku está apagada. <button type="button" class="btn small" data-power>Encender Miku</button></div>`;
+/** While something loads: placeholder rows shaped like what is coming, and what is being read (never a bare
+ *  "Cargando…": the user sees the page is alive and what it waits for). */
+export const loading = (what: string, rows = 3) =>
+  `<div class="loading" role="status">${Array.from({ length: rows }, (_, i) => `<div class="skel" style="width:${[96, 78, 88, 64, 92, 72][i % 6]}%"></div>`).join("")}
+    <span class="what"><span class="eqmini" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${esc(what)}</span></div>`;
+
 /** A request that got no answer (Miku busy or restarting): say so and offer to try again. */
 export const noAnswer = () =>
   `<div class="offline">Miku no respondió. <button type="button" class="btn small ghost" data-retry>Reintentar</button></div>`;

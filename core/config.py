@@ -17,6 +17,8 @@ class WindowConfig:
     height: int = 600
     margin: int = 16
     fps_visible: int = 30
+    monitor: int = 0  # 0: Windows' main screen; 1, 2...: the screens from left to right
+    chat: bool = False  # a text box under Miku in her window
 
 
 @dataclass(slots=True)
@@ -155,6 +157,8 @@ def load_config(
             height=window_data.get("height", 600),
             margin=window_data.get("margin", 16),
             fps_visible=window_data.get("fps_visible", 30),
+            monitor=int(window_data.get("monitor") or 0),
+            chat=bool(window_data.get("chat", False)),
         ),
         behavior=BehaviorConfig(
             hide_after_seconds=behavior_data.get("hide_after_seconds", 20),

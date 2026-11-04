@@ -16,6 +16,7 @@ Detalles técnicos de cada herramienta: [tools.md](tools.md).
 | Decir **"Hey Miku"** | Aparece, dice "¿Sí?" y te escucha (hasta 8 s para empezar a hablar, 10 s de frase) |
 | **Ctrl+Alt+M** | Igual que "Hey Miku". Si está hablando, la corta y te escucha |
 | **"Hey Miku" mientras habla** | La interrumpe y te escucha |
+| Escribirle en el cuadro bajo ella | Solo si activas «Escribirle desde su ventana» en el panel › Configuración. Lo que escribes le llega como si se lo dijeras |
 | Bandeja → **Mostrar / Ocultar / Salir** | Ocultar corta lo que esté haciendo (no habla ni abre el micrófono oculta). Salir cierra también el backend |
 | Clic sobre ella | Solo reacciona (sonrisa y gesto); no la activa |
 

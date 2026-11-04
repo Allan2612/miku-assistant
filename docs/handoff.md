@@ -29,6 +29,15 @@ Para empezar, lee el [README.md](../README.md) y [docs/architecture.md](architec
 
 ### Lo último (3-nov)
 
+- **Cuota:** se cuenta cada petición enviada, porque Google cuenta también las fallidas. Los modelos agotados se
+  saltan, Gemma va antes que los de 20 al día, y una acción sencilla que sale bien no pide una segunda petición
+  (`FINAL_TOOLS` en `core/llm.py`).
+- **Palabra clave:**
+  - cada activación deja en `cache/wake/suggested.json` si fue real o falsa, y el panel las ofrece como marcas;
+  - una despedida o un «no» tras un clip sin «Miku» oculta a Miku en silencio.
+- **Ventana de Miku:** se elige su pantalla (`window.monitor`, de izquierda a derecha) y se puede activar un cuadro de
+  texto bajo ella (`window.chat`).
+
 - Panel y instalador: fases 1 a 5, y además:
   - una sola instancia;
   - arrancar con Windows;

@@ -40,11 +40,15 @@ def test_settings_keep_comments_and_check_values():
     assert settings.set_({"hotkey": "Ctrl+Shift+K", "input_device": "Micrófono (Logitech G733 Gaming"}) == {"ok": True}
     got = settings.get()
     assert (got["hotkey"], got["input_device"]) == ("Ctrl+Shift+K", "Micrófono (Logitech G733 Gaming"), got
+    # Miku's screen and the text box in her window (keys the window section did not have before 3-nov)
+    assert settings.set_({"monitor": 2, "window_chat": True}) == {"ok": True}
+    got = settings.get()
+    assert (got["monitor"], got["window_chat"]) == (2, True), got
     after = settings.CONFIG.read_text(encoding="utf-8")
 
     # Bad values never reach the file
     for bad in ({"threshold": 5}, {"model": "gpt"}, {"weather_city": ""}, {"vocabulary": ["a\nb"]},
-                {"hotkey": "M"}, {"hotkey": "Ctrl+Alt+Esc"}):
+                {"hotkey": "M"}, {"hotkey": "Ctrl+Alt+Esc"}, {"monitor": -1}, {"monitor": True}, {"window_chat": "sí"}):
         assert not settings.set_(bad)["ok"], bad
     assert settings.CONFIG.read_text(encoding="utf-8") == after
 

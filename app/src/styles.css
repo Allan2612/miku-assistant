@@ -223,3 +223,26 @@ body.tauri #app {
 .miku-send-btn {
   display: none !important;
 }
+
+/* The text box under Miku (panel › Configuración › "Escribirle desde su ventana") */
+.miku-chat {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  z-index: 50;
+  pointer-events: auto;
+}
+.miku-chat input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(57, 197, 187, 0.45);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e6f2f1;
+  font: 14px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  outline: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.miku-chat input:focus { border-color: #7ff3e8; }

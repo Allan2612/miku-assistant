@@ -4,7 +4,7 @@
  * barge-in interruption, click reactions, and 0% CPU/GPU resource freezing.
  */
 
-import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
+import { getCurrentWindow, currentMonitor, availableMonitors, primaryMonitor } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -54,6 +54,9 @@ const GOODBYE_FALLBACK_MS = 8000;
 
 let isVisible = false;
 let autoHideTimer: number | null = null;
+// Set in the panel (config.yaml window.monitor / window.chat): which screen, and a text box under her
+let monitorIndex = 0;
+let chatBox: HTMLFormElement | null = null;
 const isTauri =
   typeof window !== "undefined" &&
   Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
@@ -70,7 +73,9 @@ async function positionWindow(): Promise<void> {
   if (!isTauri) return;
   try {
     const currentWin = getCurrentWindow();
-    const monitor = await currentMonitor();
+    // 1, 2...: the screens from left to right; 0 (or one that is gone): Windows' main screen
+    const screens = (await availableMonitors()).sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y);
+    const monitor = screens[monitorIndex - 1] ?? (await primaryMonitor()) ?? (await currentMonitor());
     if (monitor) {
       const scaleFactor = monitor.scaleFactor || 1;
 
@@ -374,14 +379,48 @@ async function useHotkey(hotkey: string): Promise<void> {
   }
 }
 
+/** The text box under Miku: only when turned on in the panel. What is written goes to her like a spoken phrase. */
+function setChat(on: boolean): void {
+  if (!on) {
+    chatBox?.remove();
+    chatBox = null;
+    return;
+  }
+  if (chatBox) return;
+  chatBox = document.createElement("form");
+  chatBox.className = "miku-chat";
+  chatBox.innerHTML = `<input maxlength="500" autocomplete="off" spellcheck="true" placeholder="Escríbele…" aria-label="Escribirle a Miku">`;
+  const input = chatBox.querySelector("input")!;
+  chatBox.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    if (!ws.isConnected) {
+      ui.showSubtitle("miku", "Estoy apagada o arrancando. Enciéndeme desde mi icono de la bandeja.", 5000);
+      return;
+    }
+    ws.send({ type: "text_input", text });
+    input.value = "";
+    resetAutoHideTimer();
+  });
+  input.addEventListener("input", () => resetAutoHideTimer()); // typing is not inactivity
+  input.addEventListener("keydown", (e) => e.key === "Escape" && input.blur());
+  document.querySelector("#app")?.appendChild(chatBox);
+}
+
 async function setupShortcutsAndTray(): Promise<void> {
   if (isTauri) {
-    // The one in config.yaml now (the panel can change it), else the one this build was made with
-    const saved = await invoke<string>("settings_get")
-      .then((text) => String(JSON.parse(text).hotkey || HOTKEY))
-      .catch(() => HOTKEY);
-    await useHotkey(saved);
+    // The ones in config.yaml now (the panel can change them), else the ones this build was made with
+    const saved = await invoke<string>("settings_get").then((text) => JSON.parse(text)).catch(() => ({}));
+    await useHotkey(String(saved.hotkey || HOTKEY));
     await listen<string>("hotkey-changed", (event) => void useHotkey(event.payload));
+    monitorIndex = Number(saved.monitor) || 0;
+    setChat(Boolean(saved.window_chat));
+    await listen<{ monitor: number; chat: boolean }>("window-settings-changed", (event) => {
+      monitorIndex = event.payload.monitor;
+      setChat(event.payload.chat);
+      void positionWindow();
+    });
 
     try {
       await listen<string>("tray-action", (event) => {
@@ -433,7 +472,7 @@ async function bootstrap(): Promise<void> {
   }
 
   try {
-    if (statusEl) statusEl.textContent = "Conectando con Miku Core...";
+    if (statusEl) statusEl.textContent = "Conectando con su cerebro…";
 
     // 1. Connect WebSocket to Core backend immediately
     ws.onMessage(handleServerMessage);
@@ -452,7 +491,7 @@ async function bootstrap(): Promise<void> {
     }
 
     const scale = live2dCfg.scale ?? 0; // 0 = auto-fit
-    if (statusEl) statusEl.textContent = "Cargando modelo Live2D...";
+    if (statusEl) statusEl.textContent = "Preparando a Miku…";
 
     // 5. Load Live2D model with safe-framing
     await live2d.loadModel(modelPath, scale);

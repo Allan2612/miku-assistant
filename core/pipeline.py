@@ -24,6 +24,7 @@ from typing import Optional, Any, Tuple
 import numpy as np
 
 from core import intent
+from core import wakeword as wakeword_mod
 from core.llm import MikuBrain
 from core.tts import TTSManager
 from core.stt import STTManager
@@ -62,6 +63,8 @@ WAKE_SILENCE_RMS = 0.003
 # This many words without "Miku" is someone talking about something else. 3 dropped a real call: a "Hey Miku" heard
 # as "¡Granza de la..." (log 1-nov)
 WAKE_SENTENCE_WORDS = 4
+# A reply that only sends her away
+DISMISSAL = re.compile(r"(no+|na+|nada|nah|no era (a ti|para ti)|no te llam[eé]|c[aá]llate|sh+|olv[ií]dalo)")
 
 
 def _trim_silence(wav_bytes: bytes, threshold: float = 0.01, keep_s: float = 0.08) -> bytes:
@@ -121,6 +124,7 @@ class MikuPipeline:
         self._is_listening = False
         self._is_speaking = False
         self._hidden = False  # hidden by hand: a turn still running must not talk or open the mic
+        self._wake_clip_name = ""  # the clip of the activation being checked
         self._last_text = ""
         self._last_text_time = 0.0
         self._speak_watchdog_task: Optional[asyncio.Task] = None
@@ -437,6 +441,7 @@ class MikuPipeline:
                 wake_check = None
                 if wake_clip is not None:
                     wake_check = asyncio.create_task(self._clip_text(wake_clip, stt_warmup))
+                    self._wake_clip_name = getattr(self.wakeword, "last_clip", "")
                 if self.rvc is not None and self.rvc.enabled and not self.rvc.is_loaded:
                     self._spawn_bg(self.rvc.warmup())
 
@@ -478,18 +483,26 @@ class MikuPipeline:
             clip_text, peak = await asyncio.wait_for(asyncio.shield(wake_check), WAKE_CHECK_TIMEOUT_S)
         except Exception:
             return True
+        name = self._wake_clip_name
         # "Miku, abre Spotify" in one breath: the name may land in the phrase instead of the clip
         if intent.says_miku(clip_text) or intent.says_miku(heard):
+            if name:
+                wakeword_mod.suggest(name, "yes")
             return True
-        # An order in the first words, or a goodbye, is said to her whatever the clip sounded like (log 27-oct: a
-        # quiet "Hey Miku" then "Cierra me OBS Studio" was dropped as a false wake word)
-        if intent.starts_with_order(heard) or intent.is_farewell(heard):
+        # "Adiós", "No", "Nada" after a clip without her name: the user sending away a wake word nobody said (log
+        # 3-nov: 36 of 134 such wakes ended like this, and she answered "¡Vale! Aquí estaré")
+        dismissed = bool(heard) and (intent.is_farewell(heard) or bool(DISMISSAL.fullmatch(heard.lower().strip(" ¡!¿?.,"))))
+        # An order in the first words is said to her whatever the clip sounded like (log 27-oct: a quiet "Hey Miku"
+        # then "Cierra me OBS Studio" was dropped as a false wake word)
+        if not dismissed and intent.starts_with_order(heard):
             return True
         silent = peak < WAKE_SILENCE_RMS
-        if not silent and len(re.findall(r"\w+", clip_text)) < WAKE_SENTENCE_WORDS:
+        if not dismissed and not silent and len(re.findall(r"\w+", clip_text)) < WAKE_SENTENCE_WORDS:
             return True  # empty or a word or two: what a misheard "Hey Miku" looks like
         logger.info("False wake word (%s): the clip said %r. Hiding without answering.",
-                    "silence" if silent else "other talk", clip_text)
+                    "dismissed" if dismissed else "silence" if silent else "other talk", clip_text)
+        if name:
+            wakeword_mod.suggest(name, "no")
         await self.server.broadcast({"type": "state", "value": "idle"})
         await self.server.broadcast({"type": "hide"})
         if self.wakeword is not None:

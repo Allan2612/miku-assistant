@@ -6,8 +6,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { availableMonitors, primaryMonitor } from "@tauri-apps/api/window";
 import {
-  X_ICON, actions, byId, clampPage, comma, dayLabel, esc, head, icon, isTauri, link, noAnswer, offlineNote, pageItems, pager,
+  X_ICON, actions, loading, byId, clampPage, comma, dayLabel, esc, head, icon, isTauri, link, noAnswer, offlineNote, pageItems, pager,
   paint, state, toast, undoable,
 } from "./shared";
 
@@ -66,10 +67,11 @@ let autostart = false;
 let wakeScores: { yes: number[]; no: number[] } = { yes: [], no: [] };
 let capturing = false;
 const HOTKEY_RE = /^((ctrl|alt|shift|super)\+){1,3}([a-z0-9]|f([1-9]|1[0-9]|2[0-4])|space)$/i;
-const EDITED = ["rvc_enabled", "wakeword_enabled", "threshold", "weather_city", "hotkey", "input_device"];
+const EDITED = ["rvc_enabled", "wakeword_enabled", "threshold", "weather_city", "hotkey", "input_device", "monitor", "window_chat"];
+let screens: string[] = []; // "Pantalla 1 · izquierda · 1920×1080 (la principal)", left to right
 
 export function renderConfig(): void {
-  view().innerHTML = `${head("Configuración", "Se guardan en config.yaml y .env. Las claves nunca salen de tu PC.")}<div id="cfg" class="stack"><span class="dim">Cargando…</span></div>`;
+  view().innerHTML = `${head("Configuración", "Se guardan en config.yaml y .env. Las claves nunca salen de tu PC.")}<div id="cfg" class="stack">${loading("Leyendo tus ajustes…", 6)}</div>`;
   if (!isTauri) {
     byId("cfg")!.innerHTML = `<div class="offline">Los ajustes solo se cambian desde la app.</div>`;
     return;
@@ -79,8 +81,12 @@ export function renderConfig(): void {
     invoke<string>("settings_inputs").catch(() => "[]"),
     invoke<boolean>("autostart_get").catch(() => false),
     invoke<{ clips: { folder: string; name: string; label: string | null }[] }>("wake_clips").catch(() => ({ clips: [] })),
+    Promise.all([availableMonitors(), primaryMonitor()]).catch(() => [[], null] as const),
   ])
-    .then(([text, inputs, auto, wake]) => {
+    .then(([text, inputs, auto, wake, [all, main]]) => {
+      // The same order Miku's window uses: left to right
+      const sorted = [...all].sort((a, b) => a.position.x - b.position.x || a.position.y - b.position.y);
+      screens = sorted.map((m, i) => `Pantalla ${i + 1}${sorted.length > 1 ? ` · ${i === 0 ? "izquierda" : i === sorted.length - 1 ? "derecha" : "centro"}` : ""} · ${m.size.width}×${m.size.height}${main && m.name === main.name ? " (la principal)" : ""}`);
       cfg = JSON.parse(text);
       mics = JSON.parse(inputs);
       autostart = auto;
@@ -142,6 +148,11 @@ function paintConfig(): void {
       ${setRow("Micrófono", "El que usan «Hey Miku» y la grabación de tu frase.", `<select id="mic" class="select"><option value="">El predeterminado de Windows</option>${mics.map((m) => `<option${m === d.input_device ? " selected" : ""}>${esc(m)}</option>`).join("")}
           ${d.input_device && !mics.includes(d.input_device) ? `<option selected>${esc(d.input_device)} (no conectado)</option>` : ""}</select>`, "mic")}
     </section>
+    <section class="card" aria-label="La ventana de Miku"><h2>La ventana de Miku</h2>
+      ${setRow("Pantalla", "Dónde aparece Miku. Se aplica al guardar.", `<select id="monitor" class="select"><option value="0">La principal de Windows</option>${screens.map((s, i) => `<option value="${i + 1}"${d.monitor === i + 1 ? " selected" : ""}>${esc(s)}</option>`).join("")}
+          ${d.monitor > screens.length ? `<option value="${d.monitor}" selected>Pantalla ${d.monitor} (no conectada)</option>` : ""}</select>`, "monitor")}
+      ${setRow("Escribirle desde su ventana", "Un cuadro de texto bajo Miku: lo que escribes le llega como si se lo dijeras.", switchBtn("sw-chat", "Escribirle desde su ventana", d.window_chat))}
+    </section>
     <section class="card" aria-label="Clima y OBS"><h2>Clima y OBS</h2>
       ${setRow("Ciudad del clima", "Ciudad, País. Para otra ciudad, pregúntale con su nombre.", `<input id="city" class="input" autocomplete="off" value="${esc(d.weather_city)}">`, "city")}
       ${setRow("Contraseña de OBS", "OBS › Herramientas › Ajustes del servidor WebSocket.", `
@@ -165,6 +176,7 @@ function paintConfig(): void {
       byId("thrfx")!.textContent = thresholdEffect(draft.threshold);
     } else if (el.id === "city") draft.weather_city = el.value;
     else if (el.id === "mic") draft.input_device = el.value.replace(/ \(no conectado\)$/, "");
+    else if (el.id === "monitor") draft.monitor = Number(el.value);
     else if (el.id === "model") draft.gemini = { ...draft.gemini, model: el.value };
     markDirty();
   };
@@ -237,8 +249,8 @@ async function onConfigClick(ev: MouseEvent): Promise<void> {
     } catch (err) {
       toast(String(err));
     }
-  } else if (el.id === "sw-rvc" || el.id === "sw-wake") {
-    const key = el.id === "sw-rvc" ? "rvc_enabled" : "wakeword_enabled";
+  } else if (el.id === "sw-rvc" || el.id === "sw-wake" || el.id === "sw-chat") {
+    const key = el.id === "sw-rvc" ? "rvc_enabled" : el.id === "sw-wake" ? "wakeword_enabled" : "window_chat";
     draft[key] = !draft[key];
     el.setAttribute("aria-checked", String(draft[key]));
     markDirty();
@@ -272,6 +284,8 @@ async function onConfigClick(ev: MouseEvent): Promise<void> {
       return;
     }
     if (await saveSettings(ch, "cfg-msg", el as HTMLButtonElement)) {
+      if (ch.monitor !== undefined || ch.window_chat !== undefined)
+        await emit("window-settings-changed", { monitor: draft.monitor, chat: draft.window_chat }); // Miku's window moves now
       if (ch.hotkey) {
         await emit("hotkey-changed", ch.hotkey); // Miku's window takes the new one now
         state.hotkey = String(ch.hotkey);
@@ -355,7 +369,7 @@ export function renderTools(): void {
   view().innerHTML = `${head("Herramientas", "Lo que Miku puede hacer en tu PC. Una herramienta apagada desaparece para Gemini y para las frases locales.")}
     <div class="toolbar"><div class="chips" role="group" aria-label="Filtrar" id="tfilters"></div>
       <div><label for="tq" class="sr">Buscar herramienta</label><input id="tq" class="search" type="search" placeholder="Buscar…" value="${esc(toolQuery)}"></div></div>
-    <section class="card" aria-label="Herramientas" style="padding-top:8px;padding-bottom:8px"><div id="tlist"><span class="dim">Cargando…</span></div></section>
+    <section class="card" aria-label="Herramientas" style="padding-top:8px;padding-bottom:8px"><div id="tlist">${loading("Leyendo las herramientas…", 6)}</div></section>
     ${saveBar("tools", state.backendOn ? "Guardar y reiniciar Miku" : "Guardar")}`;
   view().onclick = onToolsClick;
   view().oninput = (ev) => {
@@ -502,7 +516,7 @@ export function renderFunctions(): void {
     </div></div>
     <div class="docs"><nav class="toc" id="toc" aria-label="Secciones"></nav>
       <div class="stack"><div><label for="fq" class="sr">Buscar</label><input id="fq" class="search" type="search" style="width:100%" placeholder="Buscar en todas las secciones: clima, OBS, volumen…"></div>
-        <section class="card md" id="doc"><span class="dim">Cargando…</span></section></div></div>`;
+        <section class="card md" id="doc">${loading("Leyendo funciones.md…", 6)}</section></div></div>`;
   view().onclick = (ev) => {
     const el = (ev.target as HTMLElement).closest<HTMLElement>("button");
     if (!el) return;
@@ -617,7 +631,7 @@ export function renderReminders(): void {
   remAsked = false;
   byId("rem")!.innerHTML = `
     <div class="row-wrap">
-      <section class="card" style="flex:2 1 440px" aria-label="Avisos activos"><h2>Avisos activos</h2><div id="tl"><span class="dim">Cargando…</span></div></section>
+      <section class="card" style="flex:2 1 440px" aria-label="Avisos activos"><h2>Avisos activos</h2><div id="tl">${loading("Leyendo tus avisos…", 3)}</div></section>
       <section class="card" style="flex:1 1 300px" aria-label="Nuevo recordatorio"><h2>Nuevo recordatorio</h2>
         <div class="field"><label for="rtext">Qué te recuerdo</label><input id="rtext" class="input" autocomplete="off" placeholder="Ej: tomar agua…"></div>
         <div class="inline" style="align-items:flex-end">
@@ -647,7 +661,7 @@ function paintReminders(): void {
   const pl = byId("pl");
   if (!tl || !pl) return;
   if (!remData) {
-    paint(tl, remAsked ? noAnswer() : `<span class="dim">Cargando…</span>`);
+    paint(tl, remAsked ? noAnswer() : loading("Leyendo tus avisos…", 3));
     return;
   }
   const timers: any[] = remData.timers.filter((t: any) => !hiddenTimers.has(t.id));
@@ -794,6 +808,7 @@ function paintMemory(): void {
   paint(byId("n-facts"), memLoaded === "yes" ? String(facts.length) : "");
   paint(byId("n-days"), memLoaded === "yes" ? String(days.length) : "");
   if (memLoaded === "failed") return void (box.innerHTML = noAnswer());
+  if (memLoaded === "no") return void (box.innerHTML = loading("Leyendo lo que Miku recuerda…", 5));
   if (memTab === "facts") {
     box.innerHTML = `<section class="card" aria-label="Lo que recuerda de ti">
       <div class="inline"><label for="fnew" class="sr">Nuevo dato</label><input id="fnew" class="input" autocomplete="off" placeholder="Algo que Miku deba saber de ti. Ej: le encanta Frieren…"><button type="button" id="fadd" class="btn">Guardar</button></div>

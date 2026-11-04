@@ -178,6 +178,7 @@ fn wake_clips(app: AppHandle) -> Result<serde_json::Value, String> {
     let dir = wake_dir(&app)?;
     let labels = read_json(&dir.join("labels.json"));
     let heard = read_json(&dir.join("heard.json"));
+    let suggested = read_json(&dir.join("suggested.json")); // how each activation turned out (core/pipeline.py)
     let mut clips = Vec::new();
     for folder in CLIP_FOLDERS {
         let Ok(entries) = std::fs::read_dir(if folder.is_empty() { dir.clone() } else { dir.join(folder) }) else { continue };
@@ -188,6 +189,7 @@ fn wake_clips(app: AppHandle) -> Result<serde_json::Value, String> {
                     "folder": folder, "name": name,
                     "label": labels.get(&key).cloned().unwrap_or(serde_json::Value::Null),
                     "heard": heard.get(&key).cloned().unwrap_or(serde_json::Value::Null),
+                    "suggest": suggested.get(&key).cloned().unwrap_or(serde_json::Value::Null),
                 }));
             }
         }

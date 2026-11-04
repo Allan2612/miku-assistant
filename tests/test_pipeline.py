@@ -48,6 +48,8 @@ class FakeTTS:
 
 
 class FakeWake:
+    last_clip = ""
+
     def __init__(self):
         self.paused = False
 
@@ -360,10 +362,27 @@ def test_false_wake_words_never_reach_gemini():
     assert brain.heard == [] and "hide" in server.sent and not p.wakeword.paused, server.sent
     server, brain, _ = asyncio.run(_wake("", "y entonces le dije que no", loud=False))
     assert brain.heard == [] and "hide" in server.sent, "nobody spoke to her"
-    # A quiet "Hey Miku" then an order or a goodbye is a real call (log 27-oct: "Cierra me OBS Studio." dropped)
-    for heard in ("Cierra me OBS Studio.", "Abreme Opera y cierro todas las pestañas.", "Adiós."):
+    # A quiet "Hey Miku" then an order is a real call (log 27-oct: "Cierra me OBS Studio." dropped)
+    for heard in ("Cierra me OBS Studio.", "Abreme Opera y cierro todas las pestañas."):
         _, brain, _ = asyncio.run(_wake("", heard, loud=False))
         assert brain.heard == [heard], heard
+    # ...but "Adiós" or "No" after a clip without her name sends away a wake word nobody said: she hides, silent
+    # (log 3-nov: 36 such wakes, and she answered "¡Vale! Aquí estaré")
+    import json, tempfile
+    from pathlib import Path
+    import core.wakeword as ww
+    ww.CLIPS_DIR = Path(tempfile.mkdtemp())
+    FakeWake.last_clip = "20261103-191402_0.994.wav"
+    try:
+        for heard in ("Adiós.", "¡Nooo!", "Nada."):
+            server, brain, _ = asyncio.run(_wake("¿Creen que está consumiendo mucho?", heard))
+            assert brain.heard == [] and "hide" in server.sent, heard
+        _, brain, _ = asyncio.run(_wake("Hey Miku.", "adiós"))
+        assert brain.heard == ["adiós"], "with her name it is a real goodbye"
+        suggested = json.loads((ww.CLIPS_DIR / "suggested.json").read_text(encoding="utf-8"))
+        assert suggested == {"20261103-191402_0.994.wav": "yes"}, "the last outcome of that clip wins"
+    finally:
+        FakeWake.last_clip = ""
     server, brain, _ = asyncio.run(_wake("", "", mic_cls=SilentMic, loud=False))
     assert brain.heard == [] and "hide" in server.sent, "a false one with silence after hides too"
 

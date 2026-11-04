@@ -53,11 +53,31 @@ def clip_peak(audio: np.ndarray) -> float:
     return max((float(np.sqrt(np.mean(w ** 2))) for w in windows if len(w)), default=0.0)
 
 
-def _save_clip(audio: np.ndarray, score: float, sub: str = "") -> None:
+def clip_name(score: float) -> str:
+    return f"{datetime.now():%Y%m%d-%H%M%S}_{score:.3f}.wav"
+
+
+def suggest(name: str, label: str) -> None:
+    """How an activation turned out ("yes": it said Miku; "no": a false one), kept in cache/wake/suggested.json: the
+    panel offers it as a mark, so the 60 marks for retraining come fast. Never a mark by itself."""
+    import json
+
+    path = CLIPS_DIR / "suggested.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        data[name] = label
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        tmp.replace(path)
+    except (OSError, ValueError) as e:
+        logger.warning("Could not save the clip suggestion: %s", e)
+
+
+def _save_clip(audio: np.ndarray, score: float, sub: str = "", name: str = "") -> None:
     folder = CLIPS_DIR / sub if sub else CLIPS_DIR
     try:
         folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"{datetime.now():%Y%m%d-%H%M%S}_{score:.3f}.wav"
+        path = folder / (name or clip_name(score))
         with wave.open(str(path), "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
@@ -88,6 +108,7 @@ class WakeWordListener:
         self.vad_threshold: float = getattr(config, "vad_threshold", 0.0)
         self._errors = 0
         self._on_wake = on_wake
+        self.last_clip = ""  # the saved clip of the last activation: the pipeline notes how it turned out
         self._loop = loop
 
         self._running: bool = False
@@ -245,7 +266,9 @@ class WakeWordListener:
                         self.patience,
                     )
                     # Off the audio thread: a disk write here would drop audio
-                    threading.Thread(target=_save_clip, args=(clip, score), daemon=True, name="miku-wake-clip").start()
+                    self.last_clip = clip_name(score)
+                    threading.Thread(target=_save_clip, args=(clip, score, "", self.last_clip), daemon=True,
+                                     name="miku-wake-clip").start()
                     # Automatically pause listening during subsequent conversation
                     self._paused = True
                     self._model.reset()

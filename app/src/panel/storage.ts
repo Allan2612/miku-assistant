@@ -4,7 +4,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { ask, byId, esc, head, isTauri, size, toast } from "./shared";
+import { ask, byId, esc, head, loading, isTauri, size, toast } from "./shared";
 
 interface Item { key: string; name: string; what: string; bytes: number; torch?: number; clean?: string }
 interface Scan { items: Item[]; total: number; free: number; disk: number; drive: string; installed: boolean }
@@ -17,7 +17,7 @@ let scan: Scan | null = null;
 
 export function renderStorage(): void {
   byId("view")!.innerHTML = `${head("Almacenamiento", "Lo que ocupa Miku en tu disco. Se mide cada vez que abres esta página.", `<button type="button" class="chip" id="st-again">Volver a medir</button>`)}
-    <div id="st" class="stack"><span class="dim">Midiendo…</span></div>`;
+    <div id="st" class="stack">${loading("Midiendo el disco… tarda unos segundos", 7)}</div>`;
   byId("view")!.onclick = onClick;
   if (!isTauri) {
     byId("st")!.innerHTML = `<div class="offline">El disco solo se mide desde la app.</div>`;
@@ -71,7 +71,7 @@ async function onClick(ev: MouseEvent): Promise<void> {
   const el = (ev.target as HTMLElement).closest<HTMLElement>("button");
   if (!el) return;
   if (el.id === "st-again") {
-    byId("st")!.innerHTML = `<span class="dim">Midiendo…</span>`;
+    byId("st")!.innerHTML = `${loading("Midiendo el disco… tarda unos segundos", 7)}`;
     await measure();
   } else if (el.dataset.clean) {
     const what = el.dataset.clean;

@@ -98,6 +98,18 @@ def test_action_results_go_back_and_the_answer_comes_from_them():
     assert b.last_outcome == "ok", "her body language: a happy bounce"
 
 
+def test_single_finished_action_needs_no_follow_up():
+    # "abre Spotify": the tool's own sentence is the answer, one request instead of two (log 3-nov: 32 of 110)
+    ran.clear()
+    b, models = brain(reply("", ("open_app", {"app_name": "spotify"})), reply("[happy] no debería pedirse"))
+    emotion, text, _ = asyncio.run(b.chat("abre spotify", audio=AUDIO))
+    assert (emotion, text) == ("happy", "He abierto Spotify.") and len(models.requests) == 1, (text, len(models.requests))
+    # A phrase with a second step still sends the results back
+    b, models = brain(reply("", ("set_volume", {"level": 30})), reply("[happy] Listo, al 30."))
+    asyncio.run(b.chat("pon el volumen al 30 y luego abre spotify", audio=AUDIO))
+    assert len(models.requests) == 2, "a phrase with a second step keeps the follow-up"
+
+
 def test_failed_tool_is_seen_by_the_model():
     fake_tool("close_app", "No encontré Discord abierto.", ok=False)
     b, models = brain(reply("", ("close_app", {"name": "discord"})), reply("[sad] Discord no estaba abierto."))
@@ -143,11 +155,11 @@ def test_no_nudge_for_plain_chat_or_about_the_last_action():
     b, models = brain(reply("[happy] ¡Hola! ¿Qué tal tu día?"))
     assert asyncio.run(b.chat("hola miku que tal"))[1] == "¡Hola! ¿Qué tal tu día?" and len(models.requests) == 1
     # Log 06:16: "¿Estás segura que la guardaste?" right after saving it: "lo apunté" is true
-    b, models = brain(reply("", ("take_note", {"text": "abrir un PR"})), reply("[happy] ¡Anotado!"),
+    b, models = brain(reply("", ("take_note", {"text": "abrir un PR"})),  # one request: its result is the answer
                       reply("[happy] ¡Claro que sí! Lo apunté en tus notas."))
     asyncio.run(b.chat("oye amiga guarda en mis notas lo del PR de mañana"))
     _, text, _ = asyncio.run(b.chat("¿Estás segura que la guardaste?"))
-    assert text == "¡Claro que sí! Lo apunté en tus notas." and len(models.requests) == 3
+    assert text == "¡Claro que sí! Lo apunté en tus notas." and len(models.requests) == 2
 
 
 def test_grounded_search_answer_is_not_nudged():
@@ -395,4 +407,5 @@ if __name__ == "__main__":
     test_pc_state_rides_in_the_request_but_not_in_the_history()
     test_history_survives_a_restart_and_keeps_reminders()
     test_timeout_is_one_the_api_accepts()
+    test_single_finished_action_needs_no_follow_up()
     print("ok")

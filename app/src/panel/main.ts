@@ -12,7 +12,7 @@ import { renderStorage } from "./storage";
 import { onChatEvent, onWakeKey, renderChat, renderWake } from "./voice";
 import { openConversation, refreshReminders, renderConfig, renderFunctions, renderMemory, renderReminders, renderTools } from "./manage";
 import {
-  MODEL, POWER_ICON, Point, Reply, actions, ask, byId, comma, esc, flushUndo, head, icon, isTauri, lineChart, link, localDay,
+  MODEL, POWER_ICON, loading, Point, Reply, actions, ask, byId, comma, esc, flushUndo, head, icon, isTauri, lineChart, link, localDay,
   niceMax, noAnswer, offlineNote, paint, size, state,
 } from "./shared";
 
@@ -237,7 +237,7 @@ function paintRecursos(): void {
   if (!body) return;
   if (!state.backendOn) return paint(body, offlineNote());
   const d = res;
-  if (!d) return paint(body, `<span class="dim">Midiendo…</span>`);
+  if (!d) return paint(body, loading("Midiendo los procesos de Miku…", 5));
   const gk = d.gpu_known;
   const kpi = (label: string, value: string, note: string, color: string) =>
     `<div class="card kpi"><span class="muted" style="font-size:12px">${label}</span><span class="big" style="color:${color}">${value}</span><span class="dim">${note}</span></div>`;
@@ -276,7 +276,7 @@ let quotaAsked = false;
 
 function renderCuotas(): void {
   byId("view")!.innerHTML = `
-    ${head("Cuotas", "Peticiones a Gemini en el plan gratuito. Solo cuentan las respuestas: una petición rechazada no gasta cuota.")}
+    ${head("Cuotas", "Peticiones a Gemini en el plan gratuito. Cuenta cada petición enviada, también las que fallan: Google las cuenta igual.")}
     <div id="q-body" class="stack"></div>`;
   quotaAsked = false;
   paintCuotas();
@@ -293,7 +293,7 @@ function paintCuotas(): void {
   if (!body) return;
   if (!state.backendOn) return paint(body, offlineNote());
   const d = quotaData;
-  if (!d) return paint(body, quotaAsked ? noAnswer() : `<span class="dim">Cargando…</span>`);
+  if (!d) return paint(body, quotaAsked ? noAnswer() : loading("Leyendo la cuota de hoy…", 4));
   const main = d.models.find((m: any) => m.primary) ?? d.models[0];
   const frac = main.limit ? Math.min(1, main.used / main.limit) : 0;
   const circ = 2 * Math.PI * 70;
@@ -413,7 +413,7 @@ function renderLogs(): void {
         <button type="button" class="chip" id="log-pause" aria-pressed="${logPaused}">${logPaused ? "Seguir" : "Pausar"}</button>
         <button type="button" class="chip" data-open="logs">Abrir carpeta</button></div>
     </div>
-    <div id="logbox" class="logbox grow" aria-live="off"><span class="dim">Cargando…</span></div>`;
+    <div id="logbox" class="logbox grow" aria-live="off">${loading("Leyendo cache/core.log…", 10)}</div>`;
   if (log.loaded) paintLogs(true);
 }
 

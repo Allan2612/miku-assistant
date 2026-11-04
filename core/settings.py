@@ -110,6 +110,8 @@ def get() -> Dict[str, Any]:
         "obs": {"has_password": bool(_env_get("OBS_PASSWORD"))},
         "disabled_tools": list(c.tools.disabled),
         "input_device": c.audio.input_device,
+        "monitor": c.window.monitor,
+        "window_chat": c.window.chat,
     }
 
 
@@ -126,7 +128,9 @@ def _validate(ch: Dict[str, Any]) -> List[str]:
         errors.append("Modelo desconocido.")
     if "threshold" in ch and not (isinstance(ch["threshold"], (int, float)) and 0.1 <= ch["threshold"] <= 0.95):
         errors.append("El umbral va de 0,10 a 0,95.")
-    for flag in ("rvc_enabled", "wakeword_enabled"):
+    if "monitor" in ch and not (isinstance(ch["monitor"], int) and not isinstance(ch["monitor"], bool) and 0 <= ch["monitor"] <= 9):
+        errors.append("Pantalla no válida.")
+    for flag in ("rvc_enabled", "wakeword_enabled", "window_chat"):
         if flag in ch and not isinstance(ch[flag], bool):
             errors.append(f"{flag} debe ser sí o no.")
     if "weather_city" in ch and not (isinstance(ch["weather_city"], str) and 1 < len(ch["weather_city"]) <= 80):
@@ -157,7 +161,8 @@ def set_(ch: Dict[str, Any]) -> Dict[str, Any]:
     text = CONFIG.read_text(encoding="utf-8")
     edits = {"model": ("llm", "model"), "rvc_enabled": ("rvc", "enabled"), "wakeword_enabled": ("wakeword", "enabled"),
              "threshold": ("wakeword", "threshold"), "weather_city": ("tools", "weather_city"),
-             "disabled_tools": ("tools", "disabled"), "hotkey": ("", "hotkey"), "input_device": ("audio", "input_device")}
+             "disabled_tools": ("tools", "disabled"), "hotkey": ("", "hotkey"), "input_device": ("audio", "input_device"),
+             "monitor": ("window", "monitor"), "window_chat": ("window", "chat")}
     for field, (section, key) in edits.items():
         if field in ch:
             text = set_value(text, section, key, ch[field])
@@ -171,7 +176,7 @@ def set_(ch: Dict[str, Any]) -> Dict[str, Any]:
         expected = {"model": c.llm.model, "rvc_enabled": c.rvc.enabled, "wakeword_enabled": c.wakeword.enabled,
                     "threshold": c.wakeword.threshold, "weather_city": c.tools.weather_city,
                     "disabled_tools": list(c.tools.disabled), "hotkey": c.hotkey,
-                    "input_device": c.audio.input_device}
+                    "input_device": c.audio.input_device, "monitor": c.window.monitor, "window_chat": c.window.chat}
         wrong = [f for f, v in expected.items() if f in ch and ch[f] != v]
         if wrong:
             return {"ok": False, "error": f"No se guardó bien: {', '.join(wrong)}. config.yaml no se tocó."}

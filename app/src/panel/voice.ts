@@ -5,7 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { byId, clampPage, comma, dayLabel, esc, head, icon, isTauri, link, localDay, offlineNote, pageItems, pager, state } from "./shared";
+import { ask, byId, loading, clampPage, comma, dayLabel, esc, head, icon, isTauri, link, localDay, offlineNote, pageItems, pager, state } from "./shared";
 
 const view = () => byId("view")!;
 const PLAY = "M8 5.5v13l11-6.5z";
@@ -16,13 +16,14 @@ const RETRAIN_YOURS = 20;
 const PER_PAGE = 15;
 
 // ---------- Palabra clave ----------
-interface Clip { folder: string; name: string; label: "yes" | "no" | null; heard: string | null }
+interface Clip { folder: string; name: string; label: "yes" | "no" | null; heard: string | null; suggest: "yes" | "no" | null }
 let clips: Clip[] = [];
 let loaded = false;
 let wakeFilter = "all";
 let wakePage = 1;
 let selected = "";
-let player: HTMLAudioElement | null = null;
+let audioCtx: AudioContext | null = null;
+let source: AudioBufferSourceNode | null = null;
 let playing = "";
 let training = false;
 let trainMsg = "";
@@ -36,6 +37,7 @@ const KIND: Record<string, [string, string]> = {
 const FILTERS: [string, string, (c: Clip) => boolean][] = [
   ["all", "Todas", () => true],
   ["todo", "Sin marcar", (c) => !c.label],
+  ["sug", "Sugeridas", (c) => !c.label && !!c.suggest],
   ["act", "Activaciones", (c) => c.folder === ""],
   ["near", "Casi disparos", (c) => c.folder === "near"],
   ["silent", "Ignoradas", (c) => c.folder === "silent"],
@@ -53,7 +55,7 @@ export function renderWake(): void {
     <section class="card" id="wk-sum" aria-label="Resumen"></section>
     <div class="toolbar"><div class="chips" role="group" aria-label="Filtrar" id="wk-filters"></div>
       <span class="keys"><span id="wk-msg" class="msg" aria-live="polite"></span> Teclado: <kbd>↑</kbd><kbd>↓</kbd> elegir · <kbd>Espacio</kbd> escuchar · <kbd>S</kbd> era yo · <kbd>N</kbd> no era yo</span></div>
-    <section class="card" aria-label="Clips" style="padding:10px 12px"><div id="wk-list"><span class="dim">Cargando…</span></div></section>`;
+    <section class="card" aria-label="Clips" style="padding:10px 12px"><div id="wk-list">${loading("Leyendo los clips de «Hey Miku»…", 6)}</div></section>`;
   view().onclick = onWakeClick;
   if (!isTauri) return;
   invoke<{ clips: Clip[] }>("wake_clips")
@@ -74,12 +76,14 @@ function paintWake(): void {
   const labeled = clips.filter((c) => c.label).length;
   const ready = labeled >= RETRAIN_CLIPS && yes >= RETRAIN_YOURS;
   const count = (folder: string) => todays.filter((c) => c.folder === folder).length;
+  const sug = clips.filter((c) => !c.label && c.suggest);
   byId("wk-sum")!.innerHTML = `
     <div class="card-head"><span style="font-size:14px">Hoy: <b class="mono">${count("")}</b> activaciones · <b class="mono">${count("silent")}</b> ignoradas por silencio · <b class="mono">${count("near")}</b> casi disparos</span>
       <span class="mono" style="color:var(--teal-l)">${labeled} de ${RETRAIN_CLIPS} marcas</span></div>
     <div class="bar" role="img" aria-label="${labeled} de ${RETRAIN_CLIPS} marcas"><div style="width:${Math.min(100, (labeled / RETRAIN_CLIPS) * 100)}%"></div></div>
     <div class="toolbar"><span class="dim">${yes} tuyas${yes < RETRAIN_YOURS ? ` (faltan ${RETRAIN_YOURS - yes})` : ""} · ${labeled - yes} que no eras tú</span>
-      <div class="inline"><span id="wk-train-msg" class="dim" aria-live="polite">${esc(trainMsg || (ready ? "Tarda unos minutos y necesita internet. Solo se cambia si el nuevo te oye mejor." : ""))}</span>
+      <div class="inline">${sug.length ? `<button type="button" class="btn small ghost" id="wk-accept" data-tip="Según cómo terminó cada activación: dijo «Miku», o la despediste">Aceptar ${sug.length} sugerencias</button>` : ""}
+        <span id="wk-train-msg" class="dim" aria-live="polite">${esc(trainMsg || (ready ? "Tarda unos minutos y necesita internet. Solo se cambia si el nuevo te oye mejor." : ""))}</span>
         <button type="button" class="btn small" id="wk-train"${ready && !training ? "" : " disabled"}>${training ? "Entrenando…" : "Reentrenar"}</button></div></div>`;
   byId("wk-filters")!.innerHTML = FILTERS.map(([id, label, keep]) => `<button type="button" class="chip" data-wf="${id}" aria-pressed="${id === wakeFilter}">${label}<span class="n">${clips.filter(keep).length}</span></button>`).join("");
   const list = shownClips();
@@ -94,14 +98,14 @@ function paintWake(): void {
           : `<span class="ellipsis" style="font-size:13px;color:var(--soft)" title="${esc(c.heard)}">Oyó: ${c.heard ? `«${esc(c.heard)}»` : "nada"}</span>`;
         return `<div class="clip${keyOf(c) === selected ? " sel" : ""}" data-row="${key}">
           <button type="button" class="btn play" data-play="${key}" aria-label="Escuchar el clip de las ${at}">${icon(playing === keyOf(c) ? STOP : PLAY, 15)}</button>
-          <div style="display:flex;flex-direction:column;gap:3px"><span class="mono dim">${day.slice(5).replace("-", "/")} ${at}</span><span><span class="pill ${cls}">${kind}</span></span></div>
+          <div style="display:flex;flex-direction:column;gap:3px"><span class="mono dim">${day.slice(5).replace("-", "/")} ${at}</span><span style="display:flex;gap:6px;flex-wrap:wrap"><span class="pill ${cls}">${kind}</span>${!c.label && c.suggest ? `<span class="pill gem" data-tip="Por cómo terminó esa activación">SUGERIDO: ${c.suggest === "yes" ? "ERA YO" : "NO ERA YO"}</span>` : ""}</span></div>
           <div style="display:flex;align-items:center;gap:10px;min-width:0">${heard}${c.folder !== "silent" ? `<span class="mono dim" style="flex:none" data-tip="Lo segura que estaba de oír «Hey Miku» (0 a 1)">${comma(score, 2)}</span>` : ""}</div>
           <div class="chips" role="group" aria-label="¿Eras tú?">
             <button type="button" class="chip" data-label="yes" data-key="${key}" aria-pressed="${c.label === "yes"}">Era yo</button>
             <button type="button" class="chip" data-label="no" data-key="${key}" aria-pressed="${c.label === "no"}" style="${c.label === "no" ? "background:var(--coral);border-color:var(--coral);color:#2a0a08" : ""}">No era yo</button></div>
         </div>`;
       }).join("") + pager("clips", list.length, wakePage, PER_PAGE, "clips")
-    : `<span class="dim">${loaded ? "Nada aquí." : "Cargando…"}</span>`;
+    : loaded ? `<span class="dim">Nada aquí.</span>` : loading("Leyendo los clips de «Hey Miku»…", 6);
 }
 
 const findClip = (key: string) => clips.find((c) => keyOf(c) === key);
@@ -118,23 +122,34 @@ function select(key: string, scroll = true): void {
 async function play(key: string): Promise<void> {
   const clip = findClip(key);
   if (!clip) return;
-  player?.pause();
-  if (playing === key) {
-    playing = "";
-    paintWake();
-    return;
-  }
+  const was = playing;
+  source?.stop();
+  source = null;
+  playing = "";
+  if (was === key) return paintWake();
   try {
     const bytes = await invoke<ArrayBuffer>("wake_clip_audio", { folder: clip.folder, name: clip.name });
-    const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
-    player = new Audio(url);
-    playing = key;
-    player.onended = () => {
-      URL.revokeObjectURL(url);
+    audioCtx ??= new AudioContext();
+    await audioCtx.resume();
+    const buf = await audioCtx.decodeAudioData(bytes);
+    // The clips are quiet (3-nov: peaks around -27 dB, near misses -37 dB, too low to hear): the loudest point is
+    // brought to -3 dB, at most x30 so a silent clip stays a hiss
+    let peak = 0;
+    for (const v of buf.getChannelData(0)) peak = Math.max(peak, Math.abs(v));
+    const gain = audioCtx.createGain();
+    gain.gain.value = Math.min(30, 0.7 / Math.max(peak, 1e-4));
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(gain).connect(audioCtx.destination);
+    src.onended = () => {
+      if (source !== src) return;
+      source = null;
       playing = "";
       paintWake();
     };
-    await player.play();
+    source = src;
+    playing = key;
+    src.start();
   } catch (err) {
     byId("wk-msg")!.textContent = `No pude reproducirlo: ${err}`;
   }
@@ -207,6 +222,15 @@ async function onWakeClick(ev: MouseEvent): Promise<void> {
     const res = await link.request("do:transcribe_clip", { folder: clip.folder, name: clip.name });
     if (res?.ok) clip.heard = res.result;
     else byId("wk-msg")!.textContent = res?.result ?? "Miku no respondió.";
+    paintWake();
+  } else if (el.id === "wk-accept") {
+    const sug = clips.filter((c) => !c.label && c.suggest);
+    const yes = sug.filter((c) => c.suggest === "yes").length;
+    if (!(await ask(`¿Aceptar ${sug.length} sugerencias?`, `Marca ${yes} como «era yo» (se oyó «Miku») y ${sug.length - yes} como «no era yo» (era otra cosa o la despediste). Puedes cambiar cualquiera después.`, "Aceptar"))) return;
+    for (const c of sug) {
+      await invoke("wake_label", { folder: c.folder, name: c.name, label: c.suggest });
+      c.label = c.suggest;
+    }
     paintWake();
   } else if (el.id === "wk-train") {
     training = true;

@@ -180,6 +180,17 @@ CHAT_HINT = ("(Aviso del sistema: este mensaje es solo charla, sin ninguna orden
 _ASKS_ABOUT_IT = re.compile(r"\?|\bsegur[oa]\b|\bde verdad\b|\bya lo\b|\b(?:lo|la)\s+\w+(?:aste|iste)\b", re.IGNORECASE)
 # Follow-up requests after the first one: tool results back to the model, a nudge, or a second tool step
 MAX_TOOL_ROUNDS = 3
+# Tools whose result already is the answer ("He abierto Spotify.", "¡Clip guardado!"): when they all work and the
+# phrase is a single order, the follow-up request that only rephrases it is skipped. 3-nov log: 32 of 110 follow-ups
+# were this, none led to another step. Not here: tools that work in steps or retry (windows, tabs, the YouTube
+# player, open_url) and the ones that bring data to talk about (weather, files, the PC state)
+FINAL_TOOLS = {
+    "open_app", "close_app", "set_volume", "change_volume", "mute", "media_control", "obs", "youtube_play",
+    "open_website", "web_search", "youtube_search", "show_desktop", "lock_pc", "set_timer", "remind", "cancel_timer",
+    "take_note", "complete_note", "delete_note", "remember", "forget", "create_text_file", "copy_to_clipboard",
+    "open_folder", "open_notes", "watch_downloads", "run_routine",
+}
+_ONE_MORE_STEP = re.compile(r"\b(y|despu[eé]s|luego|tambi[eé]n|primero|entonces)\b", re.IGNORECASE)
 # A request that hangs waits this long before the next model in the chain. 10 s is the API's minimum: 8 s made every
 # request fail with 400 "Manually set deadline 8s is too short. Minimum allowed deadline is 10s." (log 3-nov 17:18)
 GEMINI_TIMEOUT_MS = 10_000
@@ -383,7 +394,8 @@ class MikuBrain:
             return response
 
     def _count(self, model: str) -> None:
-        """One answered request against today's quota; the 90% warning rides on this turn's answer."""
+        """One request sent, against today's quota (Google counts failed ones too); the 90% warning rides on this
+        turn's answer."""
         if self.history_file is None:  # a test, not the real assistant: never touch cache/quota.json
             return
         try:
@@ -478,6 +490,12 @@ class MikuBrain:
             if calls:
                 logger.info("Gemini asked for tools: %s", [f"{c.name}({dict(c.args or {})})" for c in calls])
                 last_results = await self._run_tool_calls(calls)
+                if (follow_ups_left == MAX_TOOL_ROUNDS and {c.name for c in calls} <= FINAL_TOOLS
+                        and all(r.get("ok") for r in last_results) and not _ONE_MORE_STEP.search(clean_input)):
+                    logger.info("The tool results are the answer: no follow-up request.")
+                    if raw_answer:
+                        return self._parse_emotion(raw_answer)
+                    return "happy", self._sanitize_for_speech(" ".join(str(r.get("result", "")) for r in last_results))
                 # The model's own content goes back as is: Gemini 3 needs its thought signatures with the results
                 follow_up = [content, types.Content(role="user", parts=[
                     types.Part(function_response=types.FunctionResponse(id=c.id, name=c.name, response=r))
@@ -503,8 +521,8 @@ class MikuBrain:
             try:
                 self.total_api_calls += 1
                 logger.info("--> [GEMINI REQ #%d] Model: %s | follow-up (tool results or nudge)", self.total_api_calls, model)
-                response = await self._generate(model, contents, config)
                 self._count(model)
+                response = await self._generate(model, contents, config)
             except Exception as e:
                 # Quota or overload on the follow-up: the actions are done, so read their results out as they are
                 logger.warning("Follow-up request failed (%s). Reading the tool results instead.", e)
@@ -832,7 +850,8 @@ class MikuBrain:
         models_to_try: List[str] = []
         for m in self.all_models:
             cooldown_until = self._model_cooldown.get(m, 0.0)
-            if now >= cooldown_until:
+            # A bucket used up today is skipped: its 429 would cost a request on Google's count and the user's time
+            if now >= cooldown_until and not (self.history_file is not None and quota.spent(m)):
                 models_to_try.append(m)
 
         # If all models happen to be on cooldown, try all in original order anyway
@@ -876,8 +895,8 @@ class MikuBrain:
                 )
                 # Local names: a failed Gemma must not leave the next Gemini with text instead of the audio
                 model_contents, model_config = self._for_model(model, contents, config, clean_input)
-                response = await self._generate(model, model_contents, model_config)
                 self._count(model)
+                response = await self._generate(model, model_contents, model_config)
                 self.last_model = model
                 # Clear any previous cooldown for this healthy model
                 self._model_cooldown.pop(model, None)

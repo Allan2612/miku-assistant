@@ -78,7 +78,7 @@ export class ClickthroughController {
 
       // 1. Cursor over the speech bubble
       const el = inside ? document.elementFromPoint(x, y) : null;
-      const hitUI = Boolean(el?.closest(".miku-speech-bubble"));
+      const hitUI = Boolean(el?.closest(".miku-speech-bubble, .miku-chat"));
 
       // 2. Cursor over the Live2D model body
       const hit = hitUI || (inside && live2d.hitTest(x, y));
