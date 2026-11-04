@@ -73,7 +73,7 @@ def scan() -> Dict[str, Any]:
     program = size(PROGRAM) - size(PROGRAM / "models") if INSTALLED else size(PROGRAM / "core") - size(PROGRAM / "core" / ".venv")
     items = [
         {"key": "runtime", "name": "Python y librerías", "path": str(RUNTIME), "bytes": size(RUNTIME),
-         "what": "incluye PyTorch, para la voz en la GPU" if torch else "sin PyTorch (no hay GPU NVIDIA)",
+         "what": "incluye PyTorch, para la voz de Miku" if torch else "sin PyTorch (no hay GPU NVIDIA)",
          "torch": size(torch) if torch else 0},
         {"key": "speech", "name": "Modelos de voz", "path": str(HUB), "bytes": sum(size(d) for d in used),
          "what": "Whisper (te entiende) y ContentVec (voz de Miku)"},

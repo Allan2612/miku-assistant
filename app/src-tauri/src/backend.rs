@@ -144,6 +144,20 @@ impl Backend {
         follow(child, &mut on_line, "La preparación falló")
     }
 
+    /// What this PC has (installer/check.ps1): graphics, CPU, RAM, disk, microphones, internet. One JSON line.
+    pub fn run_check(&self) -> Result<String, String> {
+        let root = self.root.as_ref().ok_or("No encuentro la carpeta de Miku")?;
+        let out = Command::new("powershell.exe")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(root.join("installer").join("check.ps1"))
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| format!("No pude lanzar PowerShell: {e}"))?;
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+
     /// Retrains "Hey Miku" (core/train_wakeword.py), its "@@{json}" progress lines passed to `on_line`.
     pub fn run_train(&self, mut on_line: impl FnMut(&str)) -> Result<(), String> {
         let root = self.root.as_ref().ok_or("No encuentro la carpeta de Miku")?;

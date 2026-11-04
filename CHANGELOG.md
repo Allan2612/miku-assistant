@@ -41,6 +41,12 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
   conversaciones.
 - Un color, un significado: turquesa bien, ámbar aviso, coral error o borrar, violeta VRAM, azul Gemini.
 - Quitada la música de fondo del panel.
+- **Instalar en una PC sin NVIDIA ya no deja a Miku a medias.**
+  - El asistente revisa la PC antes de instalar («Tu PC»).
+  - Instala PyTorch para el procesador, así que su voz y reentrenar «Hey Miku» funcionan, algo más lentos.
+  - Mide la velocidad al final y elige el Whisper adecuado.
+  - Deja elegir entre su voz y una voz rápida.
+  - Recursos muestra la memoria compartida de los gráficos integrados, y no una VRAM vacía.
 - Configuración › La ventana de Miku: en qué pantalla aparece (se mueve al guardar) y un cuadro para escribirle bajo
   ella, apagado por defecto.
 - Las pantallas de carga del panel muestran filas de lo que viene y qué está leyendo, en vez de «Cargando…».

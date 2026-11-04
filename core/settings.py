@@ -128,6 +128,8 @@ def _validate(ch: Dict[str, Any]) -> List[str]:
         errors.append("Modelo desconocido.")
     if "threshold" in ch and not (isinstance(ch["threshold"], (int, float)) and 0.1 <= ch["threshold"] <= 0.95):
         errors.append("El umbral va de 0,10 a 0,95.")
+    if "stt_model" in ch and ch["stt_model"] not in ("base", "small"):
+        errors.append("Modelo de Whisper no válido.")
     if "monitor" in ch and not (isinstance(ch["monitor"], int) and not isinstance(ch["monitor"], bool) and 0 <= ch["monitor"] <= 9):
         errors.append("Pantalla no válida.")
     for flag in ("rvc_enabled", "wakeword_enabled", "window_chat"):
@@ -162,7 +164,7 @@ def set_(ch: Dict[str, Any]) -> Dict[str, Any]:
     edits = {"model": ("llm", "model"), "rvc_enabled": ("rvc", "enabled"), "wakeword_enabled": ("wakeword", "enabled"),
              "threshold": ("wakeword", "threshold"), "weather_city": ("tools", "weather_city"),
              "disabled_tools": ("tools", "disabled"), "hotkey": ("", "hotkey"), "input_device": ("audio", "input_device"),
-             "monitor": ("window", "monitor"), "window_chat": ("window", "chat")}
+             "monitor": ("window", "monitor"), "window_chat": ("window", "chat"), "stt_model": ("stt", "model")}
     for field, (section, key) in edits.items():
         if field in ch:
             text = set_value(text, section, key, ch[field])
@@ -176,7 +178,8 @@ def set_(ch: Dict[str, Any]) -> Dict[str, Any]:
         expected = {"model": c.llm.model, "rvc_enabled": c.rvc.enabled, "wakeword_enabled": c.wakeword.enabled,
                     "threshold": c.wakeword.threshold, "weather_city": c.tools.weather_city,
                     "disabled_tools": list(c.tools.disabled), "hotkey": c.hotkey,
-                    "input_device": c.audio.input_device, "monitor": c.window.monitor, "window_chat": c.window.chat}
+                    "input_device": c.audio.input_device, "monitor": c.window.monitor, "window_chat": c.window.chat,
+                    "stt_model": c.stt.model}
         wrong = [f for f, v in expected.items() if f in ch and ch[f] != v]
         if wrong:
             return {"ok": False, "error": f"No se guardó bien: {', '.join(wrong)}. config.yaml no se tocó."}

@@ -162,10 +162,10 @@ function paintInicio(s: Reply): void {
   const g = s?.gemini;
   const primaryWait = g?.cooldowns?.[g.primary];
   const rows: [string, string, string][] = !on || !s
-    ? ["Backend", "Voz RVC", "Palabra clave", "Extensión de Opera", "OBS", "Gemini"].map((n, i) => [n, i ? "—" : on ? "Arrancando…" : "Detenido", ""])
+    ? ["Backend", "Voz de Miku", "Palabra clave", "Extensión de Opera", "OBS", "Gemini"].map((n, i) => [n, i ? "—" : on ? "Arrancando…" : "Detenido", ""])
     : [
         ["Backend", `Activo · PID ${s.pid}`, "ok"],
-        ["Voz RVC", !s.rvc.enabled ? "Desactivada · solo subtítulos" : s.rvc.loaded ? "Cargada en la GPU" : "Se carga al hablar", s.rvc.enabled ? "ok" : ""],
+        ["Voz de Miku", !s.rvc.enabled ? "Apagada · habla con la voz base" : s.rvc.loaded ? `Lista ${s.rvc.gpu ? "en la GPU" : "en el procesador"}` : "Se carga al hablar", s.rvc.enabled ? "ok" : ""],
         ["Palabra clave", !s.wakeword.enabled ? "Desactivada · solo con el atajo" : s.wakeword.listening ? `Escuchando · umbral ${comma(s.wakeword.threshold, 2)}` : "En pausa mientras conversa", s.wakeword.enabled ? "ok" : ""],
         ["Extensión de Opera", s.opera.connected ? `Conectada · ${s.opera.tabs} pestañas` : "Sin conectar · abre Opera con la extensión de Miku", s.opera.connected ? "ok" : "warn"],
         ["OBS", s.obs ? "Abierto · clips y grabación por voz" : "Cerrado", s.obs ? "ok" : ""],
@@ -239,6 +239,8 @@ function paintRecursos(): void {
   const d = res;
   if (!d) return paint(body, loading("Midiendo los procesos de Miku…"));
   const gk = d.gpu_known;
+  // Integrated graphics have no VRAM: they borrow RAM ("memoria compartida"), and that is what Task Manager shows
+  const gmem = d.gpu_shared ? "Memoria de gráficos" : "VRAM";
   const kpi = (label: string, value: string, note: string, color: string) =>
     `<div class="card kpi"><span class="muted" style="font-size:12px">${label}</span><span class="big" style="color:${color}">${value}</span><span class="dim">${note}</span></div>`;
   const cpuMax = niceMax(Math.max(0, ...cpuPts.map((p) => p.v)), [5, 10, 25, 50, 100]);
@@ -249,11 +251,11 @@ function paintRecursos(): void {
     <div class="row-wrap">
       ${kpi("CPU de Miku", `${comma(d.total.cpu)} %`, "de toda la CPU", "var(--teal-l)")}
       ${kpi("Memoria", size(d.total.ram), `de ${size(d.ram_total)} del PC · ${count} procesos`, "var(--teal-l)")}
-      ${kpi("VRAM", gk ? size(d.total.vram) : "—", gk ? (d.vram_total ? `de ${size(d.vram_total)} de la tarjeta` : "voz RVC y dibujo") : "sin contadores de GPU", "var(--violet)")}
+      ${kpi(gmem, gk ? size(d.total.vram) : "—", !gk ? "sin contadores de GPU" : d.gpu_shared ? `compartida: puede usar hasta ${size(d.vram_total)} de la RAM` : `de ${size(d.vram_total)} de la tarjeta`, "var(--violet)")}
     </div>
     <section class="card" style="overflow-x:auto" aria-label="Procesos"><div class="card-head"><h2>Procesos</h2>${gk ? `<span class="dim">GPU de todo el PC: ${Math.round(d.gpu_total)} %</span>` : ""}</div>
       <div class="table">
-        <span class="th">PROCESO</span><span class="th">CPU</span><span class="th">MEMORIA (DEL PC)</span><span class="th">VRAM</span><span class="th">GPU</span>
+        <span class="th">PROCESO</span><span class="th">CPU</span><span class="th">MEMORIA (DEL PC)</span><span class="th">${d.gpu_shared ? "GRÁFICOS" : "VRAM"}</span><span class="th">GPU</span>
         ${d.groups.map((g: any) => `
           <div class="name"><b>${esc(g.name)}${g.count > 1 ? ` <span class="dim">(${g.count})</span>` : ""}</b><span>${esc(g.what)}</span></div>
           <span class="mono">${comma(g.cpu)} %</span>
@@ -265,8 +267,8 @@ function paintRecursos(): void {
     <div class="grid">
       <section class="card" aria-label="CPU"><div class="card-head"><h2>CPU de Miku</h2><span class="mono" style="color:var(--teal-l)">${comma(d.total.cpu)} %</span></div>
         ${lineChart("cpu", cpuPts, { span: SPAN, max: cpuMax, color: "#39c5bb", fill: "rgba(57,197,187,0.10)", fmt: (v) => `${comma(v, v < 10 ? 1 : 0)} %`, label: "CPU de Miku en los últimos 2 minutos" })}</section>
-      <section class="card" aria-label="VRAM"><div class="card-head"><h2>VRAM de Miku</h2><span class="mono" style="color:var(--violet)">${gk ? size(d.total.vram) : "—"}</span></div>
-        ${lineChart("vram", vramPts, { span: SPAN, max: vramMax, color: "#b59cff", fill: "rgba(181,156,255,0.10)", fmt: (v) => size(v), label: "VRAM de Miku en los últimos 2 minutos" })}</section>
+      <section class="card" aria-label="VRAM"><div class="card-head"><h2>${gmem} de Miku</h2><span class="mono" style="color:var(--violet)">${gk ? size(d.total.vram) : "—"}</span></div>
+        ${lineChart("vram", vramPts, { span: SPAN, max: vramMax, color: "#b59cff", fill: "rgba(181,156,255,0.10)", fmt: (v) => size(v), label: `${gmem} de Miku en los últimos 2 minutos` })}</section>
     </div>`;
 }
 

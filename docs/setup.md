@@ -9,9 +9,15 @@ terceros: no lo publiques.
    `app/src-tauri/target/release/bundle/nsis/Miku Assistant_<versión>_x64-setup.exe` (~220 MB).
 2. **Instalarlo:** Windows avisará de "editor desconocido" (no está firmado): *Más información › Ejecutar de todas
    formas*. Se instala para el usuario actual, sin pedir administrador, en `%LOCALAPPDATA%\Programs\Miku Assistant`.
-3. **Primer arranque:** el panel pide la API key de Gemini (puede dejarse para después) y la ciudad, y descarga Python,
-   las librerías y los modelos (~4 GB con tarjeta NVIDIA; sin NVIDIA no instala PyTorch y Miku contesta con
-   subtítulos, sin la voz RVC). Hace falta internet esa vez.
+3. **Primer arranque:** el panel revisa la PC («Tu PC»: gráficos, procesador, RAM, disco, micrófono, internet), pide
+   la API key de Gemini (puede dejarse para después) y la ciudad, y descarga Python, las librerías y los modelos. Hace
+   falta internet esa vez.
+   - **Con NVIDIA:** PyTorch con CUDA, unos 4 GB de descarga y unos 6,5 GB en disco. Su voz va en la tarjeta.
+   - **Sin NVIDIA** (gráficos integrados): PyTorch para el procesador, unos 2 GB de descarga y unos 3,5 GB en disco.
+     Funciona todo, también su voz y reentrenar «Hey Miku», pero cada respuesta tarda unos segundos más.
+   - Al final mide la PC (`core/bench.py`): elige Whisper `small` o `base` y dice cuánto tarda su voz. Sin NVIDIA deja
+     elegir entre su voz y la voz rápida (la base de edge-tts, al instante).
+   - Para probar el camino sin NVIDIA en una PC que la tiene: `MIKU_FORCE_CPU=1` al lanzar `installer/setup.ps1`.
 4. **Dónde queda cada cosa:**
    - el programa (código, modelos): la carpeta de instalación;
    - Python y las librerías: `%LOCALAPPDATA%\Miku Assistant\runtime` (se borra al desinstalar);

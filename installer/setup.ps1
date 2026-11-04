@@ -4,6 +4,7 @@
 #
 # Environment: MIKU_PROGRAM (install folder), MIKU_HOME (data), MIKU_RUNTIME (runtime), MIKU_API_KEY, MIKU_CITY.
 # MIKU_DRY_RUN=1: checks the folders, the GPU and the download URLs, and installs nothing.
+# MIKU_FORCE_CPU=1: as if there were no NVIDIA card (to test the CPU install on a PC that has one).
 # Windows PowerShell 5.1 (the one every Windows has).
 
 $ErrorActionPreference = 'Stop'
@@ -64,14 +65,17 @@ try {
   }
   Say 'data' 'done' 4 ''
 
-  $nvidia = [bool](Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' })
+  $nvidia = [bool](Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' }) -and $env:MIKU_FORCE_CPU -ne '1'
   Say 'gpu' 'done' 5 $(if ($nvidia) { 'NVIDIA' } else { 'none' })
+  # Without an NVIDIA card her voice and the wake word retraining run on the CPU: the CPU build of PyTorch, so
+  # nothing is lost (3-nov: a 4 s phrase took 2.9 s on an 8-core CPU)
+  $torchIndex = if ($nvidia) { 'cu126' } else { 'cpu' }
 
   if ($dry) {
     Say 'uv' 'run' 6 'Comprobando las descargas'
     $sum = (Text (Invoke-WebRequest -Uri "$uvUrl.sha256" -UseBasicParsing)).Trim()
-    $torch = Invoke-WebRequest -Uri 'https://download.pytorch.org/whl/cu126/torch/' -UseBasicParsing -Method Head
-    Say 'done' 'done' 100 "dry run: uv sha256 $($sum.Substring(0, 12))..., PyTorch cu126 $($torch.StatusCode)"
+    $torch = Invoke-WebRequest -Uri "https://download.pytorch.org/whl/$torchIndex/torch/" -UseBasicParsing -Method Head
+    Say 'done' 'done' 100 "dry run: uv sha256 $($sum.Substring(0, 12))..., PyTorch $torchIndex $($torch.StatusCode)"
     exit 0
   }
 
@@ -100,31 +104,30 @@ try {
   Run 'libs' $uv @('pip', 'install', '--python', $py, '-r', $req)
   Say 'libs' 'done' 45 ''
 
-  if ($nvidia) {
-    Say 'torch' 'run' 47 'Instalando PyTorch con CUDA para la voz de Miku (unos 2,5 GB)'
-    try {
-      Run 'torch' $uv @('pip', 'install', '--python', $py, 'torch', 'torchaudio', '--index-url', 'https://download.pytorch.org/whl/cu126')
-    } catch {
-      # No stable build for this Python yet: the nightly one, like the development setup
-      Say 'torch' 'run' 47 'Probando la versión nightly de PyTorch'
-      Run 'torch' $uv @('pip', 'install', '--python', $py, '--pre', 'torch', 'torchaudio', '--index-url', 'https://download.pytorch.org/whl/nightly/cu126')
-    }
-    Say 'torch' 'done' 85 ''
-  } else {
-    Say 'torch' 'skip' 85 'Sin GPU NVIDIA: Miku contestará con subtítulos, sin la voz RVC'
+  $torchMsg = 'Instalando PyTorch para el procesador: su voz y reentrenar «Hey Miku» (unos 200 MB)'
+  if ($nvidia) { $torchMsg = 'Instalando PyTorch con CUDA para la voz de Miku (unos 2,5 GB)' }
+  Say 'torch' 'run' 47 $torchMsg
+  try {
+    Run 'torch' $uv @('pip', 'install', '--python', $py, 'torch', 'torchaudio', '--index-url', "https://download.pytorch.org/whl/$torchIndex")
+  } catch {
+    # No stable build for this Python yet: the nightly one, like the development setup
+    Say 'torch' 'run' 47 'Probando la versión nightly de PyTorch'
+    Run 'torch' $uv @('pip', 'install', '--python', $py, '--pre', 'torch', 'torchaudio', '--index-url', "https://download.pytorch.org/whl/nightly/$torchIndex")
   }
+  Say 'torch' 'done' 85 ''
 
   Say 'models' 'run' 87 'Descargando los modelos de voz y de escucha'
-  $margs = @('-m', 'core.setup_models')
-  if ($nvidia) { $margs += '--voice' }
-  Run 'models' $py $margs
-  Say 'models' 'done' 97 ''
+  Run 'models' $py @('-m', 'core.setup_models', '--voice')
+  Say 'models' 'done' 94 ''
 
   # The wizard's choices, through the same code the panel uses (it checks them and keeps the comments)
-  $changes = @{ rvc_enabled = $nvidia }
+  $changes = @{ rvc_enabled = $true }
   if ($env:MIKU_CITY) { $changes.weather_city = $env:MIKU_CITY }
   $result = ($changes | ConvertTo-Json -Compress) | & $py -m core.settings set
   if ($result -notmatch '"ok": true') { throw "Ajustes: $result" }
+
+  # How fast this PC is: picks the Whisper model and tells the wizard what to expect. Never stops the install
+  try { Run 'bench' $py @('-m', 'core.bench') } catch { Say 'bench' 'skip' 99 'No pude medir la velocidad: Miku usa los ajustes normales' }
   Say 'done' 'done' 100 ''
   exit 0
 } catch {

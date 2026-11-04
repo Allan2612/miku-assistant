@@ -67,6 +67,7 @@
       "../../docs/funciones.md": "docs/funciones.md",
       "../../config.yaml": "config.default.yaml",
       "../../installer/setup.ps1": "installer/setup.ps1",
+      "../../installer/check.ps1": "installer/check.ps1",
       "../../browser-extension/*": "browser-extension/",
       "../../browser-extension/icons/*": "browser-extension/icons/"
     },

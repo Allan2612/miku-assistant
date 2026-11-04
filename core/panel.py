@@ -22,19 +22,20 @@ _GROUPS = [
     ("app", "Miku Assistant", "ventana, bandeja y panel"),
     ("webview", "WebView2", "dibujo de Miku y del panel"),
     ("backend", "Backend", "Python · Whisper, Gemini, herramientas"),
-    ("rvc", "Voz RVC", "Python · PyTorch en la GPU"),
+    ("rvc", "Voz RVC", "Python · PyTorch"),
 ]
 _procs: Dict[int, psutil.Process] = {}  # kept between calls: cpu_percent() measures since the previous call
 _gpu: Any = None
 _gpu_failed = False
 _obs_cache = (0.0, False)
 _vram_size: Optional[int] = None
+_nvidia = False
 
 
 def _vram_total() -> int:
     """The graphics card's own memory, in bytes (0 if unknown): the scale of the panel's VRAM chart.
     From the display driver's registry key: WMI's AdapterRAM stops at 4 GB."""
-    global _vram_size
+    global _vram_size, _nvidia
     if _vram_size is None:
         _vram_size = 0
         try:
@@ -45,6 +46,7 @@ def _vram_total() -> int:
                 for i in range(winreg.QueryInfoKey(root)[0]):
                     try:
                         with winreg.OpenKey(root, winreg.EnumKey(root, i)) as sub:
+                            _nvidia = _nvidia or "NVIDIA" in str(winreg.QueryValueEx(sub, "DriverDesc")[0]).upper()
                             _vram_size = max(_vram_size, int(winreg.QueryValueEx(sub, "HardwareInformation.qwMemorySize")[0]))
                     except (OSError, ValueError):
                         continue
@@ -53,12 +55,22 @@ def _vram_total() -> int:
     return _vram_size
 
 
+def _has_nvidia() -> bool:
+    _vram_total()  # reads the adapters once
+    return _nvidia
+
+
+def _shared_gpu() -> bool:
+    return _vram_total() < 2 ** 30
+
+
 def _gpu_counters() -> Any:
     global _gpu, _gpu_failed
     if _gpu is None and not _gpu_failed:
         try:
             from core.gpu_counters import GpuCounters
-            _gpu = GpuCounters()
+            # Integrated graphics have no VRAM of their own (under 1 GB in the registry): they use shared RAM
+            _gpu = GpuCounters("Dedicated Usage" if not _shared_gpu() else "Shared Usage")
         except OSError:
             _gpu_failed = True  # no GPU counters on this PC: VRAM shows as unknown
     return _gpu
@@ -112,7 +124,9 @@ def processes() -> Dict[str, Any]:
         "gpu_total": gpu_total,
         "total": {k: sum(g[k] for g in groups) for k in ("cpu", "ram", "vram")},
         "ram_total": psutil.virtual_memory().total,
-        "vram_total": _vram_total(),
+        # Integrated graphics: Windows lets them take up to half of the RAM
+        "vram_total": psutil.virtual_memory().total // 2 if _shared_gpu() else _vram_total(),
+        "gpu_shared": _shared_gpu(),
     }
 
 
@@ -137,7 +151,8 @@ def status(pipeline: Any) -> Dict[str, Any]:
         "pid": os.getpid(),
         "busy": pipeline.busy,
         "fullscreen": fullscreen_app_in_front(),
-        "rvc": {"enabled": bool(rvc and rvc.enabled), "loaded": bool(rvc and rvc.is_loaded)},
+        "rvc": {"enabled": bool(rvc and rvc.enabled), "loaded": bool(rvc and rvc.is_loaded),
+                "gpu": _has_nvidia()},  # PyTorch uses CUDA only with an NVIDIA card: else the voice runs on the CPU
         "wakeword": {"enabled": bool(ww and ww.enabled), "listening": bool(ww and ww._running and not ww._paused),
                      "threshold": getattr(ww, "threshold", None)},
         "opera": {"connected": bridge.connected, "tabs": len(bridge.tabs)},

@@ -140,7 +140,7 @@ function paintConfig(): void {
       ${setRow("Modelo principal", "Los de respaldo se usan solos si este falla.", `<select id="model" class="select">${cfg.gemini.models.map((m: string) => `<option${m === d.gemini.model ? " selected" : ""}>${esc(m)}</option>`).join("")}</select>`, "model")}
     </section>
     <section class="card" aria-label="Voz y palabra clave"><h2>Voz y palabra clave</h2>
-      ${setRow("Voz de Miku (RVC)", "Usa la GPU. Apagada: solo subtítulos.", switchBtn("sw-rvc", "Voz de Miku (RVC)", d.rvc_enabled))}
+      ${setRow("Voz de Miku (RVC)", "Con NVIDIA va en la GPU; si no, en el procesador (tarda un poco más). Apagada: habla con la voz base.", switchBtn("sw-rvc", "Voz de Miku (RVC)", d.rvc_enabled))}
       ${setRow("Escuchar «Hey Miku»", "Apagada: solo con el atajo.", switchBtn("sw-wake", "Escuchar «Hey Miku»", d.wakeword_enabled))}
       ${setRow("Umbral de la palabra clave", `<span id="thrfx">${esc(thresholdEffect(d.threshold))}</span>`, `
         <div class="inline"><input id="thr" class="range" type="range" min="0.2" max="0.8" step="0.05" value="${d.threshold}" aria-describedby="thrfx"><span id="thrv" class="mono" style="color:var(--teal-l);width:40px;text-align:right">${comma(d.threshold, 2)}</span></div>`, "thr")}

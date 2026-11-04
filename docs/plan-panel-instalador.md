@@ -180,6 +180,6 @@ Cada fase deja algo usable por sí mismo.
 
 Consecuencias para el plan:
 
-- Como va a otras PCs, la fase 5 detecta la GPU: con NVIDIA instala PyTorch con CUDA; sin ella, Miku funciona sin
-  la voz RVC (solo subtítulos, la regla de una sola voz).
+- Como va a otras PCs, la fase 5 detecta la GPU: con NVIDIA instala PyTorch con CUDA; sin ella (desde el 3-nov),
+  PyTorch para el procesador, así que su voz y el reentrenamiento siguen funcionando, algo más lentos.
 - El micrófono y la ciudad del clima se eligen en el asistente de primera vez, porque cambian de una PC a otra.

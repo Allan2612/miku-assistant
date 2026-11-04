@@ -36,14 +36,15 @@ class _Item(ctypes.Structure):
 class GpuCounters:
     """Call read() every few seconds: utilization is a rate, so the first read gives 0 % for every process."""
 
-    def __init__(self) -> None:
+    def __init__(self, memory: str = "Dedicated Usage") -> None:
+        """memory: "Dedicated Usage" (a graphics card's own VRAM) or "Shared Usage" (integrated graphics use RAM)."""
         self._pdh = ctypes.WinDLL("pdh")
         self._query = wintypes.HANDLE()
         self._mem = wintypes.HANDLE()
         self._util = wintypes.HANDLE()
         if self._pdh.PdhOpenQueryW(None, None, ctypes.byref(self._query)) != 0:
             raise OSError("PdhOpenQuery failed")
-        for path, handle in ((r"\GPU Process Memory(*)\Dedicated Usage", self._mem),
+        for path, handle in ((rf"\GPU Process Memory(*)\{memory}", self._mem),
                              (r"\GPU Engine(*)\Utilization Percentage", self._util)):
             if self._pdh.PdhAddEnglishCounterW(self._query, path, None, ctypes.byref(handle)) != 0:
                 raise OSError(f"PdhAddEnglishCounter failed for {path}")

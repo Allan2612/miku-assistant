@@ -105,6 +105,12 @@ fn setup_state(app: AppHandle) -> serde_json::Value {
     serde_json::json!({ "installed": backend.installed(), "ready": backend.ready() })
 }
 
+/// The wizard's "Tu PC" step: what this PC has, before installing anything.
+#[tauri::command]
+async fn setup_check(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<Power>().backend.run_check()).await.map_err(|e| e.to_string())?
+}
+
 /// The first start (installer/setup.ps1): each progress line goes to the panel as a "setup-progress" event; at the
 /// end Miku starts.
 #[tauri::command]
@@ -430,7 +436,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             backend_state, backend_start, backend_stop, backend_restart, read_log, log_tail, read_functions_doc,
             settings_get, settings_set, settings_tools, settings_testkey, wake_clips, wake_clip_audio, wake_label, wake_train_state, wake_train,
-            setup_state, setup_run, autostart_get, autostart_set, settings_inputs, settings_testobs, storage_scan, storage_clean, open_folder
+            setup_state, setup_check, setup_run, autostart_get, autostart_set, settings_inputs, settings_testobs, storage_scan, storage_clean, open_folder
         ])
         .setup(|app| {
             // The frontend positions the window (positionWindow in main.ts) using the work area
