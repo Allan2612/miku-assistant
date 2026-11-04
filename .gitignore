@@ -36,3 +36,7 @@ graphify-out/
 *_err.txt
 *_error.txt
 scratch/*.wav
+
+# Backups the panel leaves when it saves settings
+config.yaml.bak
+*.check.yaml
