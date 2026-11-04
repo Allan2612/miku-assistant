@@ -50,6 +50,9 @@ async function saveSettings(changes: Record<string, unknown>, msgId: string, btn
     } else {
       say(msgId, "Guardado. Se aplicará cuando enciendas a Miku.", "ok");
     }
+    // The bar shows only while there is something to say: it leaves a few seconds after "Listo"
+    const done = byId(msgId)?.textContent;
+    window.setTimeout(() => byId(msgId)?.textContent === done && say(msgId, ""), 3500);
     return true;
   } catch (err) {
     say(msgId, `No se pudo guardar: ${err}`, "bad");
@@ -420,7 +423,8 @@ function paintTools(): void {
   byId("tlist")!.innerHTML = html || `<span class="dim" style="display:block;padding:12px 0">Ninguna herramienta coincide.</span>`;
   const changed = [...disabled].sort().join("|") !== savedDisabled;
   byId("tools-undo")!.hidden = !changed;
-  say("tools-msg", changed ? `Cambios sin guardar · ${disabled.size} apagada(s)` : `${tools.length - disabled.size} de ${tools.length} encendidas`, changed ? "warn" : "");
+  if (changed) say("tools-msg", `Cambios sin guardar · ${disabled.size} apagada(s)`, "warn");
+  else if (byId("tools-msg")?.className.includes("warn")) say("tools-msg", ""); // undone by hand: the bar goes away
 }
 
 async function onToolsClick(ev: MouseEvent): Promise<void> {
