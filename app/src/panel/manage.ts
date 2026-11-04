@@ -30,8 +30,8 @@ const setRow = (label: string, help: string, control: string, forId = "") =>
 
 const saveBar = (id: string, label: string) =>
   `<div class="savebar"><span id="${id}-msg" class="msg" aria-live="polite"></span>
-   <button type="button" id="${id}-undo" class="btn ghost" hidden>Descartar cambios</button>
-   <button type="button" id="${id}-save" class="power off">${esc(label)}<span class="ic">${icon(CHECK_ICON, 16)}</span></button></div>`;
+   <button type="button" id="${id}-undo" class="btn ghost" hidden>Descartar</button>
+   <button type="button" id="${id}-save" class="btn primary">${icon(CHECK_ICON, 16)}${esc(label)}</button></div>`;
 
 /** Saves settings; restarts the backend if it is on (it reads config.yaml and .env only when it starts). */
 async function saveSettings(changes: Record<string, unknown>, msgId: string, btn: HTMLButtonElement): Promise<boolean> {
@@ -71,7 +71,7 @@ const EDITED = ["rvc_enabled", "wakeword_enabled", "threshold", "weather_city", 
 let screens: string[] = []; // "Pantalla 1 · izquierda · 1920×1080 (la principal)", left to right
 
 export function renderConfig(): void {
-  view().innerHTML = `${head("Configuración", "Se guardan en config.yaml y .env. Las claves nunca salen de tu PC.")}<div id="cfg" class="stack">${loading("Leyendo tus ajustes…", 6)}</div>`;
+  view().innerHTML = `${head("Configuración", "Se guardan en config.yaml y .env. Las claves nunca salen de tu PC.")}<div id="cfg" class="stack">${loading("Leyendo tus ajustes…")}</div>`;
   if (!isTauri) {
     byId("cfg")!.innerHTML = `<div class="offline">Los ajustes solo se cambian desde la app.</div>`;
     return;
@@ -369,7 +369,7 @@ export function renderTools(): void {
   view().innerHTML = `${head("Herramientas", "Lo que Miku puede hacer en tu PC. Una herramienta apagada desaparece para Gemini y para las frases locales.")}
     <div class="toolbar"><div class="chips" role="group" aria-label="Filtrar" id="tfilters"></div>
       <div><label for="tq" class="sr">Buscar herramienta</label><input id="tq" class="search" type="search" placeholder="Buscar…" value="${esc(toolQuery)}"></div></div>
-    <section class="card" aria-label="Herramientas" style="padding-top:8px;padding-bottom:8px"><div id="tlist">${loading("Leyendo las herramientas…", 6)}</div></section>
+    <section class="card" aria-label="Herramientas" style="padding-top:8px;padding-bottom:8px"><div id="tlist">${loading("Leyendo las herramientas…")}</div></section>
     ${saveBar("tools", state.backendOn ? "Guardar y reiniciar Miku" : "Guardar")}`;
   view().onclick = onToolsClick;
   view().oninput = (ev) => {
@@ -516,7 +516,7 @@ export function renderFunctions(): void {
     </div></div>
     <div class="docs"><nav class="toc" id="toc" aria-label="Secciones"></nav>
       <div class="stack"><div><label for="fq" class="sr">Buscar</label><input id="fq" class="search" type="search" style="width:100%" placeholder="Buscar en todas las secciones: clima, OBS, volumen…"></div>
-        <section class="card md" id="doc">${loading("Leyendo funciones.md…", 6)}</section></div></div>`;
+        <section class="card md" id="doc">${loading("Leyendo funciones.md…")}</section></div></div>`;
   view().onclick = (ev) => {
     const el = (ev.target as HTMLElement).closest<HTMLElement>("button");
     if (!el) return;
@@ -631,7 +631,7 @@ export function renderReminders(): void {
   remAsked = false;
   byId("rem")!.innerHTML = `
     <div class="row-wrap">
-      <section class="card" style="flex:2 1 440px" aria-label="Avisos activos"><h2>Avisos activos</h2><div id="tl">${loading("Leyendo tus avisos…", 3)}</div></section>
+      <section class="card" style="flex:2 1 440px" aria-label="Avisos activos"><h2>Avisos activos</h2><div id="tl">${loading("Leyendo tus avisos…")}</div></section>
       <section class="card" style="flex:1 1 300px" aria-label="Nuevo recordatorio"><h2>Nuevo recordatorio</h2>
         <div class="field"><label for="rtext">Qué te recuerdo</label><input id="rtext" class="input" autocomplete="off" placeholder="Ej: tomar agua…"></div>
         <div class="inline" style="align-items:flex-end">
@@ -661,7 +661,7 @@ function paintReminders(): void {
   const pl = byId("pl");
   if (!tl || !pl) return;
   if (!remData) {
-    paint(tl, remAsked ? noAnswer() : loading("Leyendo tus avisos…", 3));
+    paint(tl, remAsked ? noAnswer() : loading("Leyendo tus avisos…"));
     return;
   }
   const timers: any[] = remData.timers.filter((t: any) => !hiddenTimers.has(t.id));
@@ -808,7 +808,7 @@ function paintMemory(): void {
   paint(byId("n-facts"), memLoaded === "yes" ? String(facts.length) : "");
   paint(byId("n-days"), memLoaded === "yes" ? String(days.length) : "");
   if (memLoaded === "failed") return void (box.innerHTML = noAnswer());
-  if (memLoaded === "no") return void (box.innerHTML = loading("Leyendo lo que Miku recuerda…", 5));
+  if (memLoaded === "no") return void (box.innerHTML = loading("Leyendo lo que Miku recuerda…"));
   if (memTab === "facts") {
     box.innerHTML = `<section class="card" aria-label="Lo que recuerda de ti">
       <div class="inline"><label for="fnew" class="sr">Nuevo dato</label><input id="fnew" class="input" autocomplete="off" placeholder="Algo que Miku deba saber de ti. Ej: le encanta Frieren…"><button type="button" id="fadd" class="btn">Guardar</button></div>

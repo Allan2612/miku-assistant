@@ -55,7 +55,7 @@ export function renderWake(): void {
     <section class="card" id="wk-sum" aria-label="Resumen"></section>
     <div class="toolbar"><div class="chips" role="group" aria-label="Filtrar" id="wk-filters"></div>
       <span class="keys"><span id="wk-msg" class="msg" aria-live="polite"></span> Teclado: <kbd>↑</kbd><kbd>↓</kbd> elegir · <kbd>Espacio</kbd> escuchar · <kbd>S</kbd> era yo · <kbd>N</kbd> no era yo</span></div>
-    <section class="card" aria-label="Clips" style="padding:10px 12px"><div id="wk-list">${loading("Leyendo los clips de «Hey Miku»…", 6)}</div></section>`;
+    <section class="card" aria-label="Clips" style="padding:10px 12px"><div id="wk-list">${loading("Leyendo los clips de «Hey Miku»…")}</div></section>`;
   view().onclick = onWakeClick;
   if (!isTauri) return;
   invoke<{ clips: Clip[] }>("wake_clips")
@@ -105,7 +105,7 @@ function paintWake(): void {
             <button type="button" class="chip" data-label="no" data-key="${key}" aria-pressed="${c.label === "no"}" style="${c.label === "no" ? "background:var(--coral);border-color:var(--coral);color:#2a0a08" : ""}">No era yo</button></div>
         </div>`;
       }).join("") + pager("clips", list.length, wakePage, PER_PAGE, "clips")
-    : loaded ? `<span class="dim">Nada aquí.</span>` : loading("Leyendo los clips de «Hey Miku»…", 6);
+    : loaded ? `<span class="dim">Nada aquí.</span>` : loading("Leyendo los clips de «Hey Miku»…");
 }
 
 const findClip = (key: string) => clips.find((c) => keyOf(c) === key);

@@ -127,11 +127,12 @@ export function head(title: string, sub: string, right = ""): string {
 
 export const offlineNote = () =>
   `<div class="offline">Miku está apagada. <button type="button" class="btn small" data-power>Encender Miku</button></div>`;
-/** While something loads: placeholder rows shaped like what is coming, and what is being read (never a bare
- *  "Cargando…": the user sees the page is alive and what it waits for). */
-export const loading = (what: string, rows = 3) =>
-  `<div class="loading" role="status">${Array.from({ length: rows }, (_, i) => `<div class="skel" style="width:${[96, 78, 88, 64, 92, 72][i % 6]}%"></div>`).join("")}
-    <span class="what"><span class="eqmini" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${esc(what)}</span></div>`;
+/** While something loads: Miku's equalizer dancing, and what is being read (never a bare "Cargando…"). */
+const EQ_HEIGHTS = [38, 60, 78, 52, 88, 68, 100, 82, 100, 68, 88, 52, 78, 60, 38];
+export const loading = (what: string) =>
+  `<div class="loading" role="status"><div class="eqload" aria-hidden="true">${EQ_HEIGHTS.map((h, i) =>
+    `<i${i === 3 || i === 11 ? ' class="p"' : ""} style="height:${h}%;--d:${[0.9, 1.15, 0.8, 1.3, 1.0][i % 5]}s;--l:${(i * 0.07).toFixed(2)}s"></i>`).join("")}</div>
+    <span class="what">${esc(what)}</span></div>`;
 
 /** A request that got no answer (Miku busy or restarting): say so and offer to try again. */
 export const noAnswer = () =>

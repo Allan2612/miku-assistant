@@ -237,7 +237,7 @@ function paintRecursos(): void {
   if (!body) return;
   if (!state.backendOn) return paint(body, offlineNote());
   const d = res;
-  if (!d) return paint(body, loading("Midiendo los procesos de Miku…", 5));
+  if (!d) return paint(body, loading("Midiendo los procesos de Miku…"));
   const gk = d.gpu_known;
   const kpi = (label: string, value: string, note: string, color: string) =>
     `<div class="card kpi"><span class="muted" style="font-size:12px">${label}</span><span class="big" style="color:${color}">${value}</span><span class="dim">${note}</span></div>`;
@@ -293,7 +293,7 @@ function paintCuotas(): void {
   if (!body) return;
   if (!state.backendOn) return paint(body, offlineNote());
   const d = quotaData;
-  if (!d) return paint(body, quotaAsked ? noAnswer() : loading("Leyendo la cuota de hoy…", 4));
+  if (!d) return paint(body, quotaAsked ? noAnswer() : loading("Leyendo la cuota de hoy…"));
   const main = d.models.find((m: any) => m.primary) ?? d.models[0];
   const frac = main.limit ? Math.min(1, main.used / main.limit) : 0;
   const circ = 2 * Math.PI * 70;
@@ -413,7 +413,7 @@ function renderLogs(): void {
         <button type="button" class="chip" id="log-pause" aria-pressed="${logPaused}">${logPaused ? "Seguir" : "Pausar"}</button>
         <button type="button" class="chip" data-open="logs">Abrir carpeta</button></div>
     </div>
-    <div id="logbox" class="logbox grow" aria-live="off">${loading("Leyendo cache/core.log…", 10)}</div>`;
+    <div id="logbox" class="logbox grow" aria-live="off">${loading("Leyendo cache/core.log…")}</div>`;
   if (log.loaded) paintLogs(true);
 }
 
