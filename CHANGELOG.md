@@ -87,6 +87,12 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
   librerías (PyTorch solo con NVIDIA).
 
 ### Corregido
+- Reentrenar «Hey Miku» compara de forma justa:
+  - un clip ignorado que marcaste cuenta una vez;
+  - los clips grabados a menos de 2 s, que comparten audio, van juntos;
+  - la prueba usa clips más nuevos que el modelo actual, si hay suficientes;
+  - gana el modelo que acierta más en promedio entre llamadas y falsas;
+  - si gana, el definitivo se entrena con todas las marcas, promediando 5 redes para depender menos de la suerte.
 - **La cuota se gastaba sin que el panel lo mostrara.** Google cuenta cada petición enviada, también las que fallan
   por saturación (3-nov: `gemini-3-flash-preview` dijo «agotado» tras 20 enviadas, con solo 17 contadas). Ahora se
   cuenta cada envío. Un modelo ya agotado hoy no se intenta, y Gemma (14.400 al día) va antes que los de 20 al día.

@@ -83,7 +83,7 @@ function paintWake(): void {
     <div class="bar" role="img" aria-label="${labeled} de ${RETRAIN_CLIPS} marcas"><div style="width:${Math.min(100, (labeled / RETRAIN_CLIPS) * 100)}%"></div></div>
     <div class="toolbar"><span class="dim">${yes} tuyas${yes < RETRAIN_YOURS ? ` (faltan ${RETRAIN_YOURS - yes})` : ""} · ${labeled - yes} que no eras tú</span>
       <div class="inline">${sug.length ? `<button type="button" class="btn small ghost" id="wk-accept" data-tip="Según cómo terminó cada activación: dijo «Miku», o la despediste">Aceptar ${sug.length} sugerencias</button>` : ""}
-        <span id="wk-train-msg" class="dim" aria-live="polite">${esc(trainMsg || (ready ? "Tarda unos minutos y necesita internet. Solo se cambia si el nuevo te oye mejor." : ""))}</span>
+        <span id="wk-train-msg" class="dim" aria-live="polite">${esc(trainMsg || (ready ? "Tarda unos minutos y necesita internet. Solo se cambia si el nuevo acierta más en clips que ninguno vio." : ""))}</span>
         <button type="button" class="btn small" id="wk-train"${ready && !training ? "" : " disabled"}>${training ? "Entrenando…" : "Reentrenar"}</button></div></div>`;
   byId("wk-filters")!.innerHTML = FILTERS.map(([id, label, keep]) => `<button type="button" class="chip" data-wf="${id}" aria-pressed="${id === wakeFilter}">${label}<span class="n">${clips.filter(keep).length}</span></button>`).join("");
   const list = shownClips();

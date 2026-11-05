@@ -84,10 +84,13 @@ Para empezar, lee el [README.md](../README.md), [docs/architecture.md](architect
   - Cada activación anota si fue real o falsa en `cache/wake/suggested.json` ([core/pipeline.py](../core/pipeline.py),
     `_wake_was_real`), y Palabra clave las ofrece como marcas.
   - «Adiós», «No» o «Nada» después de un clip sin «Miku» la ocultan en silencio.
-  - Botón «Reentrenar» ([core/train_wakeword.py](../core/train_wakeword.py)): instala el modelo nuevo en
-    `cache/wake/hey_miku.onnx` solo si es mejor.
-    - Probado con los clips reales en modo prueba: llamadas detectadas de 4/6 a 5/6, falsas de 18/40 a 2/40.
-    - **Falta que el usuario acepte las sugerencias y pulse Reentrenar.**
+  - Botón «Reentrenar» ([core/train_wakeword.py](../core/train_wakeword.py)): instala en `cache/wake/hey_miku.onnx` solo
+    si el modelo nuevo acierta más (promedio de llamadas oídas y falsas ignoradas), en clips que ningún modelo vio.
+    - 4-nov, 328 marcas del usuario (35 suyas): el candidato no ganó y **sigue el modelo del 3-nov a las 21:29**.
+      Candidato 4/8 llamadas y 5/21 falsas; actual 7/8 y 12/21. Es casi un empate (0,63 contra 0,65).
+    - Esos clips existen porque el modelo actual se activó o casi: la prueba tiene sesgo. Solo el uso real lo decide.
+    - Sin los clips del usuario, el modelo original detecta 14/35 llamadas y se activa con 46/106 falsas. Con ellos,
+      en validación cruzada, unas 24–28/35 y 11–20/106.
   - El micrófono del usuario graba bajo (unos −27 dB): el panel sube los clips al reproducirlos.
 - **Instalador para PCs sin NVIDIA:**
   - el asistente revisa la PC ([installer/check.ps1](../installer/check.ps1));
