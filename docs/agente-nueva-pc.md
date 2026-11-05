@@ -136,7 +136,8 @@ core\.venv\Scripts\python.exe -m core.setup_models --voice
 core\.venv\Scripts\python.exe -m core.bench
 ```
 
-- `setup_models` descarga Whisper y ContentVec, unos 1,2 GB.
+- `setup_models` descarga Whisper, ContentVec y los archivos base de openWakeWord, unos 1,2 GB. Sin estos últimos,
+  «Hey Miku» falla al arrancar con `NO_SUCHFILE … melspectrogram.onnx`, aunque el resto de Miku funcione.
 - `core.bench` mide la PC y elige el Whisper adecuado. Anota lo que dice su última línea (`"@@{…}"`), que trae:
   - `audio_s`: lo que dura la frase de prueba;
   - `whisper.seconds`: cuánto tarda Whisper en entenderla;
@@ -180,11 +181,13 @@ anota cuál y el error para el usuario. No cambies código para que pase.
 
 ```powershell
 cd $P
-cmd /c start.bat
+Start-Process .\start.bat -WindowStyle Hidden
 Start-Sleep -Seconds 40
 Select-String -Path cache\core.log -Pattern 'Miku Core is active|WakeWord listener started|ERROR' | Select-Object -Last 5
-cmd /c stop.bat
+Start-Process .\stop.bat -WindowStyle Hidden -Wait
 ```
+
+Usa `Start-Process`, sin canalizar la salida: `miku.exe` hereda la tubería y la llamada se queda colgada.
 
 **Comprobación:**
 
@@ -231,8 +234,9 @@ Dile, en español y en pocas líneas:
 | `uv venv` no encuentra Python 3.14 | `uv python install 3.14` y repetir |
 | PyTorch: `No matching distribution` | Usar el comando nightly del paso 4 |
 | `link.exe not found` al compilar | Instalar las Build Tools de C++ (tabla del paso 1) y abrir una PowerShell nueva |
-| `npx tauri build`: «Acceso denegado» al renombrar `app.exe` | `miku.exe` está abierto: `cmd /c stop.bat` y repetir |
-| `start.bat`: «el puerto 8765 está ocupado» | `cmd /c stop.bat` y repetir |
+| `npx tauri build`: «Acceso denegado» al renombrar `app.exe` | `miku.exe` está abierto: `Start-Process .\stop.bat -WindowStyle Hidden -Wait` y repetir |
+| `start.bat`: «el puerto 8765 está ocupado» | `Start-Process .\stop.bat -WindowStyle Hidden -Wait` y repetir |
+| «Hey Miku» no arranca: `NO_SUCHFILE … melspectrogram.onnx` | Repetir `core.setup_models` del paso 5 |
 | La app abre en blanco | Faltan `app\public\models\` o `app\public\lib\`: repetir el paso 3 y el paso 6 |
 | `setup_models` muy lento o se corta | Repetirlo: retoma lo descargado |
 | Un test falla por algo de esta PC (micrófono, monitores) | Anotarlo para el usuario, no tocar el código |

@@ -108,8 +108,11 @@ class MikuServer:
                 reply = await panel.transcribe_clip(self.pipeline, args)
             else:
                 reply = await asyncio.to_thread(panel.answer, self.pipeline, what, args)
-        await websocket.send(json.dumps({"type": "panel_reply", "id": data.get("id"), "data": reply},
-                                        ensure_ascii=False))
+        try:
+            await websocket.send(json.dumps({"type": "panel_reply", "id": data.get("id"), "data": reply},
+                                            ensure_ascii=False))
+        except websockets.exceptions.ConnectionClosed:
+            pass  # the panel went away while its answer was being prepared: nobody is waiting for it
 
     async def _handle_extension(self, websocket: ServerConnection) -> None:
         """Miku's Opera extension: it may only report tabs and answer commands, never drive Miku."""

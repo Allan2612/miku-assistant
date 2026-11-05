@@ -1,6 +1,7 @@
 """
 Miku Assistant - Downloads, during the first start, what she would otherwise fetch on her first answer: Whisper's
-model and, with the voice on, ContentVec (the base of the RVC voice). Run by installer/setup.ps1.
+model and, with the voice on, ContentVec (the base of the RVC voice). Also the base files of openWakeWord, which pip does
+not bring and nothing else fetches: without them "Hey Miku" fails at startup. Run by installer/setup.ps1.
 
     python -m core.setup_models [--voice]
 """
@@ -12,6 +13,11 @@ def main() -> None:
     from core.config import load_config
 
     config = load_config()
+    print("openWakeWord...", flush=True)
+    from openwakeword.utils import download_models
+
+    # A name no model has: only the base files (melspectrogram, embedding, VAD). With [] it fetches every wake word
+    download_models(["__solo_base__"])
     print(f"Whisper {config.stt.model}...", flush=True)
     from faster_whisper import WhisperModel
 

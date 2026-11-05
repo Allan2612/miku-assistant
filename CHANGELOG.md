@@ -87,6 +87,10 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
   librerías (PyTorch solo con NVIDIA).
 
 ### Corregido
+- El primer arranque descarga los archivos base de openWakeWord: en una instalación limpia, «Hey Miku» fallaba al arrancar.
+- `npx tauri build` compila antes la web, así que ya no falla en una copia recién clonada.
+- El log ya no dice «GPU VRAM» cuando la voz corre en el procesador.
+- Si el panel se cierra mientras prepara una respuesta, ya no aparece un error en el log.
 - Al arrancar, Miku aparece cuando ya puede responder: antes se veía quieta y sin reaccionar mientras el backend cargaba. Hasta entonces solo se ve «Despertando…», que no bloquea clics, y la ventana se conecta como mucho 2 s después de que el backend esté listo.
 - Miku aparece también sobre juegos y videos a pantalla completa. Se puede apagar en Configuración (`window.over_fullscreen`) para que ahí responda solo con voz.
 - Órdenes de voz, según el log del 3 y 4 de noviembre:

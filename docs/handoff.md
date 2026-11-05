@@ -46,8 +46,8 @@ Para empezar, lee el [README.md](../README.md), [docs/architecture.md](architect
 
 ## Estado (4-nov)
 
-- **Rama `develop`, al día en GitHub.** El último commit es `c381665`, con los ajustes del usuario: pantalla 1 y
-  umbral 0,2.
+- **Rama `develop`, al día en GitHub**, con los ajustes del usuario en `config.yaml`: pantalla 2, cuadro de texto,
+  micrófono Razer y umbral 0,45.
 - **Pruebas y compilación:** los 28 módulos de test pasan. `npm run build` y `npx tauri build` compilan, y el instalador
   está en `app/src-tauri/target/release/bundle/nsis/`.
 - **Otra PC, sin NVIDIA:** el usuario va a seguir desarrollando allí.
@@ -141,8 +141,11 @@ Para empezar, lee el [README.md](../README.md), [docs/architecture.md](architect
   - revisar en la app real lo que solo se probó simulado: pantalla de Miku, cuadro de texto, Almacenamiento y
     «Liberar», marcado con teclado, pantallas de carga;
   - subir el nivel del micrófono en Windows.
-- **El umbral 0,2 está en el repo**, así que los instaladores nuevos salen con él: es muy sensible. Valorar volver a
-  0,35 cuando el modelo esté reentrenado.
+- **Los ajustes del usuario están en el repo**, así que los instaladores nuevos salen con ellos. Antes de repartir uno,
+  apagar el cuadro de texto y dejar el micrófono predeterminado.
+- **El modelo reentrenado puntúa alto con silencio** (0,69 con ceros; en el log, hasta 0,99 en clips casi mudos). Lo frena
+  el filtro de silencio, no el modelo. Conviene revisarlo en el próximo reentrenamiento.
+- **PC AMD (5-nov):** «Hey Miku» y el micrófono siguen sin confirmarse allí: 0 activaciones y 4 escuchas sin voz.
 - **Partes que ninguna auditoría revisó:**
   - `rvc_worker.py`, `infer_pack/` y `rmvpe.py`;
   - `stt.py`, `state.py` y `screen.py`;

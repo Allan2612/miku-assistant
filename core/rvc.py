@@ -155,7 +155,7 @@ class RVCManager:
             try:
                 ok = await self._load()
                 if ok:
-                    logger.info("RVC worker warmed up and ready in GPU VRAM.")
+                    logger.info("RVC worker warmed up and ready.")
                 return ok
             except Exception as e:
                 logger.error("Error warming up RVC worker: %s", e)
@@ -186,7 +186,7 @@ class RVCManager:
             return
         async with self._lock:
             if await self._ensure_worker():
-                logger.info("RVC worker on standby (no models in VRAM).")
+                logger.info("RVC worker on standby (no models loaded).")
 
     async def convert(self, audio_b64: str) -> Optional[Tuple[str, str]]:
         """
@@ -251,4 +251,4 @@ class RVCManager:
                 task.add_done_callback(self._reaping.discard)
             except RuntimeError:
                 pass
-            logger.info("RVC worker terminated. GPU VRAM reclaimed by OS (0 MB idle).")
+            logger.info("RVC worker terminated.")

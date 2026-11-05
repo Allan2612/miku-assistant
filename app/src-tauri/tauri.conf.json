@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "identifier": "com.miku.assistant",
   "build": {
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "withGlobalTauri": false,
