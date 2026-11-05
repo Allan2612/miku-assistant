@@ -18,7 +18,7 @@ Tras cambiar un archivo de la carpeta, pulsa el botón de recargar de la extensi
 ## Cómo funciona
 
 - `background.js` (service worker) se conecta a `ws://127.0.0.1:8765`, el servidor local de Miku, y le envía el estado
-  de las pestañas cada vez que cambia (agrupado cada 400 ms). Si Miku no está en marcha, reintenta cada 30 s.
+  de las pestañas cada vez que cambia (agrupado cada 400 ms). Si Miku no está en marcha, reintenta cada 3 s; si Opera duerme la extensión, la alarma la despierta cada 30 s.
 - El backend la reconoce por su `Origin` (`chrome-extension://gfjpfiehfhmpcfidlgjgbgjkaehkkaaf`, fijo gracias a la
   `key` de `manifest.json`) y solo le acepta estado y respuestas: la extensión no puede hablar por Miku ni apagar nada.
 - Cada petición a Gemini lleva ese estado, así que el modelo elige pestañas por número (`browser_tabs`,

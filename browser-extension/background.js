@@ -5,21 +5,25 @@
 
 const SERVER = "ws://127.0.0.1:8765";
 const STATE_DELAY_MS = 400; // tab events come in bursts (a page load fires several): send one state
+const RETRY_MS = 3000; // Miku just started: the 30 s of the alarm looked like the extension had failed
 const MAX_RESULTS = 10;
 // Search pages whose result links are read for Miku ("ábreme la segunda opción")
 const RESULT_PAGES = /^https?:\/\/([^/]*\.)?(google\.[a-z.]+\/search|youtube\.com\/results|duckduckgo\.com\/|bing\.com\/search)/;
 
 let ws = null;
 let stateTimer = null;
+let retryTimer = null;
 
 function connect() {
+  clearTimeout(retryTimer);
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-  ws = new WebSocket(SERVER);
-  ws.onopen = () => {
+  const sock = new WebSocket(SERVER);
+  ws = sock;
+  sock.onopen = () => {
     send({ type: "ext_hello", version: chrome.runtime.getManifest().version });
     pushState();
   };
-  ws.onmessage = (event) => {
+  sock.onmessage = (event) => {
     let msg;
     try {
       msg = JSON.parse(event.data);
@@ -28,10 +32,11 @@ function connect() {
     }
     if (msg.type === "ext_cmd") runCommand(msg);
   };
-  ws.onclose = () => {
-    ws = null;
+  sock.onclose = () => {
+    if (ws === sock) ws = null; // a late close of the old socket must not forget the new one: it would never say hello
+    retryTimer = setTimeout(connect, RETRY_MS);
   };
-  ws.onerror = () => {}; // Miku not running: the next alarm tries again
+  sock.onerror = () => {}; // Miku not running: onclose tries again
 }
 
 function send(msg) {

@@ -87,6 +87,7 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
   librerías (PyTorch solo con NVIDIA).
 
 ### Corregido
+- La extensión de Opera se conecta unos 3 s después de abrir Miku, no hasta 30 s después: en ese rato parecía rota y había que recargarla. Tampoco se queda sin saludar al backend si el cierre de la conexión anterior llega tarde.
 - Reentrenar «Hey Miku» compara de forma justa:
   - un clip ignorado que marcaste cuenta una vez;
   - los clips grabados a menos de 2 s, que comparten audio, van juntos;
