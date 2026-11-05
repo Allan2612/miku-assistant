@@ -79,17 +79,18 @@ _ORDER_VERBS = (
     r"|cierre|abra|ponga|suba|baje|busque|minimice|maximice|quite|\w{2,}(?:ame|eme|ale|ele))"
 )
 _ORDER = re.compile(rf"\b{_ORDER_VERBS}\b", re.IGNORECASE)
+# Orders by their stem: Whisper splits and misspells them ("Cierra me OBS Studio", log 27-oct; "y sub el volumen", 4-nov)
+_ORDER_STEMS = (
+    # With their accents too: "súbele", "ábreme", "póngale"
+    r"(?:[aá]br|cierr|p[oó]n|ap[aá]g|s[uú]b|b[aá]j|b[uú]sc|reproduc|minimiz|maximiz|an[oó]t"
+    r"|ap[uú]nt|recu[eé]rd|c[oó]pi|silenci|paus|quit)\w*"
+)
 # A second order after the first: "abre Spotify y pon el volumen al 30"
 _CHAINED_ORDER = re.compile(
-    rf"(?:\by\b|,|\bluego\b|\bdespu[eé]s\b|\btambi[eé]n\b)\s*(?:me\s+)?{_ORDER_VERBS}\b", re.IGNORECASE
+    rf"(?:\by\b|,|\bluego\b|\bdespu[eé]s\b|\btambi[eé]n\b)\s*(?:me\s+)?(?:{_ORDER_VERBS}\b|{_ORDER_STEMS})", re.IGNORECASE
 )
-# An order in the first words, by its stem: Whisper splits and misspells them ("Cierra me OBS Studio", log 27-oct)
-_ORDER_START = re.compile(
-    # With their accents too: "súbele", "ábreme", "póngale"
-    r"^\W*(?:\w+\W+){0,2}?(?:[aá]br|cierr|p[oó]n|ap[aá]g|s[uú]b|b[aá]j|b[uú]sc|reproduc|minimiz|maximiz|an[oó]t"
-    r"|ap[uú]nt|recu[eé]rd|c[oó]pi|silenci|paus|quit)\w*",
-    re.IGNORECASE,
-)
+# An order in the first words
+_ORDER_START = re.compile(rf"^\W*(?:\w+\W+){{0,2}}?{_ORDER_STEMS}", re.IGNORECASE)
 
 # The user asks about the screen: a screenshot rides in the same single request (never taken otherwise)
 _SCREEN = re.compile(

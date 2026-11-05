@@ -268,6 +268,7 @@ def browser_tabs(action: str, tab_ids: List[int]) -> Dict[str, Any]:
     return {"ok": True, "result": f"{_TAB_ACTIONS[act]} {what}."}
 
 
+PLAYER_LOAD_WAIT_S = 6.0  # after opening a page, how long the player gets to appear
 _PLAYER_ACTIONS = {"play", "pause", "volume", "volume_up", "volume_down", "mute", "unmute", "quality", "captions_on",
                    "captions_off", "speed", "forward", "back", "next", "loop"}
 
@@ -306,7 +307,8 @@ def _player_result(act: str, value: str, s: Dict[str, Any]) -> str:
         "por defecto 15) | mute | unmute | quality (value: '1080p', '720p', 'max', 'min') | captions_on | "
         "captions_off | speed (value 0.25-2) | forward | back (value = segundos) | next | loop (repetir el video; "
         "value 'off' lo quita). tab_id: la pestaña de "
-        "YouTube del estado del PC; 0 = la que suena, o la que abrió Miku."
+        "YouTube del estado del PC; 0 = la que suena, o la que abrió Miku. Si falla, dilo: nunca cambies el volumen "
+        "de Windows en su lugar. 'Ponlo en foco' no es play: es windows con action focus."
     ),
 )
 def youtube_player(action: str, value: str = "", tab_id: int = 0) -> Dict[str, Any]:
@@ -316,10 +318,17 @@ def youtube_player(action: str, value: str = "", tab_id: int = 0) -> Dict[str, A
         return {"ok": False, "result": f"No sé hacer '{action}' con el reproductor ({', '.join(sorted(_PLAYER_ACTIONS))})."}
     if not bridge.connected:
         return {"ok": False, "result": NO_EXTENSION}
-    tab = bridge.tab(int(tab_id)) if tab_id else _youtube_tab()
-    if not tab or "youtube.com/watch" not in tab.get("url", ""):
+    # In the same request as youtube_play the tab is still loading: its address and its player arrive in a moment.
+    # "No hay ningún video" made the model raise Windows' volume instead (log 4-nov)
+    while True:
+        tab = bridge.tab(int(tab_id)) if tab_id else _youtube_tab()
+        found = bool(tab) and "youtube.com/watch" in tab.get("url", "")
+        res = bridge.run("youtube", tab_id=tab["id"], action=act, value=str(value or "")) if found else {}
+        if res.get("ok") or time.monotonic() - bridge.last_opened_at >= PLAYER_LOAD_WAIT_S:
+            break
+        time.sleep(0.3)
+    if not found:
         return {"ok": False, "result": "No hay ningún video de YouTube abierto en Opera."}
-    res = bridge.run("youtube", tab_id=tab["id"], action=act, value=str(value or ""))
     if not res.get("ok"):
         return {"ok": False, "result": f"El reproductor no pudo: {res.get('error', 'error desconocido')}"}
     state = res.get("state") or {}

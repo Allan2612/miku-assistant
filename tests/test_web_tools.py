@@ -177,6 +177,21 @@ def test_open_website_says_where_it_went():
     assert b.sent[-1][1]["url"] == "https://www.google.com/search?q=algo+raro"
 
 
+def test_player_waits_for_a_page_it_just_opened():
+    # youtube_play and youtube_player in one request: the tab list still had the old address, the tool said there was
+    # no video, and the model raised Windows' volume instead (log 4-nov)
+    import threading
+    import time
+
+    b = connected_bridge()
+    b.update({"tabs": [{"id": 13, "url": "https://www.youtube.com/results?search_query=x", "title": "x"}]})
+    assert web.youtube_player("pause", tab_id=13)["ok"] is False, "nothing opened lately: no wait, no video"
+    b.last_opened_at = time.monotonic()
+    threading.Timer(0.5, lambda: b.update({"tabs": [{"id": 13, "url": "https://www.youtube.com/watch?v=x", "title": "x"}]})).start()
+    res = web.youtube_player("volume", value="50", tab_id=13)
+    assert b.sent[-1][0] == "youtube" and "no hay" not in res["result"].lower(), res
+
+
 def test_describe_lists_tabs_by_window_with_their_ids_and_the_visible_results():
     b = BrowserBridge()
     b._ws = object()

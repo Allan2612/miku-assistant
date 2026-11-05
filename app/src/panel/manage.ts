@@ -70,7 +70,7 @@ let autostart = false;
 let wakeScores: { yes: number[]; no: number[] } = { yes: [], no: [] };
 let capturing = false;
 const HOTKEY_RE = /^((ctrl|alt|shift|super)\+){1,3}([a-z0-9]|f([1-9]|1[0-9]|2[0-4])|space)$/i;
-const EDITED = ["rvc_enabled", "wakeword_enabled", "threshold", "weather_city", "hotkey", "input_device", "monitor", "window_chat"];
+const EDITED = ["rvc_enabled", "wakeword_enabled", "threshold", "weather_city", "hotkey", "input_device", "monitor", "window_chat", "window_over_fullscreen"];
 let screens: string[] = []; // "Pantalla 1 · izquierda · 1920×1080 (la principal)", left to right
 
 export function renderConfig(): void {
@@ -155,6 +155,7 @@ function paintConfig(): void {
       ${setRow("Pantalla", "Dónde aparece Miku. Se aplica al guardar.", `<select id="monitor" class="select"><option value="0">La principal de Windows</option>${screens.map((s, i) => `<option value="${i + 1}"${d.monitor === i + 1 ? " selected" : ""}>${esc(s)}</option>`).join("")}
           ${d.monitor > screens.length ? `<option value="${d.monitor}" selected>Pantalla ${d.monitor} (no conectada)</option>` : ""}</select>`, "monitor")}
       ${setRow("Escribirle desde su ventana", "Un cuadro de texto bajo Miku: lo que escribes le llega como si se lo dijeras.", switchBtn("sw-chat", "Escribirle desde su ventana", d.window_chat))}
+      ${setRow("Mostrarla sobre pantalla completa", "Encendido, aparece también sobre juegos y videos. Apagado, ahí solo responde con voz. Un juego en pantalla completa exclusiva podría minimizarse al aparecer ella.", switchBtn("sw-fullscreen", "Mostrarla sobre pantalla completa", d.window_over_fullscreen))}
     </section>
     <section class="card" aria-label="Clima y OBS"><h2>Clima y OBS</h2>
       ${setRow("Ciudad del clima", "Ciudad, País. Para otra ciudad, pregúntale con su nombre.", `<input id="city" class="input" autocomplete="off" value="${esc(d.weather_city)}">`, "city")}
@@ -252,8 +253,8 @@ async function onConfigClick(ev: MouseEvent): Promise<void> {
     } catch (err) {
       toast(String(err));
     }
-  } else if (el.id === "sw-rvc" || el.id === "sw-wake" || el.id === "sw-chat") {
-    const key = el.id === "sw-rvc" ? "rvc_enabled" : el.id === "sw-wake" ? "wakeword_enabled" : "window_chat";
+  } else if (el.id === "sw-rvc" || el.id === "sw-wake" || el.id === "sw-chat" || el.id === "sw-fullscreen") {
+    const key = el.id === "sw-rvc" ? "rvc_enabled" : el.id === "sw-wake" ? "wakeword_enabled" : el.id === "sw-chat" ? "window_chat" : "window_over_fullscreen";
     draft[key] = !draft[key];
     el.setAttribute("aria-checked", String(draft[key]));
     markDirty();

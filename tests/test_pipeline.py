@@ -554,7 +554,7 @@ async def _fullscreen():
         # A game or a video at full screen: called by voice, she answers without showing herself
         server = AckServer()
         p = MikuPipeline(brain=RecordingBrain(), tts=FakeTTS(), stt=FakeSTT("hola"), audio_in=FakeMic(server),
-                         resources=FakeResources(), server=server, rvc=None, follow_up_s=0)
+                         resources=FakeResources(), server=server, rvc=None, follow_up_s=0, over_fullscreen=False)
         server.pipeline = p
         p.set_wakeword(FakeWake())
         await p.handle_voice_activation()
@@ -564,8 +564,24 @@ async def _fullscreen():
         server.sent.clear()
         await p.announce_timer("¡Oye, recuerda: estirar!")
         assert "show" not in server.sent and "speak:¡Oye, recuerda: estirar!" in server.sent, server.sent
+        # The setting on (the default): she shows up over it
+        p.over_fullscreen = True
+        server.sent.clear()
+        await p.announce_timer("¡Oye, recuerda: agua!")
+        assert "show" in server.sent, server.sent
     finally:
         FULLSCREEN[0] = False
+
+
+def test_no_window_no_activation():
+    # First seconds: the backend hears "Hey Miku" before her window connects (log 3-nov). Nobody could see or hear her
+    async def run():
+        p, server = _pipeline(FakeBrain())
+        server.clients = set()
+        await p.handle_voice_activation()
+        assert not server.sent and not p._is_listening and not p.wakeword.paused, server.sent
+
+    asyncio.run(run())
 
 
 def test_quiet_text_answers_without_voice():
@@ -596,5 +612,6 @@ if __name__ == "__main__":
     test_speak_carries_body_language()
     test_without_speak_done()
     test_fullscreen_means_voice_only()
+    test_no_window_no_activation()
     test_quiet_text_answers_without_voice()
     print("ok")

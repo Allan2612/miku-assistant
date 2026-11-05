@@ -133,7 +133,7 @@ La búsqueda de Google dentro de la respuesta está apagada (el plan gratuito la
 
 ## Lo que hace sola
 
-- **Modo pantalla completa:** con un juego o un video a pantalla completa delante, no aparece encima. Te sigue
+- **Sobre pantalla completa:** aparece también sobre juegos y videos; se puede apagar en Configuración. Apagado, no aparece encima. Te sigue
   escuchando ("Hey Miku", Ctrl+Alt+M) y responde solo con voz; los recordatorios también. No saluda al arrancar.
 - **Aviso de cuota:** cuando el modelo principal llega al 90 % de sus peticiones del día, lo dice una vez.
 - **Saludo de la mañana** con los recordatorios de hoy, si hay.

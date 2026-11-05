@@ -90,7 +90,8 @@ def test_order_shapes():
     for text in ("y entonces ganamos la partida", "¡Granza de la..."):
         assert not starts_with_order(text), text
     # Several orders: Gemini does all of them, the fast path would do only one
-    for text in ("abre Spotify y pon el volumen al 30", "Póngale pausa y sérame todas las ventanas"):
+    for text in ("abre Spotify y pon el volumen al 30", "Póngale pausa y sérame todas las ventanas",
+                 "Dale play y sub el volumen al máximo."):  # it only raised Windows' volume, to 100% (log 4-nov)
         assert has_chained_orders(text), text
     for text in ("Hey Miku, abre Spotify", "pon el volumen al 30"):
         assert not has_chained_orders(text), text

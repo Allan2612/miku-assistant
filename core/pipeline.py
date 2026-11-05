@@ -99,6 +99,7 @@ class MikuPipeline:
         max_record_seconds: int = 15,
         follow_up_s: float = 0.0,
         hide_after_s: float = 20.0,
+        over_fullscreen: bool = True,
     ) -> None:
         self.brain = brain
         self.brain.on_model_switch = self._say_filler
@@ -115,6 +116,7 @@ class MikuPipeline:
         # The frontend hides her after hide_after_s without activity: an answer newer than that means she is
         # still on screen, talking with the user
         self.hide_after_s = hide_after_s
+        self.over_fullscreen = over_fullscreen
         self._last_turn_at = float("-inf")
         self._heard_user = False  # someone already talked to her: the startup greeting is skipped
         self.wakeword: Optional[Any] = None
@@ -192,11 +194,14 @@ class MikuPipeline:
             if self.wakeword is not None:
                 self.wakeword.resume()
 
+    def voice_only(self) -> bool:
+        """Turned off in the panel: with a game or a video at full screen she does not show herself. On by default
+        ("que se muestre siempre", 4-nov), though a window over a game in exclusive full screen can minimize it."""
+        return not self.over_fullscreen and fullscreen_app_in_front()
+
     async def _show(self) -> None:
         self._hidden = False
-        # A game or a video at full screen: she answers by voice only. A window over a game in exclusive
-        # full screen can minimize it
-        if fullscreen_app_in_front():
+        if self.voice_only():
             logger.info("Full-screen app in front: voice only, Miku stays hidden.")
             return
         await self.server.broadcast({"type": "show"})
@@ -412,6 +417,10 @@ class MikuPipeline:
         Supports instant barge-in: interrupts Miku immediately if she is currently speaking.
         Pre-warms STT and RVC in background concurrently while user speaks.
         """
+        # Her window is not connected yet (first seconds): she would listen and answer unseen and unheard (log 3-nov)
+        if not self.server.clients:
+            logger.info("Voice activation ignored: her window is not connected yet.")
+            return
         self._new_activity()
         # Instant Barge-In: if Miku is currently speaking, cut off voice and switch to listening immediately
         if self._is_speaking:
@@ -714,7 +723,7 @@ class MikuPipeline:
                         break
                     await asyncio.sleep(0.5)
 
-            if fullscreen_app_in_front():
+            if self.voice_only():
                 logger.info("Startup greeting skipped: a full-screen app (a game, a video) is in front.")
                 return
             now_hour = datetime.now().hour

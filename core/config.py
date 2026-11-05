@@ -19,6 +19,7 @@ class WindowConfig:
     fps_visible: int = 30
     monitor: int = 0  # 0: Windows' main screen; 1, 2...: the screens from left to right
     chat: bool = False  # a text box under Miku in her window
+    over_fullscreen: bool = True  # False: with a game or a video at full screen she answers by voice only
 
 
 @dataclass(slots=True)
@@ -159,6 +160,7 @@ def load_config(
             fps_visible=window_data.get("fps_visible", 30),
             monitor=int(window_data.get("monitor") or 0),
             chat=bool(window_data.get("chat", False)),
+            over_fullscreen=bool(window_data.get("over_fullscreen", True)),
         ),
         behavior=BehaviorConfig(
             hide_after_seconds=behavior_data.get("hide_after_seconds", 20),

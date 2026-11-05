@@ -25,7 +25,7 @@ def _pipeline():
     )
     ww = types.SimpleNamespace(enabled=True, _running=True, _paused=False, threshold=0.35)
     rvc = types.SimpleNamespace(enabled=True, is_loaded=False)
-    return types.SimpleNamespace(brain=brain, rvc=rvc, wakeword=ww, busy=False)
+    return types.SimpleNamespace(brain=brain, rvc=rvc, wakeword=ww, busy=False, voice_only=lambda: False)
 
 
 async def _run():

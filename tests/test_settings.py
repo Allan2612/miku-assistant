@@ -41,6 +41,9 @@ def test_settings_keep_comments_and_check_values():
     got = settings.get()
     assert (got["hotkey"], got["input_device"]) == ("Ctrl+Shift+K", "Micrófono (Logitech G733 Gaming"), got
     # Miku's screen and the text box in her window (keys the window section did not have before 3-nov)
+    assert settings.get()["window_over_fullscreen"] is True, "on unless turned off"
+    assert settings.set_({"window_over_fullscreen": False}) == {"ok": True}
+    assert settings.get()["window_over_fullscreen"] is False
     assert settings.set_({"monitor": 2, "window_chat": True}) == {"ok": True}
     got = settings.get()
     assert (got["monitor"], got["window_chat"]) == (2, True), got

@@ -35,12 +35,19 @@ export class WebSocketClient {
   private handlers: Set<MessageHandler> = new Set();
   private reconnectTimeout: number | null = null;
   private retryDelay: number = 1000;
-  private maxRetryDelay: number = 10000;
+  // Short: the backend is on this PC, and a long wait kept her window out for up to 10 s after it was ready (log 3-nov)
+  private maxRetryDelay: number = 2000;
+  private connectedWaiters: (() => void)[] = [];
   public isConnected: boolean = false;
   private isExplicitlyClosed: boolean = false;
 
   constructor(url?: string) {
     if (url) this.url = url;
+  }
+
+  public whenConnected(): Promise<void> {
+    if (this.isConnected) return Promise.resolve();
+    return new Promise((resolve) => this.connectedWaiters.push(resolve));
   }
 
   public onMessage(handler: MessageHandler): () => void {
@@ -73,6 +80,7 @@ export class WebSocketClient {
 
         // Send ready event
         this.send({ type: "ready" });
+        this.connectedWaiters.splice(0).forEach((resolve) => resolve());
       };
 
       this.ws.onmessage = (event) => {

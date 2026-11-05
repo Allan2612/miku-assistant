@@ -87,6 +87,13 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
   librerías (PyTorch solo con NVIDIA).
 
 ### Corregido
+- Al arrancar, Miku aparece cuando ya puede responder: antes se veía quieta y sin reaccionar mientras el backend cargaba. Hasta entonces solo se ve «Despertando…», que no bloquea clics, y la ventana se conecta como mucho 2 s después de que el backend esté listo.
+- Miku aparece también sobre juegos y videos a pantalla completa. Se puede apagar en Configuración (`window.over_fullscreen`) para que ahí responda solo con voz.
+- Órdenes de voz, según el log del 3 y 4 de noviembre:
+  - «Ponlo en foco» trae la ventana al frente; antes le daba play al video o buscaba «Foco» en YouTube.
+  - «A la pantalla derecha» la mueve de monitor, no a la mitad derecha. «Pantalla 2» y «la principal» usan el número de Windows.
+  - «Dale play y sube el volumen» hace las dos cosas; antes solo ponía el volumen de Windows al 100%.
+  - El volumen de un video recién abierto espera a que cargue el reproductor; antes fallaba y cambiaba el de Windows.
 - La extensión de Opera se conecta unos 3 s después de abrir Miku, no hasta 30 s después: en ese rato parecía rota y había que recargarla. Tampoco se queda sin saludar al backend si el cierre de la conexión anterior llega tarde.
 - Reentrenar «Hey Miku» compara de forma justa:
   - un clip ignorado que marcaste cuenta una vez;

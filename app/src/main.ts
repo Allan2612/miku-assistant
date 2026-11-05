@@ -51,6 +51,9 @@ const HOTKEY = config.hotkey || "Ctrl+Alt+M";
 const HIDE_AFTER_SECONDS = behaviorCfg.hide_after_seconds || 20;
 // Max wait for the backend's goodbye + "hide" after "idle_timeout" (busy, or the voice failed)
 const GOODBYE_FALLBACK_MS = 8000;
+// While the backend starts, how long "Despertando…" stays on screen (with no backend, as in the first-run wizard, it
+// would never go away); she still comes up when it connects
+const WAKING_TEXT_MS = 30000;
 
 let isVisible = false;
 let autoHideTimer: number | null = null;
@@ -271,13 +274,19 @@ export async function showMiku(): Promise<void> {
 
   const appEl = document.querySelector<HTMLDivElement>("#app");
   if (!appEl) return;
+  const canvas = document.querySelector<HTMLCanvasElement>("#live2d-canvas");
+  if (canvas) canvas.style.visibility = "";
 
   if (isTauri) {
     try {
       await positionWindow();
+      const win = getCurrentWindow();
+      // A window goes above the other always-on-top ones (a borderless game) only when it becomes always-on-top
+      await win.setAlwaysOnTop(false);
+      await win.setAlwaysOnTop(true);
       // No setFocus(): the window is always-on-top, and stealing focus sent type_text
       // into Miku instead of the user's app (H-044)
-      await getCurrentWindow().show();
+      await win.show();
     } catch (err) {
       console.warn("[Window] show error:", err);
     }
@@ -519,7 +528,18 @@ async function bootstrap(): Promise<void> {
       }
     });
 
-    // 9. Start visible with appear animation
+    // 9. She comes up once she can answer. The backend takes 6 s to start, far more after turning the PC on, and
+    // until then she stood there and did not react
+    if (!ws.isConnected) {
+      if (statusEl) statusEl.textContent = "Despertando…";
+      canvas.style.visibility = "hidden"; // only the text: she shows up in showMiku()
+      if (isTauri) await getCurrentWindow().setIgnoreCursorEvents(true); // the wait must not block clicks in that corner
+      const hideText = window.setTimeout(() => {
+        if (isTauri && !isVisible) void getCurrentWindow().hide();
+      }, WAKING_TEXT_MS);
+      await ws.whenConnected();
+      clearTimeout(hideText);
+    }
     await showMiku();
 
     if (statusEl) {

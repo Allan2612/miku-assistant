@@ -51,6 +51,19 @@ def test_state_lists_windows_by_number():
     assert "Miku" not in text and "[14]" not in text
 
 
+def test_monitor_numbers_are_windows_own():
+    from types import SimpleNamespace as NS
+
+    def info(device, left, flags=0):
+        return NS(szDevice=device, rcMonitor=NS(left=left), dwFlags=flags)
+
+    # This PC: Windows' screen 2 is on the left, and screen 1 (the main one) on the right
+    infos = sorted([info(r"\\.\DISPLAY10", 5000), info(r"\\.\DISPLAY2", -3840), info(r"\\.\DISPLAY1", 0, 1)],
+                   key=win._display_order)
+    assert [i.szDevice[-2:] for i in infos] == ["Y1", "Y2", "10"], "10 goes after 2"
+    assert win._layout_text(infos[:2]) == "Monitores: 2 = izquierda; 1 = derecha, principal."
+
+
 def test_actions_by_number():
     applied = setup()
     # "minimiza todo menos el juego": the model passes every other number

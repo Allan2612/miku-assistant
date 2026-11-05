@@ -34,7 +34,7 @@ MAX_WINDOWS_IN_STATE = 25  # every window rides in every request: keep the promp
 
 class _MONITORINFO(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
-                ("dwFlags", wintypes.DWORD)]
+                ("dwFlags", wintypes.DWORD), ("szDevice", ctypes.c_wchar * 32)]
 
 
 def _user32() -> Any:
@@ -59,19 +59,44 @@ def _physical_pixels(u: Any) -> Iterator[None]:
             u.SetThreadDpiAwarenessContext(old)
 
 
-def _work_area(u: Any, hmon: Any) -> wintypes.RECT:
+def _monitor_info(u: Any, hmon: Any) -> _MONITORINFO:
     info = _MONITORINFO(cbSize=ctypes.sizeof(_MONITORINFO))
     u.GetMonitorInfoW(hmon, ctypes.byref(info))
-    return info.rcWork
+    return info
 
 
-def _monitors(u: Any) -> List[wintypes.RECT]:
-    """Work areas (screen minus taskbar), left to right: monitor 1 is the leftmost."""
+def _work_area(u: Any, hmon: Any) -> wintypes.RECT:
+    return _monitor_info(u, hmon).rcWork
+
+
+def _display_order(info: Any) -> tuple:
+    return len(info.szDevice), info.szDevice  # DISPLAY10 goes after DISPLAY2
+
+
+def _monitor_infos(u: Any) -> List[_MONITORINFO]:
+    """In Windows' own order, so monitor 2 is what the user calls "la pantalla 2". Left to right, that one was
+    monitor 1: "A la pantalla izquierda, o sea, a la pantalla 2" (log 4-nov)."""
     handles: List[Any] = []
     proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT),
                               wintypes.LPARAM)
     u.EnumDisplayMonitors(None, None, proc(lambda hmon, hdc, rect, data: handles.append(hmon) or True), 0)
-    return sorted((_work_area(u, h) for h in handles), key=lambda r: (r.left, r.top))
+    return sorted((_monitor_info(u, h) for h in handles), key=_display_order)
+
+
+def _monitors(u: Any) -> List[wintypes.RECT]:
+    """Work areas (screen minus taskbar), by monitor number."""
+    return [info.rcWork for info in _monitor_infos(u)]
+
+
+def _layout_text(infos: List[Any]) -> str:
+    """Which number is where, for the state: "Monitores: 2 = izquierda; 1 = derecha, principal."
+    shortcut: side by side only; screens stacked one above the other get left/right names, fix if someone has them."""
+    numbered = sorted(enumerate(infos, 1), key=lambda pair: pair[1].rcMonitor.left)
+    parts = []
+    for rank, (n, info) in enumerate(numbered):
+        place = "izquierda" if rank == 0 else "derecha" if rank == len(numbered) - 1 else "centro"
+        parts.append(f"{n} = {place}{', principal' if info.dwFlags & 1 else ''}")
+    return f"Monitores: {'; '.join(parts)}."
 
 
 def _monitor_number(u: Any, hwnd: int, monitors: List[wintypes.RECT]) -> int:
@@ -145,6 +170,8 @@ def describe_windows() -> str:
         return "Ventanas abiertas: ninguna."
     several_monitors = wins[0]["monitors"] > 1
     lines = ["Ventanas abiertas, de la de delante a la de atrás (usa el número como window_id):"]
+    if several_monitors:
+        lines.insert(0, _layout_text(_monitor_infos(_user32())))
     for w in wins[:MAX_WINDOWS_IN_STATE]:
         name, title = _app_name(w), w["title"][:60]
         marks = [m for m, on in (("activa", w["active"]), ("minimizada", w["minimized"]),
@@ -196,9 +223,12 @@ _ACTIONS = {"focus": "Te puse delante", "minimize": "Minimicé", "maximize": "Ma
 @tool(
     name="windows",
     description=(
-        "Maneja ventanas de Windows por su número (window_id) del estado del PC. action = focus (traerla delante) | "
-        "minimize | maximize | restore | close (como la X: la app puede pedir guardar) | left / right (mitad de la "
-        "pantalla) | move (a otro monitor: monitor = 1, 2...). window_ids: una o varias; para 'minimiza todo menos "
+        "Maneja ventanas de Windows por su número (window_id) del estado del PC. action = focus (traerla delante: "
+        "'ponlo en foco', 'enfócalo', 'tráelo al frente', 'abre la ventana X'; si no dice cuál, la última de la que "
+        "hablaron) | minimize | maximize | restore | close (como la X: la app puede pedir guardar) | left / right "
+        "(la mitad izquierda o derecha de SU monitor, solo si pide una mitad o un lado) | move (a otro monitor: 'a la "
+        "pantalla derecha', 'izquierda', 'principal', 'la otra', 'la 2'; monitor = su número en la línea Monitores "
+        "del estado). window_ids: una o varias; para 'minimiza todo menos "
         "X', pasa todas las demás. Para pestañas de Opera usa browser_tabs; para cerrar un programa entero, close_app."
     ),
 )

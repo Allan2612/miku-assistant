@@ -12,6 +12,7 @@ import asyncio
 import itertools
 import json
 import logging
+import time
 import urllib.parse
 from typing import Any, Dict, List, Optional
 
@@ -32,6 +33,7 @@ class BrowserBridge:
         self.tabs: List[Dict[str, Any]] = []
         self.results: Optional[Dict[str, Any]] = None  # {"tab_id", "items": [{"title", "url"}]}
         self.last_opened_tab: Optional[int] = None
+        self.last_opened_at = float("-inf")  # time.monotonic() of that
 
     @property
     def connected(self) -> bool:
@@ -77,7 +79,7 @@ class BrowserBridge:
         except Exception as e:  # timeout, closed socket, cancelled
             return {"ok": False, "error": f"Opera no respondió ({type(e).__name__})."}
         if reply.get("ok") and reply.get("tab_id"):
-            self.last_opened_tab = reply["tab_id"]
+            self.last_opened_tab, self.last_opened_at = reply["tab_id"], time.monotonic()
         return reply
 
     def tab(self, tab_id: Optional[int]) -> Optional[Dict[str, Any]]:

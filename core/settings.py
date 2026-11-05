@@ -112,6 +112,7 @@ def get() -> Dict[str, Any]:
         "input_device": c.audio.input_device,
         "monitor": c.window.monitor,
         "window_chat": c.window.chat,
+        "window_over_fullscreen": c.window.over_fullscreen,
     }
 
 
@@ -132,7 +133,7 @@ def _validate(ch: Dict[str, Any]) -> List[str]:
         errors.append("Modelo de Whisper no válido.")
     if "monitor" in ch and not (isinstance(ch["monitor"], int) and not isinstance(ch["monitor"], bool) and 0 <= ch["monitor"] <= 9):
         errors.append("Pantalla no válida.")
-    for flag in ("rvc_enabled", "wakeword_enabled", "window_chat"):
+    for flag in ("rvc_enabled", "wakeword_enabled", "window_chat", "window_over_fullscreen"):
         if flag in ch and not isinstance(ch[flag], bool):
             errors.append(f"{flag} debe ser sí o no.")
     if "weather_city" in ch and not (isinstance(ch["weather_city"], str) and 1 < len(ch["weather_city"]) <= 80):
@@ -164,7 +165,8 @@ def set_(ch: Dict[str, Any]) -> Dict[str, Any]:
     edits = {"model": ("llm", "model"), "rvc_enabled": ("rvc", "enabled"), "wakeword_enabled": ("wakeword", "enabled"),
              "threshold": ("wakeword", "threshold"), "weather_city": ("tools", "weather_city"),
              "disabled_tools": ("tools", "disabled"), "hotkey": ("", "hotkey"), "input_device": ("audio", "input_device"),
-             "monitor": ("window", "monitor"), "window_chat": ("window", "chat"), "stt_model": ("stt", "model")}
+             "monitor": ("window", "monitor"), "window_chat": ("window", "chat"),
+             "window_over_fullscreen": ("window", "over_fullscreen"), "stt_model": ("stt", "model")}
     for field, (section, key) in edits.items():
         if field in ch:
             text = set_value(text, section, key, ch[field])
@@ -179,6 +181,7 @@ def set_(ch: Dict[str, Any]) -> Dict[str, Any]:
                     "threshold": c.wakeword.threshold, "weather_city": c.tools.weather_city,
                     "disabled_tools": list(c.tools.disabled), "hotkey": c.hotkey,
                     "input_device": c.audio.input_device, "monitor": c.window.monitor, "window_chat": c.window.chat,
+                    "window_over_fullscreen": c.window.over_fullscreen,
                     "stt_model": c.stt.model}
         wrong = [f for f, v in expected.items() if f in ch and ch[f] != v]
         if wrong:

@@ -141,7 +141,6 @@ def _obs_running() -> bool:
 
 def status(pipeline: Any) -> Dict[str, Any]:
     """Each piece of Miku, the model in use and the last turns."""
-    from core.tools.windows import fullscreen_app_in_front
 
     brain, rvc, ww = pipeline.brain, pipeline.rvc, pipeline.wakeword
     now = time.monotonic()
@@ -150,7 +149,7 @@ def status(pipeline: Any) -> Dict[str, Any]:
     return {
         "pid": os.getpid(),
         "busy": pipeline.busy,
-        "fullscreen": fullscreen_app_in_front(),
+        "fullscreen": pipeline.voice_only(),
         "rvc": {"enabled": bool(rvc and rvc.enabled), "loaded": bool(rvc and rvc.is_loaded),
                 "gpu": _has_nvidia()},  # PyTorch uses CUDA only with an NVIDIA card: else the voice runs on the CPU
         "wakeword": {"enabled": bool(ww and ww.enabled), "listening": bool(ww and ww._running and not ww._paused),
