@@ -1,8 +1,8 @@
 hotkey: "Ctrl+Alt+M"
 language: "es"
-window: { width: 420, height: 620, margin: 12, fps_visible: 30, monitor: 1, chat: false }  # monitor: 0 = main screen, 1, 2... from left to right; chat: a text box under Miku
+window: { width: 420, height: 620, margin: 12, fps_visible: 30, monitor: 2, chat: true }  # monitor: 0 = main screen, 1, 2... from left to right; chat: a text box under Miku
 behavior: { hide_after_seconds: 20, max_record_seconds: 10, silence_ms: 700, unload_after_minutes: 10, follow_up_seconds: 6 }  # follow_up: mic stays open after each answer, no "Hey Miku" (0 = off)
-audio: { input_device: "" }  # a microphone's name ("" = Windows' default); chosen in the panel
+audio: { input_device: "Micrófono (Razer Seiren V3 Mini" }  # a microphone's name ("" = Windows' default); chosen in the panel
 llm: {
   model: "gemini-3.5-flash-lite",
   # Free tier, requests per minute / per day (24-oct). Each model has its own bucket, so when one runs out
@@ -25,7 +25,7 @@ stt: { model: "small", device: "cpu", compute_type: "int8", cpu_threads: 8,
 # Miku's voice, chosen by ear on 27-oct (MikuDiva, higher and faster). scratch/voice_ab.py compares variations.
 tts: { voice: "es-MX-DaliaNeural", rate: "+15%", pitch: "+30Hz" }
 rvc: { enabled: true, model: "models/rvc/miku_diva.pth", index: "models/rvc/miku_diva.index", f0_up_key: 6, index_rate: 0.5 }
-wakeword: { enabled: true, model: "models/wakeword/hey_miku.onnx", threshold: 0.2, patience: 1 }
+wakeword: { enabled: true, model: "models/wakeword/hey_miku.onnx", threshold: 0.45, patience: 1 }
 live2d: { model: "models/miku_official/miku_sample_t04.model3.json", scale: 0 }
 tools: { file_search_roots: ["~/Desktop", "~/Documents", "~/Downloads"], weather_city: "San José, Costa Rica" }  # city: "Ciudad, País"
 apps: {
