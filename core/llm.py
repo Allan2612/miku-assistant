@@ -490,6 +490,10 @@ class MikuBrain:
             if calls:
                 logger.info("Gemini asked for tools: %s", [f"{c.name}({dict(c.args or {})})" for c in calls])
                 last_results = await self._run_tool_calls(calls)
+                # Nobody knows how it went, the model neither: it answered "¡Listo! Ya puse la canción" (log 5-nov)
+                if any(r.get("timed_out") for r in last_results):
+                    logger.info("A tool timed out: saying so, with no follow-up request.")
+                    return "sad", self._sanitize_for_speech(" ".join(str(r.get("result", "")) for r in last_results))
                 if (follow_ups_left == MAX_TOOL_ROUNDS and {c.name for c in calls} <= FINAL_TOOLS
                         and all(r.get("ok") for r in last_results) and not _ONE_MORE_STEP.search(clean_input)):
                     logger.info("The tool results are the answer: no follow-up request.")

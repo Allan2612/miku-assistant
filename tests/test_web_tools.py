@@ -229,6 +229,19 @@ def test_command_round_trip_from_a_tool_thread():
     loop.call_soon_threadsafe(loop.stop)
 
 
+def test_youtube_lookup_that_hangs_still_opens_the_search_in_time():
+    # urlopen's timeout does not cover DNS: a hang tripped the tool timeout and nothing opened
+    import time
+    setup()
+    b = connected_bridge()
+    web.YT_LOOKUP_S = 0.1
+    web._first_youtube_video = lambda q: time.sleep(1)
+    start = time.monotonic()
+    res = web.youtube_play("bbywow")
+    assert time.monotonic() - start < 0.8 and res["ok"] and "búsqueda" in res["result"], res
+    assert "results?search_query=bbywow" in b.sent[-1][1]["url"]
+
+
 if __name__ == "__main__":
     test_without_the_extension_pages_still_open_but_tabs_cannot_be_handled()
     test_pages_open_through_the_extension_new_tab_or_a_given_one()
@@ -242,4 +255,5 @@ if __name__ == "__main__":
     test_open_website_says_where_it_went()
     test_describe_lists_tabs_by_window_with_their_ids_and_the_visible_results()
     test_command_round_trip_from_a_tool_thread()
+    test_youtube_lookup_that_hangs_still_opens_the_search_in_time()
     print("ok")

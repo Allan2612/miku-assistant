@@ -62,6 +62,15 @@ class AudioInput:
         self._block_size = 512  # 32ms at 16kHz (also the silero-vad chunk size)
         self._vad: Optional[StreamingVAD] = None
         self._vad_failed = False
+        self._waiting_for_speech = False  # the mic is open and nobody has started talking yet
+        self._stop_waiting = False
+
+    def stop_waiting(self) -> bool:
+        """Gives up the wait for speech, for a typed message. False if no wait is on, or the user is already talking."""
+        if not self._waiting_for_speech:
+            return False
+        self._stop_waiting = True
+        return True
 
     def _get_vad(self) -> Optional[StreamingVAD]:
         """Silero VAD, loaded once; None (energy fallback) if it cannot load."""
@@ -139,10 +148,15 @@ class AudioInput:
                 callback=audio_callback,
             )
             stream.start()
+            self._stop_waiting = False
 
             # max_seconds counts speech, not the wait before it: a late start was cut after a few seconds.
             # The wall-clock bound only matters if the stream stops delivering audio
             while speech_accumulated < max_seconds and (time.monotonic() - start_time) < initial_timeout + max_seconds:
+                self._waiting_for_speech = not speech_started
+                if self._stop_waiting and not speech_started:
+                    logger.info("Stopped waiting for speech: a typed message came in.")
+                    break
                 try:
                     chunk = await asyncio.wait_for(queue.get(), timeout=0.2)
                 except asyncio.TimeoutError:
@@ -256,6 +270,7 @@ class AudioInput:
             logger.error("Error capturing audio from microphone: %s", e)
             return None
         finally:
+            self._waiting_for_speech = False
             # STRICT REQUIREMENT: Mic stream MUST be closed immediately
             if stream is not None:
                 try:

@@ -180,6 +180,9 @@ class MikuServer:
                         # End of the "¿Sí?" cue: the pipeline now opens the mic, nothing else to do
                         if self.pipeline.ack_finished():
                             continue
+                        # One sentence of the answer ended, not her turn
+                        if self.pipeline.advance_voice():
+                            continue
                         await self.broadcast({"type": "state", "value": "idle"})
                         if self.pipeline.handle_speak_done():
                             # As a task: an "activate" right after the goodbye must not wait behind this second

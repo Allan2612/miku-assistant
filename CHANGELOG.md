@@ -91,6 +91,11 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 - `npx tauri build` compila antes la web, así que ya no falla en una copia recién clonada.
 - El log ya no dice «GPU VRAM» cuando la voz corre en el procesador.
 - Si el panel se cierra mientras prepara una respuesta, ya no aparece un error en el log.
+- Lo que escribes mientras el micrófono espera voz ya no se pierde: el micrófono cede y el mensaje se responde.
+- Una herramienta que agota su tiempo ya no acaba en un «¡Listo!» falso: Miku dice que no sabe si se hizo.
+- `youtube_play` abre la página de resultados si la búsqueda tarda más de 3,5 s, en vez de agotar el tiempo.
+- **Voz por frases:** con RVC, cada frase se envía en cuanto está lista y las siguientes se preparan mientras suena la primera. Las respuestas largas empiezan a sonar mucho antes (`VOICE_BY_SENTENCE` en `core/pipeline.py` lo desactiva).
+- **DNS por adelantado (`core/dns_warm.py`):** en esta PC, una búsqueda DNS sin caché se cuelga unos 12 s, más que el límite de 10 s de Gemini y de las herramientas: se colgaron 8 de 16 primeras peticiones de sesión, con cualquier modelo. Ahora esa espera ocurre en segundo plano.
 - Al arrancar, Miku aparece cuando ya puede responder: antes se veía quieta y sin reaccionar mientras el backend cargaba. Hasta entonces solo se ve «Despertando…», que no bloquea clics, y la ventana se conecta como mucho 2 s después de que el backend esté listo.
 - Miku aparece también sobre juegos y videos a pantalla completa. Se puede apagar en Configuración (`window.over_fullscreen`) para que ahí responda solo con voz.
 - Órdenes de voz, según el log del 3 y 4 de noviembre:

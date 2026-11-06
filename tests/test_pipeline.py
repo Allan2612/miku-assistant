@@ -599,6 +599,218 @@ def test_fullscreen_means_voice_only():
     asyncio.run(_fullscreen())
 
 
+class WaitingMic(FakeMic):
+    """Open and waiting for speech until a typed message stops it; `talking`: the user already started."""
+
+    def __init__(self, server, talking=False):
+        super().__init__(server)
+        self.talking, self.stopped = talking, asyncio.Event()
+
+    def stop_waiting(self):
+        if self.talking:
+            return False
+        self.stopped.set()
+        return True
+
+    async def record_phrase(self, **_):
+        await self.stopped.wait()
+        return None
+
+
+async def _typing_while_the_mic_waits():
+    async def silent_clip():
+        return "", 0.0
+
+    def make(talking):
+        server = FakeServer()
+        brain = RecordingBrain()
+        mic = WaitingMic(server, talking)
+        p = MikuPipeline(brain=brain, tts=FakeTTS(), stt=FakeSTT(""), audio_in=mic, resources=FakeResources(),
+                         server=server, rvc=None)
+        p.set_wakeword(FakeWake())
+        return p, server, brain, mic
+
+    async def listen(p):
+        async with p._pipeline_lock:
+            await p._listen_and_answer(initial_timeout=6.0, wake_check=asyncio.create_task(silent_clip()))
+
+    # Nobody is talking: the mic gives way and the message is answered, and it counts against no wake word
+    p, server, brain, _ = make(talking=False)
+    listening = asyncio.create_task(listen(p))
+    await asyncio.sleep(0)
+    await p.handle_text_input("como esta el clima?")
+    await listening
+    assert brain.heard == ["como esta el clima?"], brain.heard
+    assert "hide" not in server.sent and "speak" in server.sent, server.sent
+    assert not p._text_takes_over
+
+    # The user is talking: their voice goes on, the message is dropped as before
+    p, _, brain, mic = make(talking=True)
+    listening = asyncio.create_task(listen(p))
+    await asyncio.sleep(0)
+    await p.handle_text_input("hola")
+    assert brain.heard == [] and not mic.stopped.is_set()
+    mic.stopped.set()
+    await listening
+
+
+def test_typing_while_the_mic_waits():
+    asyncio.run(_typing_while_the_mic_waits())
+
+
+def test_stop_waiting_closes_a_real_wait_only():
+    import time
+
+    import core.audio_in as audio_mod
+
+    class SilentStream:
+        def __init__(self, **_):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def close(self):
+            pass
+
+    async def run():
+        real = audio_mod.sd.InputStream, audio_mod.find_input
+        audio_mod.sd.InputStream, audio_mod.find_input = SilentStream, lambda _: None
+        try:
+            mic = audio_mod.AudioInput()
+            mic._get_vad = lambda: None
+            assert not mic.stop_waiting(), "no wait is on yet"
+            start = time.monotonic()
+            recording = asyncio.create_task(mic.record_phrase(initial_timeout=5.0))
+            await asyncio.sleep(0.05)
+            assert mic.stop_waiting()
+            assert await recording is None and time.monotonic() - start < 1.0
+            assert not mic.stop_waiting(), "the wait is over"
+        finally:
+            audio_mod.sd.InputStream, audio_mod.find_input = real
+
+    asyncio.run(run())
+
+
+LONG_ANSWER = "Mañana va a llover bastante en toda la ciudad. Lleva paraguas si vas a salir temprano. Y abrígate bien."
+
+
+def test_answers_are_split_in_sentences_that_can_stand_alone():
+    split = pipeline_module.split_for_voice
+    assert split("¡Listo! Ya maximicé Opera para ti.") == ["¡Listo! Ya maximicé Opera para ti."], "short: one piece"
+    assert split("Son las 22:47.") == ["Son las 22:47."]
+    assert split("La versión 3.5 ya salió hace bastante tiempo.") == ["La versión 3.5 ya salió hace bastante tiempo."]
+    assert split(LONG_ANSWER) == ["Mañana va a llover bastante en toda la ciudad.",
+                                  "Lleva paraguas si vas a salir temprano. Y abrígate bien."], split(LONG_ANSWER)
+
+
+class FullServer(FakeServer):
+    """Keeps the speak messages too."""
+
+    def __init__(self):
+        super().__init__()
+        self.speaks = []
+
+    async def broadcast(self, msg):
+        await super().broadcast(msg)
+        if msg["type"] == "speak":
+            self.speaks.append(msg)
+
+
+class CountingRVC(FakeRVC):
+    def __init__(self, fail_on=None):
+        super().__init__()
+        self.calls, self.fail_on = 0, fail_on
+
+    async def convert(self, audio_b64):
+        self.calls += 1
+        return None if self.calls == self.fail_on else await super().convert(audio_b64)
+
+
+def _chain_pipeline(rvc=None, follow_up_s=0.0):
+    server = FullServer()
+    p = MikuPipeline(brain=FakeBrain(), tts=FakeTTS(), stt=None, audio_in=None, resources=FakeResources(),
+                     server=server, rvc=rvc or CountingRVC(), follow_up_s=follow_up_s)
+    p.set_wakeword(FakeWake())
+    return p, server
+
+
+async def _voice_by_sentence():
+    # Piece by piece: her turn only ends on the last speak_done, the subtitle keeps it all, and one gesture only
+    p, server = _chain_pipeline()
+    p._pending_farewell = True
+    await p._speak(LONG_ANSWER, "happy", farewell=True, gesture="attention")
+    first = server.speaks[0]
+    assert len(server.speaks) == 1 and p._is_speaking and p.wakeword.paused
+    assert first["text"] == LONG_ANSWER and not first["farewell"] and first["gesture"] == "attention"
+    assert p.advance_voice(), "more to say"
+    await asyncio.sleep(0.05)
+    second = server.speaks[1]
+    assert len(server.speaks) == 2 and p._is_speaking and p.wakeword.paused
+    assert second["text"] == LONG_ANSWER and second["farewell"], "the goodbye wave goes with the last piece"
+    assert second.get("gesture") is None and second.get("outcome") is None
+    assert not p.advance_voice(), "that was the last one"
+    assert p.handle_speak_done(), "the goodbye still hides her at the end"
+    assert not p._is_speaking and not p.wakeword.paused
+
+    # Short answers, cached phrases and text-only ones stay in one piece
+    p, server = _chain_pipeline()
+    await p._speak("¡Listo! Ya maximicé Opera para ti.", "happy")
+    assert p._voice_chain is None and p.rvc.calls == 1
+    p, server = _chain_pipeline()
+    await p._speak(LONG_ANSWER, "happy", cache=True)
+    assert p._voice_chain is None and p.rvc.calls == 1
+    p, server = _chain_pipeline()
+    await p._speak(LONG_ANSWER, "happy", quiet=True)
+    assert p._voice_chain is None and p.rvc.calls == 0 and not server.speaks
+
+    # RVC fails on the second piece: she stops there, turn over, and never in another voice
+    p, server = _chain_pipeline(CountingRVC(fail_on=2))
+    await p._speak(LONG_ANSWER, "happy")
+    assert p.advance_voice()
+    await asyncio.sleep(0.05)
+    assert len(server.speaks) == 1 and not p._is_speaking and not p.wakeword.paused
+    assert server.sent[-1] == "state"
+
+    # Cut off (hidden by hand, or barge-in): what was being made is thrown away
+    p, server = _chain_pipeline()
+    await p._speak(LONG_ANSWER, "happy")
+    p.end_conversation()
+    assert not p.advance_voice()
+    await asyncio.sleep(0.05)
+    assert len(server.speaks) == 1
+
+    # Cut off during the pause between pieces
+    p, server = _chain_pipeline()
+    await p._speak(LONG_ANSWER, "happy")
+    assert p.advance_voice()
+    p.handle_speak_done()
+    await asyncio.sleep(0.05)
+    assert len(server.speaks) == 1
+
+    # A newer answer replaces the rest of the last one
+    p, server = _chain_pipeline()
+    await p._speak(LONG_ANSWER, "happy")
+    await p._speak("Son las 22:47.", "happy")
+    await asyncio.sleep(0.05)
+    assert p._voice_chain is None and [m["text"] for m in server.speaks] == [LONG_ANSWER, "Son las 22:47."]
+    assert not p.advance_voice()
+
+    # A frontend that never answers: the watchdog ends her turn with pieces left
+    p, server = _chain_pipeline()
+    await p._speak(LONG_ANSWER, "happy")
+    p._speak_watchdog_task.cancel()
+    p.handle_speak_done()
+    assert p._voice_chain is None and not p._is_speaking
+
+
+def test_voice_by_sentence():
+    asyncio.run(_voice_by_sentence())
+
+
 if __name__ == "__main__":
     test_pipeline_flows()
     test_goodbye_on_inactivity()
@@ -614,4 +826,8 @@ if __name__ == "__main__":
     test_fullscreen_means_voice_only()
     test_no_window_no_activation()
     test_quiet_text_answers_without_voice()
+    test_typing_while_the_mic_waits()
+    test_stop_waiting_closes_a_real_wait_only()
+    test_answers_are_split_in_sentences_that_can_stand_alone()
+    test_voice_by_sentence()
     print("ok")

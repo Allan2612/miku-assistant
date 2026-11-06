@@ -383,6 +383,18 @@ def test_history_survives_a_restart_and_keeps_reminders():
     assert MikuBrain(model_name="m", models_fallback=["m"])._history_turns == []
 
 
+def test_a_timed_out_tool_is_said_as_it_is_with_no_follow_up():
+    # log 5-nov: youtube_play timed out and the model answered "¡Listo! Ya puse la canción"
+    ran.clear()
+    message = "Eso tardó demasiado y no sé si se hizo. Revísalo, por favor."
+    tools._TOOL_METADATA["open_app"]["function"] = lambda **_: {"ok": False, "timed_out": True, "result": message}
+    b, models = brain(reply("", ("open_app", {"app_name": "spotify"})), reply("[happy] ¡Listo! Ya lo abrí."))
+    emotion, text, _ = asyncio.run(b.chat("abre spotify porfa ahora", audio=AUDIO))
+    fake_tool("open_app", "He abierto Spotify.")
+    assert (emotion, text) == ("sad", message), text
+    assert len(models.requests) == 1 and b.last_outcome == "fail"
+
+
 if __name__ == "__main__":
     test_small_talk_is_marked_so_the_last_order_is_not_replayed()
     test_back_to_the_primary_after_a_failure()
@@ -408,4 +420,5 @@ if __name__ == "__main__":
     test_history_survives_a_restart_and_keeps_reminders()
     test_timeout_is_one_the_api_accepts()
     test_single_finished_action_needs_no_follow_up()
+    test_a_timed_out_tool_is_said_as_it_is_with_no_follow_up()
     print("ok")

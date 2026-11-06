@@ -66,6 +66,35 @@ WAKE_SENTENCE_WORDS = 4
 # A reply that only sends her away
 DISMISSAL = re.compile(r"(no+|na+|nada|nah|no era (a ti|para ti)|no te llam[eé]|c[aá]llate|sh+|olv[ií]dalo)")
 
+# RVC takes about as long as the audio it makes (1.1 s per second on a CPU, log 5-nov), and a whole answer had to be
+# ready before it sounded. Sentence by sentence the first one sounds much sooner. False: the whole answer at once
+VOICE_BY_SENTENCE = True
+VOICE_PIECE_MIN_CHARS = 25  # shorter sentences join a neighbour: "¡Listo!" alone would only add a pause
+VOICE_PIECE_WAIT_S = 75.0  # past RVC's own 60 s limit: never a stuck answer
+_SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
+
+
+def split_for_voice(text: str) -> list[str]:
+    """The answer in the pieces her voice is made in, one sentence each unless it is too short to stand alone."""
+    pieces: list[str] = []
+    for sentence in _SENTENCE_END.split(text.strip()):
+        if pieces and len(pieces[-1]) < VOICE_PIECE_MIN_CHARS:
+            pieces[-1] += " " + sentence
+        else:
+            pieces.append(sentence)
+    if len(pieces) > 1 and len(pieces[-1]) < VOICE_PIECE_MIN_CHARS:
+        last = pieces.pop()
+        pieces[-1] += " " + last
+    return pieces
+
+
+class _VoiceChain:
+    """The rest of an answer being spoken: its pieces are made ahead, and each is sent on the last one's speak_done."""
+
+    def __init__(self, text: str, emotion: str, farewell: bool, left: int) -> None:
+        self.text, self.emotion, self.farewell, self.left = text, emotion, farewell, left
+        self.ready: asyncio.Queue = asyncio.Queue()
+
 
 def _trim_silence(wav_bytes: bytes, threshold: float = 0.01, keep_s: float = 0.08) -> bytes:
     """edge-tts pads short phrases to ~1.9 s: trim it so the mic opens right after the cue."""
@@ -112,6 +141,7 @@ class MikuPipeline:
         self.silence_ms = silence_ms
         self.max_record_seconds = max_record_seconds
         self.follow_up_s = follow_up_s  # conversation mode: seconds the mic waits after each answer (0 = off)
+        self._text_takes_over = False  # a typed message closed the mic: that wait says nothing about the wake word
         self._last_answer = ""
         # The frontend hides her after hide_after_s without activity: an answer newer than that means she is
         # still on screen, talking with the user
@@ -130,6 +160,7 @@ class MikuPipeline:
         self._last_text = ""
         self._last_text_time = 0.0
         self._speak_watchdog_task: Optional[asyncio.Task] = None
+        self._voice_chain: Optional[_VoiceChain] = None  # None: nothing left to say after the current audio
         self._ack_done: Optional[asyncio.Event] = None
         self._bg_tasks: set = set()
 
@@ -187,6 +218,7 @@ class MikuPipeline:
         self._last_turn_at = float("-inf")
         self._pending_farewell = False
         self._hidden = True
+        self._voice_chain = None
         if self._speak_watchdog_task and not self._speak_watchdog_task.done():
             self._speak_watchdog_task.cancel()
         if self._is_speaking:
@@ -353,7 +385,10 @@ class MikuPipeline:
                 self.wakeword.resume()
             return
         self._last_answer = text
-        voice_res = None if quiet else await self._synthesize_voice(text, cache=cache)
+        self._voice_chain = None  # a newer answer replaces what was left of the last one
+        by_sentence = VOICE_BY_SENTENCE and not quiet and not cache and self.rvc is not None and self.rvc.enabled
+        pieces = split_for_voice(text) if by_sentence else [text]
+        voice_res = None if quiet else await self._synthesize_voice(pieces[0], cache=cache)
         self.resources.touch()
         await self.server.broadcast({"type": "expression", "name": emotion})
         await self.server.broadcast({"type": "subtitle", "who": "miku", "text": text})
@@ -364,6 +399,11 @@ class MikuPipeline:
                 self.wakeword.pause()
             self._is_speaking = True
             await self.server.broadcast({"type": "state", "value": "speaking"})
+            rest = pieces[1:]
+            if rest:
+                logger.info("Voice by sentence: %d pieces.", len(pieces))
+                self._voice_chain = _VoiceChain(text, emotion, farewell, len(rest))
+                self._spawn_bg(self._prepare_pieces(self._voice_chain, rest))
             await self.server.broadcast({
                 "type": "speak",
                 "audio_b64": audio_b64,
@@ -371,12 +411,12 @@ class MikuPipeline:
                 "text": text,
                 "emotion": emotion,
                 # Body language: word timings for the mouth and head beats, the goodbye wave, the gesture
-                "words": self.tts.words_for(text),
-                "farewell": farewell,
+                "words": self.tts.words_for(pieces[0]),
+                "farewell": farewell and not rest,
                 "gesture": gesture,
                 "outcome": getattr(self.brain, "last_outcome", None),
             })
-            self._schedule_speak_done_watchdog(text)
+            self._schedule_speak_done_watchdog(pieces[0])
         else:
             if not quiet:
                 logger.warning("Voice unavailable. Degrading to text subtitle.")
@@ -386,6 +426,63 @@ class MikuPipeline:
             if farewell:
                 await asyncio.sleep(3.5)
                 await self.server.broadcast({"type": "hide"})
+
+    async def _prepare_pieces(self, chain: _VoiceChain, pieces: list[str]) -> None:
+        """Makes the rest of the answer while the first piece plays. A conversion in progress is left to finish, not
+        cancelled: the RVC worker answers one command at a time, and its late reply would land on the next one."""
+        for piece in pieces:
+            if chain is not self._voice_chain:
+                return  # cut off
+            try:
+                voice = await self._synthesize_voice(piece)
+            except Exception:
+                logger.exception("Error making a piece of the voice")
+                voice = None
+            await chain.ready.put((piece, voice))
+            if voice is None:
+                return
+
+    def advance_voice(self) -> bool:
+        """Called by the server on speak_done: True if more of this answer follows, so her turn is not over."""
+        chain = self._voice_chain
+        if chain is None:
+            return False
+        if self._speak_watchdog_task and not self._speak_watchdog_task.done():
+            self._speak_watchdog_task.cancel()
+        self._spawn_bg(self._play_next_piece(chain))
+        return True
+
+    async def _play_next_piece(self, chain: _VoiceChain) -> None:
+        asked_at = time.monotonic()
+        try:
+            piece, voice = await asyncio.wait_for(chain.ready.get(), VOICE_PIECE_WAIT_S)
+        except asyncio.TimeoutError:
+            piece, voice = "", None
+        if chain is not self._voice_chain:
+            return  # cut off while it was being made
+        if voice is None:
+            logger.warning("No voice for the rest of the answer: it stays in the subtitle.")
+            await self.server.broadcast({"type": "state", "value": "idle"})
+            if self.handle_speak_done():
+                await self.server.broadcast({"type": "hide"})
+            return
+        logger.info("Next piece of the voice sent after a %.1fs pause.", time.monotonic() - asked_at)
+        chain.left -= 1
+        last = chain.left == 0
+        if last:
+            self._voice_chain = None
+        self.resources.touch()
+        audio_b64, mime = voice
+        await self.server.broadcast({
+            "type": "speak",
+            "audio_b64": audio_b64,
+            "mime": mime,
+            "text": chain.text,  # the subtitle keeps the whole answer
+            "emotion": chain.emotion,
+            "words": self.tts.words_for(piece),
+            "farewell": chain.farewell and last,
+        })
+        self._schedule_speak_done_watchdog(piece)
 
     async def announce_timer(self, message: str) -> None:
         """Invoked asynchronously when a timer or reminder expires."""
@@ -426,6 +523,7 @@ class MikuPipeline:
         if self._is_speaking:
             logger.info("Barge-in: User activated while Miku is speaking. Cutting off speech immediately.")
             self._is_speaking = False
+            self._voice_chain = None
             if self._speak_watchdog_task and not self._speak_watchdog_task.done():
                 self._speak_watchdog_task.cancel()
             await self.server.broadcast({"type": "stop_speaking"})
@@ -533,7 +631,7 @@ class MikuPipeline:
         )
 
         if audio is None:
-            if not await self._wake_was_real(wake_check):
+            if not self._text_takes_over and not await self._wake_was_real(wake_check):
                 return
             logger.info("No speech captured. Returning to idle.")
             await self.server.broadcast({"type": "state", "value": "idle"})
@@ -633,14 +731,18 @@ class MikuPipeline:
             return
 
         if self._pipeline_lock.locked():
-            logger.info("Pipeline busy. Dropping overlapping text input: '%s'", clean)
-            return
+            # The mic waiting for speech must not eat what the user types instead (log 5-nov: 4 messages lost)
+            if self.audio_in is None or not self.audio_in.stop_waiting():
+                logger.info("Pipeline busy. Dropping overlapping text input: '%s'", clean)
+                return
+            self._text_takes_over = True
 
+        self._last_text = clean
+        self._last_text_time = now
         self._new_activity()
         self._hidden = False
         async with self._pipeline_lock:
-            self._last_text = clean
-            self._last_text_time = now
+            self._text_takes_over = False
             self.resources.touch()
             if self.wakeword is not None:
                 self.wakeword.pause()
@@ -683,6 +785,7 @@ class MikuPipeline:
     def handle_speak_done(self) -> bool:
         """Returns True if there is a pending farewell animation to trigger."""
         self._is_speaking = False
+        self._voice_chain = None
         if self._speak_watchdog_task and not self._speak_watchdog_task.done():
             self._speak_watchdog_task.cancel()
         farewell = self._pending_farewell

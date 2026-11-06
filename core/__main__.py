@@ -13,6 +13,7 @@ root_dir = str(Path(__file__).resolve().parent.parent)
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+from . import dns_warm
 from .config import load_config
 from .paths import CACHE
 from .llm import MikuBrain
@@ -96,6 +97,8 @@ async def async_main() -> None:
     logger.info("  - WakeWord: enabled=%s, model=%s, threshold=%.2f", config.wakeword.enabled, config.wakeword.model, config.wakeword.threshold)
     logger.info("  - STT Engine: faster-whisper %s (device=%s, %s, %d threads)", config.stt.model, config.stt.device, config.stt.compute_type, config.stt.cpu_threads)
     logger.info("  - Inactivity unload timeout: %d min", config.behavior.unload_after_minutes)
+
+    dns_warm.start()
 
     brain = MikuBrain(
         model_name=config.llm.model,

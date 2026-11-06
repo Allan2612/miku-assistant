@@ -148,6 +148,9 @@ _YT_HEADERS = {
 }
 
 
+YT_LOOKUP_S = 3.5  # plus the extension's 6 s at worst: still under the tool timeout
+
+
 def _first_youtube_video(query: str) -> Optional[Tuple[str, str]]:
     """(videoId, title) of the first result, read from the search page: no API key needed (~1 s)."""
     url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(query)
@@ -156,6 +159,23 @@ def _first_youtube_video(query: str) -> Optional[Tuple[str, str]]:
         html = resp.read(3_000_000).decode("utf-8", "replace")
     m = _YT_FIRST_VIDEO.search(html)
     return (m.group(1), m.group(2)) if m else None
+
+
+def _lookup_video(query: str) -> Optional[Tuple[str, str]]:
+    """_first_youtube_video within YT_LOOKUP_S, else None. urlopen's timeout does not cover DNS, which can hang ~10 s
+    on some networks, and past TOOL_TIMEOUT_S nothing opens at all: better the results page in time."""
+    box: Dict[str, Any] = {}
+
+    def lookup() -> None:
+        try:
+            box["found"] = _first_youtube_video(query)
+        except (OSError, ValueError) as e:
+            logger.warning("YouTube lookup failed for %r: %s", query, e)
+
+    worker = threading.Thread(target=lookup, daemon=True, name="miku-yt-lookup")
+    worker.start()
+    worker.join(YT_LOOKUP_S)
+    return box.get("found")
 
 
 @tool(
@@ -174,11 +194,7 @@ def youtube_play(query: str = "", search_query: str = "", tab_id: int = 0) -> Di
     mine = bridge.tab(bridge.last_opened_tab)
     if not tab_id and mine and "youtube.com" in mine.get("url", ""):
         tab_id = mine["id"]
-    try:
-        found = _first_youtube_video(target_q)
-    except (OSError, ValueError) as e:
-        logger.warning("YouTube lookup failed for %r: %s", target_q, e)
-        found = None
+    found = _lookup_video(target_q)
     if not found:
         # Better a results page than nothing: the user can click the video
         _open_page("https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(target_q), tab_id)

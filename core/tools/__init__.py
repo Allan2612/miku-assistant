@@ -122,7 +122,7 @@ def tool(name: Optional[str] = None, description: Optional[str] = None, destruct
                 return {"ok": True, "result": str(res)}
             except TimeoutError:
                 logger.error("Tool [%s] timed out after %.0fs", tool_name, TOOL_TIMEOUT_S)
-                return {"ok": False, "result": f"{tool_name} tardó demasiado y lo dejé de esperar."}
+                return {"ok": False, "timed_out": True, "result": "Eso tardó demasiado y no sé si se hizo. Revísalo, por favor."}
             except Exception as e:
                 logger.error("Tool [%s] failed after %.3fs: %s", tool_name, time.perf_counter() - start_t, e, exc_info=True)
                 return {"ok": False, "result": f"Error al ejecutar {tool_name}: {e}"}
