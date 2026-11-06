@@ -1,6 +1,6 @@
 hotkey: "Ctrl+Alt+M"
 language: "es"
-window: { width: 420, height: 620, margin: 12, fps_visible: 30, monitor: 2, chat: true }  # monitor: 0 = main screen, 1, 2... from left to right; chat: a text box under Miku
+window: { width: 420, height: 620, margin: 12, fps_visible: 30, monitor: 2, chat: false }  # monitor: 0 = main screen, 1, 2... from left to right; chat: a text box under Miku
 behavior: { hide_after_seconds: 20, max_record_seconds: 10, silence_ms: 700, unload_after_minutes: 10, follow_up_seconds: 6 }  # follow_up: mic stays open after each answer, no "Hey Miku" (0 = off)
 audio: { input_device: "Micrófono (Razer Seiren V3 Mini" }  # a microphone's name ("" = Windows' default); chosen in the panel
 llm: {
