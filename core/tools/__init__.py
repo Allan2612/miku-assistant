@@ -1,6 +1,5 @@
 """
 Miku Assistant - Tools Registry and Manager
-Strict adherence to GEMINI.md:
 - Closed list of PC control functions.
 - Destructive tools only run after the USER confirms (H-001), never on the LLM's word.
 - Each tool call is abandoned after TOOL_TIMEOUT_S (H-003).

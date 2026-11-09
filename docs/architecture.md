@@ -97,7 +97,6 @@ Frontend → Backend:
 
 ```
 miku-assistant/
-├─ GEMINI.md
 ├─ CHANGELOG.md
 ├─ config.yaml
 ├─ .env.example            # GEMINI_API_KEY=

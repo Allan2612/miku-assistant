@@ -1,6 +1,5 @@
 """
 Miku Assistant - Pipeline Orchestrator
-Strict adherence to GEMINI.md:
 - Coordinates audio input, STT, LLM, TTS, RVC, and WebSocket events.
 - Fires STT and RVC worker pre-warming concurrently during activation while user begins speaking.
 - Enforces strict latency (< 3 s response) and mic stream closure immediately after speech.
@@ -481,6 +480,7 @@ class MikuPipeline:
             "emotion": chain.emotion,
             "words": self.tts.words_for(piece),
             "farewell": chain.farewell and last,
+            "gesture": "none",  # the first sentence already made the gesture of this answer
         })
         self._schedule_speak_done_watchdog(piece)
 

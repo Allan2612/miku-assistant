@@ -3,6 +3,7 @@
 Run: core\\.venv\\Scripts\\python.exe -m tests.test_obs  (or with pytest)
 """
 
+from pathlib import Path
 import json
 import os
 import socket
@@ -12,7 +13,7 @@ from websockets.sync.server import serve
 
 import core.tools.obs as obs
 
-obs.ENV_FILE = obs.Path(__file__).parent / "no.env"  # the real .env must not decide these tests
+obs.ENV_FILE = Path(__file__).parent / "no.env"  # the real .env must not decide these tests
 
 PASSWORD, SALT, CHALLENGE = "secreto", "sal", "reto"
 SCENES = ["Juego", "Pantalla de espera", "Charla"]

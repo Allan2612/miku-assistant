@@ -751,7 +751,7 @@ async def _voice_by_sentence():
     second = server.speaks[1]
     assert len(server.speaks) == 2 and p._is_speaking and p.wakeword.paused
     assert second["text"] == LONG_ANSWER and second["farewell"], "the goodbye wave goes with the last piece"
-    assert second.get("gesture") is None and second.get("outcome") is None
+    assert second.get("gesture") == "none" and second.get("outcome") is None, "one gesture per answer, not per sentence"
     assert not p.advance_voice(), "that was the last one"
     assert p.handle_speak_done(), "the goodbye still hides her at the end"
     assert not p._is_speaking and not p.wakeword.paused

@@ -135,6 +135,10 @@ Para empezar, lee el [README.md](../README.md), [docs/architecture.md](architect
 
 ## Pendiente / ideas para seguir
 
+- **Voz propia de Miku en un solo paso:** plan en [docs/plan-voz-propia.md](plan-voz-propia.md). Espera el permiso del
+  usuario para instalar WSL y Piper, y solo se adopta si pasa una prueba a ciegas contra la voz actual.
+- **Propuestas de la auditoría del 9-nov:** [docs/propuestas.md](propuestas.md).
+
 - **Lo hace el usuario:**
   - aceptar las sugerencias en Palabra clave y reentrenar;
   - probar el instalador en la PC sin NVIDIA y anotar los números de `bench`;

@@ -120,6 +120,7 @@ class Behavior {
     if (info.farewell) this.m.play("wave", { mirror: Math.random() < 0.5 });
     else if (info.gesture === "attention") this.m.play("attention");
     else if (info.gesture === "greet") this.m.play("hop");
+    else if (info.gesture === "none") return; // the rest of an answer: its first sentence made the gesture
     else if (info.outcome === "fail") this.m.play("shrug");
     else if (info.outcome === "ok" && POSITIVE.has(emotion)) this.m.play("bounce");
     else if (emotion === "surprised") this.m.play("surprise", { scale: 0.7 });

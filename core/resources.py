@@ -1,6 +1,5 @@
 """
 Miku Assistant - Resource Manager
-Strict adherence to GEMINI.md:
 - Monitors inactivity timer (default 10 minutes).
 - Keeps the CPU STT model loaded (RAM is cheap for this user; reloading it delayed the next answer).
 - (Phase 6 hook) Kills RVC GPU worker subprocess to guarantee 0 MB VRAM at rest.
@@ -12,7 +11,7 @@ import asyncio
 import gc
 import logging
 import time
-from typing import Optional, Callable, Any
+from typing import Optional, Any
 
 logger = logging.getLogger("miku.resources")
 

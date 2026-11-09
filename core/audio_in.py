@@ -1,6 +1,5 @@
 """
 Miku Assistant - Audio Input Manager
-Strict adherence to GEMINI.md:
 - Stream is opened ONLY upon user activation.
 - Stream is closed IMMEDIATELY after phrase completion (silence detection) or timeout.
 - Guaranteed zero microphone usage when idle.

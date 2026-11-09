@@ -92,7 +92,7 @@ start.bat
 stop.bat
 ```
 
-`install_autostart.bat` y `uninstall_autostart.bat` activan o quitan el arranque con Windows.
+El arranque con Windows se activa o se quita en el panel: Configuración → «Arrancar con Windows».
 
 ## Documentación
 

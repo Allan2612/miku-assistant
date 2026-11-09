@@ -1,6 +1,5 @@
 """
 Miku Assistant - Speech-to-Text Manager (faster-whisper on CPU)
-Strict adherence to GEMINI.md:
 - Runs exclusively on CPU (int8, 4 threads, Spanish language).
 - ZERO VRAM usage (PyTorch is not imported; CTranslate2 engine).
 - Lazy model loading and complete memory unloading on inactivity.
@@ -11,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Optional, List
+from typing import List
 import numpy as np
 
 logger = logging.getLogger("miku.stt")

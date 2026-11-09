@@ -1,6 +1,5 @@
 """
 Miku Assistant - Wake Word Detection (openWakeWord)
-Strict adherence to GEMINI.md:
 - Runs in CPU mode via ONNXRuntime (< 2% CPU in idle).
 - When `wakeword.enabled` is false, NO stream is ever opened (zero mic usage, zero CPU).
 - When `wakeword.enabled` is true, continuously listens for the wake phrase and triggers activation.
@@ -13,7 +12,8 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
-import os
+import sys
+import types
 import threading
 import time
 import wave
@@ -23,7 +23,11 @@ from typing import Callable, Coroutine, Optional, Any
 
 import numpy as np
 import sounddevice as sd
-from openwakeword.model import Model
+
+# openwakeword's __init__ imports its custom-verifier trainer, and with it scikit-learn: 2.4 s of a 5.7 s start, on every
+# start and every restart after saving the panel (9-nov). Miku never trains a verifier
+sys.modules.setdefault("openwakeword.custom_verifier_model", types.SimpleNamespace(train_custom_verifier=None))
+from openwakeword.model import Model  # noqa: E402
 
 from core.config import WakewordConfig
 from core.paths import CACHE

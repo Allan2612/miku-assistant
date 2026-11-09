@@ -1,6 +1,5 @@
 """
 Miku Assistant - RVC Subprocess Lifecycle & Voice Conversion Manager
-Strict adherence to GEMINI.md:
 - Prohibido importar `torch` en el proceso principal de `core`.
 - Spawns and manages the isolated `rvc_worker.py` subprocess over stdin/stdout pipes.
 - Supports pre-calentamiento (asynchronous warmup while user speaks).
@@ -13,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import Optional, Tuple

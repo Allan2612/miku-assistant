@@ -52,15 +52,6 @@ siguen en `cache/`, `config.yaml` y `.env` del proyecto.
 5. **OBS (opcional):** para clips y grabación por voz, activa en OBS Herramientas → Ajustes del servidor WebSocket y
    pon la contraseña en `.env` como `OBS_PASSWORD=...`. Para los clips, configura el búfer de repetición en Ajustes → Salida.
 
-## Cómo trabajar con Gemini CLI
-1. Crea la carpeta `miku-assistant/` y copia dentro `GEMINI.md` (en la raíz) y la carpeta `docs/`.
-2. Abre una terminal en esa carpeta y ejecuta `gemini`. Gemini CLI lee `GEMINI.md` automáticamente.
-3. Primer mensaje sugerido:
-   > Lee GEMINI.md y todos los archivos de docs/. Luego haz la Fase 0 del ROADMAP y dime cómo probarla.
-4. Tras cada fase, prueba lo que te indique y responde "funciona, sigue con la siguiente fase" o pégale el error.
-5. Si Gemini se pierde en una conversación larga, empieza una sesión nueva con:
-   > Lee GEMINI.md, docs/ y CHANGELOG.md, y continúa con la siguiente fase pendiente del ROADMAP.
-
 ## Comprobar el consumo
 - Administrador de tareas → Rendimiento → GPU (memoria dedicada) y pestaña Procesos.
 - `nvidia-smi` en terminal para comprobar que cuando Miku lleva inactiva el tiempo configurado, no hay ningún proceso `python` ocupando VRAM.

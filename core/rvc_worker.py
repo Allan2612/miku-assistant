@@ -1,6 +1,5 @@
 """
 Miku Assistant - Isolated GPU RVC Worker Subprocess
-Strict adherence to GEMINI.md:
 - Runs in an isolated subprocess so PyTorch and CUDA reside entirely here.
 - When killed by resources.py, Windows reclaims 100% of GPU VRAM (0 MB idle).
 - Fast FP16 inference on RTX 3050 with Transformers HuBERT, RMVPE, FAISS, and VITS.

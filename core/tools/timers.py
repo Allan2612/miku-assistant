@@ -10,8 +10,7 @@ import difflib
 import json
 import logging
 import time
-from pathlib import Path
-from typing import Dict, List, Optional, Callable, Awaitable, Any
+from typing import Dict, Optional, Callable, Awaitable, Any
 
 from core.paths import CACHE
 from core.tools import tool

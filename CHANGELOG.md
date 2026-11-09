@@ -87,6 +87,9 @@ El formato se basa en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
   librerías (PyTorch solo con NVIDIA).
 
 ### Corregido
+- Miku arranca unos 2 s antes: ya no carga scikit-learn, que openWakeWord importaba sin que Miku lo usara.
+- Con la voz por frases, el gesto de la emoción se hace una vez por respuesta, no en cada frase.
+- Limpieza: borrados `GEMINI.md` (el plan por fases ya terminó), `install_autostart.bat` y `uninstall_autostart.bat` (lo hace el panel) y 6 muestras de voz con su página, que nada usaba; quitados imports sin usar.
 - El primer arranque descarga los archivos base de openWakeWord: en una instalación limpia, «Hey Miku» fallaba al arrancar.
 - `npx tauri build` compila antes la web, así que ya no falla en una copia recién clonada.
 - El log ya no dice «GPU VRAM» cuando la voz corre en el procesador.
