@@ -4,6 +4,8 @@ Asistente de escritorio para Windows: una Miku 2D (Live2D) que aparece con una a
 
 El objetivo de diseño es **consumo casi nulo en reposo** y **respuesta en menos de 3 s** al activarla.
 
+> **English summary:** Windows desktop voice assistant with a Live2D avatar. Wake word or hotkey → Whisper STT (CPU) → Gemini function calling over a closed tool set, with live PC state (windows and tabs by number) → edge-tts + RVC voice on an isolated GPU worker. Designed for near-zero idle usage (0 MB of VRAM when idle) and sub-3-second responses. Tauri v2 + TypeScript frontend, Python asyncio backend, Opera extension. Personal project.
+
 ## Cómo funciona
 
 Dos procesos que hablan por WebSocket local (`ws://127.0.0.1:8765`), más un subproceso de GPU para la voz y una extensión de Opera opcional:
