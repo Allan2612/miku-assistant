@@ -103,3 +103,7 @@ El arranque con Windows se activa o se quita en el panel: Configuración → «A
 - [docs/persona.md](docs/persona.md): personalidad, emociones y frases fijas
 - [CHANGELOG.md](CHANGELOG.md): historial de cambios
 - [docs/auditoria/plan.md](docs/auditoria/plan.md): plan de auditoría total y sus [hallazgos](docs/auditoria/hallazgos/)
+
+## Licencia y recursos de terceros
+
+El código de este repositorio se publica bajo la [licencia MIT](LICENSE). El repositorio **no incluye** el modelo Live2D, el Cubism SDK ni el modelo de voz RVC: cada uno tiene su propia licencia y se consigue aparte (ver [docs/setup.md](docs/setup.md)). Hatsune Miku es un personaje de Crypton Future Media. Este es un proyecto personal sin fines comerciales.
